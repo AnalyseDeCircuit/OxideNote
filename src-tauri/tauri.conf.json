@@ -25,6 +25,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "fs": {
+      "scope": {
+        "allow": ["**"],
+        "requireLiteralLeadingDot": true
+      }
+    },
+    "dialog": {
+      "open": true,
+      "save": true
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

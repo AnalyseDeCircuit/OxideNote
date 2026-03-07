@@ -1,0 +1,62 @@
+{
+  "app": {
+    "name": "OxideNote",
+    "subtitle": "本地优先 Markdown 知识库"
+  },
+  "welcome": {
+    "title": "欢迎使用 OxideNote",
+    "description": "一个本地优先的 Markdown 知识库应用。你的笔记以纯文本 Markdown 文件存储，完全属于你。",
+    "openVault": "打开知识库",
+    "recentVaults": "最近的知识库",
+    "noRecentVaults": "暂无最近打开的知识库",
+    "createVault": "创建新知识库"
+  },
+  "sidebar": {
+    "newNote": "新建笔记",
+    "newFolder": "新建文件夹",
+    "rename": "重命名",
+    "delete": "删除",
+    "refresh": "刷新",
+    "emptyVault": "知识库为空，点击上方按钮创建第一篇笔记"
+  },
+  "editor": {
+    "untitled": "无标题",
+    "save": "保存",
+    "saved": "已保存",
+    "unsaved": "未保存",
+    "preview": "预览",
+    "edit": "编辑",
+    "split": "分栏"
+  },
+  "settings": {
+    "title": "设置",
+    "general": "通用",
+    "editor": "编辑器",
+    "appearance": "外观",
+    "about": "关于",
+    "language": "语言",
+    "theme": "主题",
+    "density": "密度",
+    "compact": "紧凑",
+    "comfortable": "舒适",
+    "spacious": "宽松",
+    "fontSize": "字号",
+    "fontFamily": "字体",
+    "tabSize": "缩进宽度",
+    "wordWrap": "自动换行",
+    "autoSave": "自动保存",
+    "version": "版本"
+  },
+  "search": {
+    "placeholder": "搜索笔记...",
+    "quickOpen": "快速打开",
+    "globalSearch": "全局搜索",
+    "noResults": "未找到匹配的结果"
+  },
+  "actions": {
+    "confirm": "确认",
+    "cancel": "取消",
+    "close": "关闭",
+    "ok": "确定"
+  }
+}

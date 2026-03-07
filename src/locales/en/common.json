@@ -1,0 +1,62 @@
+{
+  "app": {
+    "name": "OxideNote",
+    "subtitle": "Local-first Markdown Knowledge Vault"
+  },
+  "welcome": {
+    "title": "Welcome to OxideNote",
+    "description": "A local-first Markdown knowledge vault. Your notes are stored as plain-text Markdown files — fully yours.",
+    "openVault": "Open Vault",
+    "recentVaults": "Recent Vaults",
+    "noRecentVaults": "No recent vaults",
+    "createVault": "Create New Vault"
+  },
+  "sidebar": {
+    "newNote": "New Note",
+    "newFolder": "New Folder",
+    "rename": "Rename",
+    "delete": "Delete",
+    "refresh": "Refresh",
+    "emptyVault": "Vault is empty. Click the button above to create your first note."
+  },
+  "editor": {
+    "untitled": "Untitled",
+    "save": "Save",
+    "saved": "Saved",
+    "unsaved": "Unsaved",
+    "preview": "Preview",
+    "edit": "Edit",
+    "split": "Split"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "editor": "Editor",
+    "appearance": "Appearance",
+    "about": "About",
+    "language": "Language",
+    "theme": "Theme",
+    "density": "Density",
+    "compact": "Compact",
+    "comfortable": "Comfortable",
+    "spacious": "Spacious",
+    "fontSize": "Font Size",
+    "fontFamily": "Font Family",
+    "tabSize": "Tab Size",
+    "wordWrap": "Word Wrap",
+    "autoSave": "Auto Save",
+    "version": "Version"
+  },
+  "search": {
+    "placeholder": "Search notes...",
+    "quickOpen": "Quick Open",
+    "globalSearch": "Global Search",
+    "noResults": "No matching results found"
+  },
+  "actions": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "close": "Close",
+    "ok": "OK"
+  }
+}
