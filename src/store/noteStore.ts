@@ -9,6 +9,11 @@ export interface Tab {
 interface NoteState {
   openTabs: Tab[];
   activeTabPath: string | null;
+  /** Current editor content for the active tab (used by OutlinePanel etc.) */
+  activeContent: string;
+  /** Cursor position in the active editor */
+  cursorLine: number;
+  cursorCol: number;
 
   openNote: (path: string, title: string) => void;
   closeTab: (path: string) => void;
@@ -18,11 +23,16 @@ interface NoteState {
   updateTabPath: (oldPath: string, newPath: string, newTitle: string) => void;
   closeAllTabs: () => void;
   closeOtherTabs: (path: string) => void;
+  setActiveContent: (content: string) => void;
+  setCursorPosition: (line: number, col: number) => void;
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
   openTabs: [],
   activeTabPath: null,
+  activeContent: '',
+  cursorLine: 1,
+  cursorCol: 1,
 
   openNote: (path, title) => {
     const { openTabs } = get();
@@ -81,7 +91,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
         state.activeTabPath === oldPath ? newPath : state.activeTabPath,
     })),
 
-  closeAllTabs: () => set({ openTabs: [], activeTabPath: null }),
+  closeAllTabs: () => set({ openTabs: [], activeTabPath: null, activeContent: '' }),
 
   // Close every tab except the specified one, then activate it.
   closeOtherTabs: (path) => {
@@ -89,4 +99,8 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     const kept = openTabs.filter((t) => t.path === path);
     set({ openTabs: kept, activeTabPath: kept.length > 0 ? path : null });
   },
+
+  setActiveContent: (content) => set({ activeContent: content }),
+
+  setCursorPosition: (line, col) => set({ cursorLine: line, cursorCol: col }),
 }));

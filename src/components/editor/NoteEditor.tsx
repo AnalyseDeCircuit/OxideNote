@@ -7,6 +7,7 @@ import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { EditorToolbar } from './EditorToolbar';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
 
 // ═══════════════════════════════════════════════════════════════
@@ -40,6 +41,7 @@ export function NoteEditor() {
   const handleChange = useCallback((content: string) => {
     contentRef.current = content;
     setPreviewContent(content);
+    useNoteStore.getState().setActiveContent(content);
     const path = activePathRef.current;
     if (!path) return;
 
@@ -95,7 +97,7 @@ export function NoteEditor() {
         selection: { anchor: from + markdown.length },
       });
     } catch (err) {
-      toast({ title: 'Image upload failed', description: String(err), variant: 'error' });
+      toast({ title: t('editor.imageUploadFailed'), description: String(err), variant: 'error' });
     }
   }, []);
 
@@ -112,9 +114,17 @@ export function NoteEditor() {
 
   // ── 加载笔记内容 ─────────────────────────────────────────
   useEffect(() => {
+    // 切换 Tab 时，立即清除旧 Tab 的待保存定时器，
+    // 防止将旧内容误写入新 Tab 文件
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
     if (!activeTabPath) {
       setContent('');
       contentRef.current = '';
+      useNoteStore.getState().setActiveContent('');
       return;
     }
 
@@ -126,6 +136,7 @@ export function NoteEditor() {
           setContent(note.content);
           contentRef.current = note.content;
           setPreviewContent(note.content);
+          useNoteStore.getState().setActiveContent(note.content);
         }
       })
       .catch((err) => {
@@ -134,6 +145,7 @@ export function NoteEditor() {
           setContent('');
           contentRef.current = '';
           setPreviewContent('');
+          useNoteStore.getState().setActiveContent('');
         }
       });
 
@@ -238,6 +250,6 @@ async function saveNote(path: string, content: string) {
       console.warn('[reindex] failed for', path, err);
     });
   } catch (err) {
-    toast({ title: 'Save failed', description: String(err), variant: 'error' });
+    toast({ title: i18n.t('editor.saveFailed'), description: String(err), variant: 'error' });
   }
 }

@@ -133,53 +133,11 @@ function OutlinePanelContent() {
   );
 }
 
-// ── 从 CodeMirror 编辑器内容中提取标题 ─────────────────────
-// 使用轮询方案（每 500ms）以跟踪编辑器实时变化
-
-import { useState, useEffect, useRef } from 'react';
+// ── 从 noteStore 响应式读取标题 ────────────────────────────
 
 function useEditorHeadings(): HeadingItem[] {
-  const [headings, setHeadings] = useState<HeadingItem[]>([]);
-  const activeTabPath = useNoteStore((s) => s.activeTabPath);
-  const prevContentRef = useRef('');
-
-  useEffect(() => {
-    if (!activeTabPath) {
-      setHeadings([]);
-      return;
-    }
-
-    // 轮询间隔：500ms，在编辑时实时更新大纲
-    const interval = setInterval(() => {
-      const cmContent = document.querySelector('.cm-content');
-      if (!cmContent) return;
-
-      const text = cmContent.textContent || '';
-      // 仅在内容变化时重新解析（避免冗余计算）
-      if (text !== prevContentRef.current) {
-        prevContentRef.current = text;
-
-        // 从 CodeMirror 的 DOM 结构中获取实际文本
-        // cm-line 元素保留了原始文本
-        const cmEditor = document.querySelector('.cm-editor');
-        if (!cmEditor) return;
-
-        // 通过 CodeMirror 的 view 实例获取文档内容
-        const lines: string[] = [];
-        const cmLines = cmEditor.querySelectorAll('.cm-line');
-        cmLines.forEach((line) => {
-          lines.push(line.textContent || '');
-        });
-
-        const content = lines.join('\n');
-        setHeadings(extractHeadings(content));
-      }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [activeTabPath]);
-
-  return headings;
+  const activeContent = useNoteStore((s) => s.activeContent);
+  return useMemo(() => extractHeadings(activeContent), [activeContent]);
 }
 
 // ── 滚动编辑器/预览到指定行 ─────────────────────────────────

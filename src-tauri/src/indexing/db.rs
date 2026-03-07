@@ -126,8 +126,10 @@ pub fn upsert_note(
 
 /// Remove a note from the index.
 pub fn delete_note(conn: &Connection, path: &str) -> Result<(), rusqlite::Error> {
-    conn.execute("DELETE FROM notes_fts WHERE path = ?1", params![path])?;
-    conn.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM notes_fts WHERE path = ?1", params![path])?;
+    tx.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
+    tx.commit()?;
     Ok(())
 }
 

@@ -18,6 +18,7 @@ import { Marked } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
 import mermaid from 'mermaid';
+import DOMPurify from 'dompurify';
 import { useNoteStore } from '@/store/noteStore';
 import { searchByFilename } from '@/lib/api';
 import 'katex/dist/katex.min.css';
@@ -186,11 +187,15 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
   const containerRef = useRef<HTMLDivElement>(null);
   const marked = useMemo(() => createMarkedInstance(), []);
 
-  // ── 解析 Markdown → HTML ──────────────────────────────────
+  // ── 解析 Markdown → HTML（DOMPurify 净化）─────────────────
   const html = useMemo(() => {
     if (!content) return '';
     try {
-      return marked.parse(content) as string;
+      const raw = marked.parse(content) as string;
+      return DOMPurify.sanitize(raw, {
+        ADD_TAGS: ['math-block'],
+        ADD_ATTR: ['data-target', 'data-mermaid-id'],
+      });
     } catch {
       return `<p class="text-red-400">Render error</p>`;
     }

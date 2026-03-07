@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import {
   ChevronRight,
   ChevronDown,
@@ -71,7 +72,7 @@ export function VaultTree() {
         await refreshTree();
       }
     } catch (err) {
-      toast({ title: `Create ${type} failed`, description: String(err), variant: 'error' });
+      toast({ title: t('sidebar.createFailed'), description: String(err), variant: 'error' });
     }
   }, [inlineCreate]);
 
@@ -103,7 +104,7 @@ export function VaultTree() {
       <div className="flex-1 overflow-y-auto py-1">
         {treeLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-            Loading...
+            {t('sidebar.loading')}
           </div>
         ) : tree.length === 0 ? (
           <div className="px-3 py-8 text-center text-muted-foreground text-xs leading-relaxed">
@@ -184,7 +185,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
         useNoteStore.getState().updateTabPath(sourcePath, newPath, fileName);
         await refreshTree();
       } catch (err) {
-        toast({ title: 'Move failed', description: String(err), variant: 'error' });
+        toast({ title: t('sidebar.moveFailed'), description: String(err), variant: 'error' });
       }
     },
     [node.path, node.is_dir]
@@ -199,7 +200,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
         useNoteStore.getState().updateTabPath(node.path, newPath, title);
         await refreshTree();
       } catch (err) {
-        toast({ title: 'Rename failed', description: String(err), variant: 'error' });
+        toast({ title: t('sidebar.renameFailed'), description: String(err), variant: 'error' });
       }
     }
     setRenaming(false);
@@ -219,8 +220,8 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
 
   const handleDelete = useCallback(async () => {
     const confirmMsg = node.is_dir
-      ? `Delete folder "${node.name}" and all its contents?`
-      : `Delete "${node.name}"?`;
+      ? t('sidebar.deleteConfirmFolder', { name: node.name })
+      : t('sidebar.deleteConfirmFile', { name: node.name });
     const confirmed = await confirm(confirmMsg, { title: 'OxideNote', kind: 'warning' });
     if (!confirmed) return;
     try {
@@ -229,7 +230,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
       useNoteStore.getState().closeTab(node.path);
       await refreshTree();
     } catch (err) {
-      toast({ title: 'Delete failed', description: String(err), variant: 'error' });
+      toast({ title: t('sidebar.deleteFailed'), description: String(err), variant: 'error' });
     }
   }, [node.path, node.name, node.is_dir]);
 
@@ -308,7 +309,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
                         await refreshTree();
                       }
                     } catch (err) {
-                      toast({ title: `Create failed`, description: String(err), variant: 'error' });
+                      toast({ title: t('sidebar.createFailed'), description: String(err), variant: 'error' });
                     }
                   }}
                   onCancel={() => setInlineCreate(null)}
@@ -531,6 +532,6 @@ async function handleCreateDailyNote() {
     await refreshTree();
     useNoteStore.getState().openNote(path, dateStr);
   } catch (err) {
-    toast({ title: 'Daily note failed', description: String(err), variant: 'error' });
+    toast({ title: i18n.t('dailyNote.failed'), description: String(err), variant: 'error' });
   }
 }

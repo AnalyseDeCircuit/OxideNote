@@ -4,6 +4,8 @@ import { openVault, listTree } from '@/lib/api';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { FolderOpen } from 'lucide-react';
+import { toast } from '@/hooks/useToast';
+import i18n from '@/i18n';
 
 export function WelcomeScreen() {
   const { t } = useTranslation();
@@ -72,6 +74,6 @@ async function handleSelectVault(path: string) {
     useSettingsStore.getState().setLastVaultPath(path);
     useSettingsStore.getState().addRecentVault(path);
   } catch (err) {
-    console.error('Failed to open vault:', err);
+    toast({ title: i18n.t('actions.openVaultFailed'), description: String(err), variant: 'error' });
   }
 }

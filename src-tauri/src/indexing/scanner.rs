@@ -10,8 +10,8 @@ use super::db;
 pub fn scan_vault(vault_path: &Path, conn: &Connection) -> Result<(), String> {
     let mut count: usize = 0;
 
-    // Wrap in a single transaction for performance
-    conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+    // Wrap in a single RAII transaction for performance and safety
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
     for entry in WalkDir::new(vault_path)
         .into_iter()
@@ -33,14 +33,14 @@ pub fn scan_vault(vault_path: &Path, conn: &Connection) -> Result<(), String> {
             continue;
         }
 
-        if let Err(e) = index_single_file(vault_path, path, conn) {
+        if let Err(e) = index_single_file(vault_path, path, &tx) {
             tracing::warn!("Failed to index {}: {}", path.display(), e);
         } else {
             count += 1;
         }
     }
 
-    conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     tracing::info!("Indexed {} notes", count);
     Ok(())

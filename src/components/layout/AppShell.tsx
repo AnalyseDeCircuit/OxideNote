@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { VaultTree } from '@/components/tree/VaultTree';
 import { TabBar } from '@/components/editor/TabBar';
 import { NoteEditor } from '@/components/editor/NoteEditor';
+import { StatusBar } from '@/components/editor/StatusBar';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
 import { OutlinePanel } from '@/components/editor/OutlinePanel';
 import { GraphView } from '@/components/graph/GraphView';
@@ -59,6 +60,7 @@ export function AppShell() {
               <div className="flex-1 min-h-0">
                 <NoteEditor />
               </div>
+              <StatusBar />
             </div>
           </Panel>
           {sidePanelVisible && (
@@ -128,6 +130,7 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
 }
 
 function Titlebar() {
+  const { t } = useTranslation();
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const toggleSidePanel = useUIStore((s) => s.toggleSidePanel);
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
@@ -143,7 +146,7 @@ function Titlebar() {
       <button
         onClick={toggleSidebar}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
-        title="Toggle Sidebar"
+        title={t('actions.toggleSidebar')}
       >
         <SidebarIcon />
       </button>
@@ -160,7 +163,7 @@ function Titlebar() {
       <button
         onClick={() => setGraphViewOpen(true)}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
-        title="Knowledge Graph"
+        title={t('actions.knowledgeGraph')}
       >
         <GraphIcon />
       </button>
@@ -168,14 +171,14 @@ function Titlebar() {
       <button
         onClick={toggleSidePanel}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
-        title="Toggle Side Panel"
+        title={t('actions.toggleSidePanel')}
       >
         <BacklinksIcon />
       </button>
       <button
         onClick={() => setSettingsOpen(true)}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
-        title="Settings"
+        title={t('actions.settings')}
       >
         <SettingsIcon />
       </button>

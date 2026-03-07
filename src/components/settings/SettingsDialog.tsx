@@ -18,6 +18,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openVault, listTree } from '@/lib/api';
+import { toast } from '@/hooks/useToast';
 
 interface ThemeDef {
   id: ThemeId;
@@ -182,7 +183,7 @@ function GeneralTab() {
         useSettingsStore.getState().addRecentVault(selected);
         useUIStore.getState().setSettingsOpen(false);
       } catch (err) {
-        console.error('Failed to switch vault:', err);
+        toast({ title: t('actions.switchVaultFailed'), description: String(err), variant: 'error' });
       }
     }
   };
@@ -197,7 +198,7 @@ function GeneralTab() {
       useSettingsStore.getState().addRecentVault(path);
       useUIStore.getState().setSettingsOpen(false);
     } catch (err) {
-      console.error('Failed to open vault:', err);
+      toast({ title: t('actions.openVaultFailed'), description: String(err), variant: 'error' });
     }
   };
 
@@ -453,7 +454,7 @@ function AboutTab() {
 
       <SettingsCard title={t('settings.techStack', '技术栈')}>
         <div className="flex flex-wrap gap-2">
-          {['Tauri 2', 'React 18', 'TypeScript', 'CodeMirror 6', 'SQLite FTS5', 'Zustand'].map((tech) => (
+          {['Tauri 2', 'React 19', 'TypeScript', 'CodeMirror 6', 'SQLite FTS5', 'Zustand'].map((tech) => (
             <span
               key={tech}
               className="px-2.5 py-1 text-xs rounded-full bg-background border border-theme-border text-muted-foreground"

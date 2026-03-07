@@ -18,7 +18,14 @@
     "rename": "重命名",
     "delete": "删除",
     "refresh": "刷新",
-    "emptyVault": "知识库为空，点击上方按钮创建第一篇笔记"
+    "emptyVault": "知识库为空，点击上方按钮创建第一篇笔记",
+    "loading": "加载中...",
+    "createFailed": "创建失败",
+    "moveFailed": "移动失败",
+    "renameFailed": "重命名失败",
+    "deleteFailed": "删除失败",
+    "deleteConfirmFile": "确定要删除 \"{{name}}\" 吗？",
+    "deleteConfirmFolder": "确定要删除文件夹 \"{{name}}\" 及其所有内容吗？"
   },
   "editor": {
     "untitled": "无标题",
@@ -29,7 +36,9 @@
     "edit": "编辑",
     "split": "分栏",
     "noSelection": "未选择笔记",
-    "noSelectionHint": "从侧栏选择笔记或创建新笔记"
+    "noSelectionHint": "从侧栏选择笔记或创建新笔记",
+    "saveFailed": "保存失败",
+    "imageUploadFailed": "图片上传失败"
   },
   "tabs": {
     "close": "关闭",
@@ -126,16 +135,29 @@
   "graph": {
     "title": "知识图谱",
     "noData": "暂无索引笔记",
-    "close": "关闭"
+    "close": "关闭",
+    "loading": "加载中..."
   },
   "dailyNote": {
     "today": "今天",
-    "tooltip": "打开今日日记"
+    "tooltip": "打开今日日记",
+    "failed": "创建日记失败"
   },
   "actions": {
     "confirm": "确认",
     "cancel": "取消",
     "close": "关闭",
-    "ok": "确定"
+    "ok": "确定",
+    "toggleSidebar": "切换侧栏",
+    "toggleSidePanel": "切换右侧面板",
+    "knowledgeGraph": "知识图谱",
+    "settings": "设置",
+    "openVaultFailed": "打开仓库失败",
+    "switchVaultFailed": "切换仓库失败"
+  },
+  "statusBar": {
+    "words": "字",
+    "saved": "已保存",
+    "unsaved": "未保存"
   }
 }

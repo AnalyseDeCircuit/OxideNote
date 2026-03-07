@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
+import { useNoteStore } from '@/store/noteStore';
 import {
   EditorView,
   keymap,
@@ -117,7 +118,12 @@ const oxideTheme = EditorView.theme(
       backgroundColor: 'rgba(255,200,0,0.3)',
     },
   },
-  { dark: typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') !== 'light' }
+  { dark: (() => {
+    if (typeof document === 'undefined') return true;
+    const theme = document.documentElement.getAttribute('data-theme') || '';
+    const lightThemes = ['paper-oxide', 'github-light', 'catppuccin-latte', 'solarized-light', 'gruvbox-light', 'rose-pine-dawn', 'hot-pink', 'spring-green'];
+    return !lightThemes.includes(theme);
+  })() }
 );
 
 export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
@@ -137,6 +143,11 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
     const updateListener = EditorView.updateListener.of((update: ViewUpdate) => {
       if (update.docChanged) {
         onChangeRef.current?.(update.state.doc.toString());
+      }
+      if (update.docChanged || update.selectionSet) {
+        const pos = update.state.selection.main.head;
+        const line = update.state.doc.lineAt(pos);
+        useNoteStore.getState().setCursorPosition(line.number, pos - line.from + 1);
       }
     });
 

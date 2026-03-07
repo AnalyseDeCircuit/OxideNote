@@ -18,7 +18,14 @@
     "rename": "Rename",
     "delete": "Delete",
     "refresh": "Refresh",
-    "emptyVault": "Vault is empty. Click the button above to create your first note."
+    "emptyVault": "Vault is empty. Click the button above to create your first note.",
+    "loading": "Loading...",
+    "createFailed": "Create failed",
+    "moveFailed": "Move failed",
+    "renameFailed": "Rename failed",
+    "deleteFailed": "Delete failed",
+    "deleteConfirmFile": "Delete \"{{name}}\"?",
+    "deleteConfirmFolder": "Delete folder \"{{name}}\" and all its contents?"
   },
   "editor": {
     "untitled": "Untitled",
@@ -29,7 +36,9 @@
     "edit": "Edit",
     "split": "Split",
     "noSelection": "No note selected",
-    "noSelectionHint": "Select a note from the sidebar or create a new one"
+    "noSelectionHint": "Select a note from the sidebar or create a new one",
+    "saveFailed": "Save failed",
+    "imageUploadFailed": "Image upload failed"
   },
   "tabs": {
     "close": "Close",
@@ -126,16 +135,29 @@
   "graph": {
     "title": "Knowledge Graph",
     "noData": "No notes indexed yet",
-    "close": "Close"
+    "close": "Close",
+    "loading": "Loading..."
   },
   "dailyNote": {
     "today": "Today",
-    "tooltip": "Open today's daily note"
+    "tooltip": "Open today's daily note",
+    "failed": "Daily note failed"
   },
   "actions": {
     "confirm": "Confirm",
     "cancel": "Cancel",
     "close": "Close",
-    "ok": "OK"
+    "ok": "OK",
+    "toggleSidebar": "Toggle Sidebar",
+    "toggleSidePanel": "Toggle Side Panel",
+    "knowledgeGraph": "Knowledge Graph",
+    "settings": "Settings",
+    "openVaultFailed": "Failed to open vault",
+    "switchVaultFailed": "Failed to switch vault"
+  },
+  "statusBar": {
+    "words": "words",
+    "saved": "Saved",
+    "unsaved": "Unsaved"
   }
 }
