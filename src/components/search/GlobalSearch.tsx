@@ -25,27 +25,37 @@ interface GlobalSearchProps {
   onClose: () => void;
 }
 
+// ── GlobalSearch ─────────────────────────────────────────────────────────────
+// Full-text search modal with keyboard navigation.
+// ↑↓ to cycle results, Enter to open, Escape to dismiss.
+// Results are rendered with highlighted <mark> snippets from FTS5.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultListRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openNote = useNoteStore((s) => s.openNote);
   const { t } = useTranslation();
 
-  // Focus input when opened
+  // Focus input when opened; reset state on close
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setQuery('');
       setResults([]);
+      setSelectedIndex(-1);
     }
   }, [open]);
 
   const doSearch = useCallback((value: string) => {
     setQuery(value);
+    setSelectedIndex(-1);
     if (timerRef.current) clearTimeout(timerRef.current);
     if (!value.trim()) {
       setResults([]);
@@ -69,6 +79,47 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     onClose();
   };
 
+  // ── Keyboard navigation ──────────────────────────────────────────────────
+  // ArrowDown/ArrowUp cycle through results, Enter opens the selected item.
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (results.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex((prev) => {
+          const next = prev < results.length - 1 ? prev + 1 : 0;
+          scrollItemIntoView(next);
+          return next;
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex((prev) => {
+          const next = prev > 0 ? prev - 1 : results.length - 1;
+          scrollItemIntoView(next);
+          return next;
+        });
+      } else if (e.key === 'Enter' && selectedIndex >= 0) {
+        e.preventDefault();
+        handleSelect(results[selectedIndex]);
+      }
+    },
+    [results, selectedIndex, onClose],
+  );
+
+  /** Scroll the result at `idx` into the visible area of the list */
+  function scrollItemIntoView(idx: number) {
+    const list = resultListRef.current;
+    if (!list) return;
+    const items = list.querySelectorAll('[data-result-item]');
+    items[idx]?.scrollIntoView({ block: 'nearest' });
+  }
+
   if (!open) return null;
 
   return (
@@ -89,27 +140,30 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             onChange={(e) => doSearch(e.target.value)}
             placeholder={t('search.searchContent')}
             className="flex-1 text-sm bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') onClose();
-            }}
+            onKeyDown={handleKeyDown}
           />
           {loading && (
             <span className="text-xs text-muted-foreground">{t('search.searching')}</span>
           )}
         </div>
 
-        {/* Results */}
-        <div className="max-h-[400px] overflow-y-auto">
+        {/* Results — keyboard-navigable list */}
+        <div ref={resultListRef} className="max-h-[400px] overflow-y-auto">
           {query && results.length === 0 && !loading && (
             <div className="px-4 py-8 text-sm text-muted-foreground text-center">
               {t('search.noContentResults')}
             </div>
           )}
-          {results.map((r) => (
+          {results.map((r, i) => (
             <button
               key={r.path}
+              data-result-item
               onClick={() => handleSelect(r)}
-              className="w-full text-left px-4 py-3 hover:bg-theme-hover transition-colors border-b border-theme-border last:border-b-0"
+              className={`w-full text-left px-4 py-3 transition-colors border-b border-theme-border last:border-b-0 ${
+                i === selectedIndex
+                  ? 'bg-theme-accent/15 text-foreground'
+                  : 'hover:bg-theme-hover'
+              }`}
             >
               <div className="text-sm font-medium text-foreground truncate">
                 {r.title || r.path}

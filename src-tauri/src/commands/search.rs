@@ -4,6 +4,29 @@ use tauri::State;
 use crate::indexing::db;
 use crate::state::AppState;
 
+// ── 知识图谱数据结构 ────────────────────────────────────────
+
+/// 图谱节点，对应一篇笔记
+#[derive(Debug, Clone, Serialize)]
+pub struct GraphNode {
+    pub id: String,
+    pub title: String,
+}
+
+/// 图谱连边，表示一条 WikiLink 引用关系
+#[derive(Debug, Clone, Serialize)]
+pub struct GraphLink {
+    pub source: String,
+    pub target: String,
+}
+
+/// 完整的图谱数据（节点 + 连边）
+#[derive(Debug, Clone, Serialize)]
+pub struct GraphData {
+    pub nodes: Vec<GraphNode>,
+    pub links: Vec<GraphLink>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SearchError {
     #[error("No vault opened")]
@@ -96,4 +119,70 @@ pub async fn reindex_note(
         crate::indexing::scanner::remove_from_index(vault, &file_path, conn)
             .map_err(SearchError::Internal)
     }
+}
+
+/// 获取知识图谱数据 — 所有笔记节点及其 WikiLink 连边
+///
+/// 从索引数据库中查询所有笔记和链接关系，
+/// 构建前端 force-graph 所需的 { nodes, links } 数据结构。
+#[tauri::command]
+pub async fn get_graph_data(
+    state: State<'_, AppState>,
+) -> Result<GraphData, SearchError> {
+    let db_guard = state.db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+
+    // 查询所有笔记节点
+    let mut node_stmt = conn
+        .prepare("SELECT path, title FROM notes ORDER BY path")
+        .map_err(|e| SearchError::Internal(e.to_string()))?;
+
+    let nodes: Vec<GraphNode> = node_stmt
+        .query_map([], |row| {
+            Ok(GraphNode {
+                id: row.get(0)?,
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            })
+        })
+        .map_err(|e| SearchError::Internal(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // 构建路径集合，用于过滤有效连边
+    let node_ids: std::collections::HashSet<&str> =
+        nodes.iter().map(|n| n.id.as_str()).collect();
+
+    // 查询所有链接关系
+    let mut link_stmt = conn
+        .prepare(
+            "SELECT n.path, l.target_path FROM links l
+             JOIN notes n ON n.id = l.source_id",
+        )
+        .map_err(|e| SearchError::Internal(e.to_string()))?;
+
+    let links: Vec<GraphLink> = link_stmt
+        .query_map([], |row| {
+            Ok(GraphLink {
+                source: row.get(0)?,
+                target: row.get(1)?,
+            })
+        })
+        .map_err(|e| SearchError::Internal(e.to_string()))?
+        .filter_map(|r| r.ok())
+        // 仅保留两端都存在的连边
+        .filter(|link| {
+            node_ids.contains(link.source.as_str())
+                && (node_ids.contains(link.target.as_str())
+                    || nodes.iter().any(|n| {
+                        // WikiLink 可能引用的是 file stem 而非完整路径
+                        let stem = std::path::Path::new(&n.id)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        stem == link.target
+                    }))
+        })
+        .collect();
+
+    Ok(GraphData { nodes, links })
 }

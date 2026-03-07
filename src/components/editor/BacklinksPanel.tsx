@@ -18,7 +18,12 @@ export function BacklinksPanel() {
     setLoading(true);
     getBacklinks(activeTabPath)
       .then(setBacklinks)
-      .catch(() => setBacklinks([]))
+      .catch((err) => {
+        // Non-fatal: show empty list but log for debugging.
+        // Common cause: note was just deleted or index is stale.
+        console.warn('[backlinks] query failed for', activeTabPath, err);
+        setBacklinks([]);
+      })
       .finally(() => setLoading(false));
   }, [activeTabPath]);
 

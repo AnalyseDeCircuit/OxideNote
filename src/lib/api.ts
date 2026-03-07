@@ -78,3 +78,39 @@ export async function getBacklinks(path: string): Promise<BacklinkResult[]> {
 export async function reindexNote(path: string): Promise<void> {
   return invoke<void>('reindex_note', { path });
 }
+
+// ─── Attachment commands ─────────────────────────────────────
+
+/** 保存附件到 vault 的 .attachments 目录，返回相对路径 */
+export async function saveAttachment(data: string, filename: string): Promise<string> {
+  return invoke<string>('save_attachment', { data, filename });
+}
+
+// ─── Graph commands ──────────────────────────────────────────
+
+export interface GraphNode {
+  id: string;
+  title: string;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+/** 获取知识图谱数据（节点 + 连边） */
+export async function getGraphData(): Promise<GraphData> {
+  return invoke<GraphData>('get_graph_data');
+}
+
+// ─── File management commands ────────────────────────────────
+
+/** 移动文件/文件夹到新的父目录 */
+export async function moveEntry(sourcePath: string, targetDir: string): Promise<string> {
+  return invoke<string>('move_entry', { sourcePath, targetDir });
+}

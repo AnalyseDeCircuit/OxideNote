@@ -17,6 +17,7 @@ interface NoteState {
   markClean: (path: string) => void;
   updateTabPath: (oldPath: string, newPath: string, newTitle: string) => void;
   closeAllTabs: () => void;
+  closeOtherTabs: (path: string) => void;
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
@@ -81,4 +82,11 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     })),
 
   closeAllTabs: () => set({ openTabs: [], activeTabPath: null }),
+
+  // Close every tab except the specified one, then activate it.
+  closeOtherTabs: (path) => {
+    const { openTabs } = get();
+    const kept = openTabs.filter((t) => t.path === path);
+    set({ openTabs: kept, activeTabPath: kept.length > 0 ? path : null });
+  },
 }));

@@ -137,7 +137,12 @@ fn list_dir_entries(dir: &Path, base: &Path) -> Result<Vec<TreeNode>, VaultError
             continue;
         }
 
-        let file_type = entry.file_type().unwrap();
+        // entry.file_type() can fail on broken symlinks or permission issues —
+        // skip gracefully instead of panicking.
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
         let is_dir = file_type.is_dir();
 
         // Only include .md files and directories

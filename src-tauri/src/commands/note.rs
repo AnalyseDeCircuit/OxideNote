@@ -275,3 +275,57 @@ pub async fn delete_entry(
     tracing::info!("Deleted: {}", path);
     Ok(())
 }
+
+/// 移动文件或文件夹到新的父目录
+///
+/// 用于侧栏拖拽排列功能。移动前会验证源路径和目标路径
+/// 都在 vault 目录范围内，防止路径穿越攻击。
+#[tauri::command]
+pub async fn move_entry(
+    source_path: String,
+    target_dir: String,
+    state: State<'_, AppState>,
+) -> Result<String, NoteError> {
+    let vault_path = state.vault_path.read();
+    let base = vault_path.as_ref().ok_or(NoteError::NoVault)?;
+
+    let source_full = validate_inside_vault(base, &source_path)?;
+    if !source_full.exists() {
+        return Err(NoteError::NotFound(source_path));
+    }
+
+    // 目标目录：空字符串表示 vault 根目录
+    let target_parent = if target_dir.is_empty() {
+        base.clone()
+    } else {
+        let validated = validate_inside_vault(base, &target_dir)?;
+        if !validated.is_dir() {
+            return Err(NoteError::Io("Target is not a directory".into()));
+        }
+        validated
+    };
+
+    let file_name = source_full
+        .file_name()
+        .ok_or_else(|| NoteError::Io("Invalid source path".into()))?;
+    let dest = target_parent.join(file_name);
+
+    if dest.exists() {
+        return Err(NoteError::Io(format!(
+            "Already exists: {}",
+            file_name.to_string_lossy()
+        )));
+    }
+
+    std::fs::rename(&source_full, &dest)
+        .map_err(|e| NoteError::Io(e.to_string()))?;
+
+    let rel_path = dest
+        .strip_prefix(base)
+        .unwrap_or(&dest)
+        .to_string_lossy()
+        .to_string();
+
+    tracing::info!("Moved {} -> {}", source_path, rel_path);
+    Ok(rel_path)
+}

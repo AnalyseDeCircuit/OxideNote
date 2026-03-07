@@ -31,6 +31,11 @@
     "noSelection": "No note selected",
     "noSelectionHint": "Select a note from the sidebar or create a new one"
   },
+  "tabs": {
+    "close": "Close",
+    "closeOthers": "Close Others",
+    "closeAll": "Close All"
+  },
   "backlinks": {
     "title": "Backlinks",
     "noNote": "No note open",
@@ -94,6 +99,36 @@
     "searching": "Searching...",
     "noResults": "No matching results found",
     "noContentResults": "No matching content found"
+  },
+  "outline": {
+    "title": "Outline",
+    "noNote": "No note open",
+    "empty": "No headings found"
+  },
+  "toolbar": {
+    "heading1": "Heading 1",
+    "heading2": "Heading 2",
+    "heading3": "Heading 3",
+    "bold": "Bold",
+    "italic": "Italic",
+    "strikethrough": "Strikethrough",
+    "code": "Code",
+    "quote": "Quote",
+    "unorderedList": "Bulleted List",
+    "orderedList": "Numbered List",
+    "link": "Link",
+    "image": "Image",
+    "horizontalRule": "Horizontal Rule",
+    "math": "Math Formula"
+  },
+  "graph": {
+    "title": "Knowledge Graph",
+    "noData": "No notes indexed yet",
+    "close": "Close"
+  },
+  "dailyNote": {
+    "today": "Today",
+    "tooltip": "Open today's daily note"
   },
   "actions": {
     "confirm": "Confirm",

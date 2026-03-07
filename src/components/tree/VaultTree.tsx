@@ -9,6 +9,7 @@ import {
   Plus,
   FolderPlus,
   RefreshCw,
+  CalendarDays,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore } from '@/store/noteStore';
@@ -18,6 +19,8 @@ import {
   createFolder,
   renameEntry,
   deleteEntry,
+  moveEntry,
+  searchByFilename,
   type TreeNode,
 } from '@/lib/api';
 import {
@@ -42,6 +45,7 @@ export function VaultTree() {
           {t('sidebar.files')}
         </span>
         <div className="flex items-center gap-0.5">
+          <ToolbarButton icon={<CalendarDays size={14} />} title={t('dailyNote.tooltip')} onClick={handleCreateDailyNote} />
           <ToolbarButton icon={<Plus size={14} />} title={t('sidebar.newNote')} onClick={() => handleCreateNote('')} />
           <ToolbarButton icon={<FolderPlus size={14} />} title={t('sidebar.newFolder')} onClick={() => handleCreateFolder('')} />
           <ToolbarButton icon={<RefreshCw size={14} />} title={t('sidebar.refresh')} onClick={handleRefresh} />
@@ -75,6 +79,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.name);
+  const [dragOver, setDragOver] = useState(false);
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
   const isActive = !node.is_dir && node.path === activeTabPath;
 
@@ -86,6 +91,56 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
       useNoteStore.getState().openNote(node.path, title);
     }
   }, [node]);
+
+  // ── 拖拽：开始拖动 ──────────────────────────────────────
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      e.dataTransfer.setData('text/oxide-tree-path', node.path);
+      e.dataTransfer.effectAllowed = 'move';
+    },
+    [node.path]
+  );
+
+  // ── 拖拽：进入目标区域 ──────────────────────────────────
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!node.is_dir) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDragOver(true);
+    },
+    [node.is_dir]
+  );
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false);
+  }, []);
+
+  // ── 拖拽：放下到目标文件夹 ──────────────────────────────
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+
+      if (!node.is_dir) return;
+      const sourcePath = e.dataTransfer.getData('text/oxide-tree-path');
+      if (!sourcePath || sourcePath === node.path) return;
+
+      // 防止将文件夹拖入自身子目录
+      if (sourcePath && node.path.startsWith(sourcePath + '/')) return;
+
+      try {
+        const newPath = await moveEntry(sourcePath, node.path);
+        // 如果拖动的是当前打开的标签，更新路径
+        const fileName = sourcePath.split('/').pop()?.replace(/\.md$/, '') || '';
+        useNoteStore.getState().updateTabPath(sourcePath, newPath, fileName);
+        await refreshTree();
+      } catch (err) {
+        toast({ title: 'Move failed', description: String(err), variant: 'error' });
+      }
+    },
+    [node.path, node.is_dir]
+  );
 
   const handleRenameSubmit = useCallback(async () => {
     if (renameValue && renameValue !== node.name) {
@@ -141,9 +196,14 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
           <div
             className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer text-sm select-none hover:bg-theme-hover transition-colors ${
               isActive ? 'bg-theme-hover text-foreground' : 'text-foreground/80'
-            }`}
+            } ${dragOver ? 'ring-1 ring-theme-accent bg-theme-hover/50' : ''}`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
             onClick={handleClick}
+            draggable
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
             {/* Chevron or spacer */}
             {node.is_dir ? (
@@ -315,4 +375,42 @@ async function handleCreateFolder(parentPath: string) {
 
 async function handleRefresh() {
   await refreshTree();
+}
+
+// ── 每日笔记 ─────────────────────────────────────────────────
+// 创建或打开格式为 YYYY-MM-DD.md 的每日笔记，
+// 存放在 vault 根目录下的 daily/ 文件夹中
+
+async function handleCreateDailyNote() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+  const fileName = `${dateStr}.md`;
+  const dailyPath = `daily/${fileName}`;
+
+  // 尝试直接打开（如果今日笔记已存在）
+  try {
+    const results = await searchByFilename(dateStr);
+    const existing = results.find((r) => r.path === dailyPath || r.path === fileName);
+    if (existing) {
+      useNoteStore.getState().openNote(existing.path, dateStr);
+      return;
+    }
+  } catch {
+    // 搜索失败，继续创建
+  }
+
+  // 确保 daily 文件夹存在，然后创建笔记
+  try {
+    await createFolder('', 'daily').catch(() => {
+      // 文件夹可能已存在，忽略错误
+    });
+    const path = await createNote('daily', fileName);
+    await refreshTree();
+    useNoteStore.getState().openNote(path, dateStr);
+  } catch (err) {
+    toast({ title: 'Daily note failed', description: String(err), variant: 'error' });
+  }
 }

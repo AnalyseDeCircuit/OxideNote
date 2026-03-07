@@ -31,6 +31,11 @@
     "noSelection": "未选择笔记",
     "noSelectionHint": "从侧栏选择笔记或创建新笔记"
   },
+  "tabs": {
+    "close": "关闭",
+    "closeOthers": "关闭其他",
+    "closeAll": "关闭所有"
+  },
   "backlinks": {
     "title": "反向链接",
     "noNote": "没有打开的笔记",
@@ -94,6 +99,36 @@
     "searching": "搜索中...",
     "noResults": "未找到匹配的结果",
     "noContentResults": "未找到匹配内容"
+  },
+  "outline": {
+    "title": "大纲",
+    "noNote": "没有打开的笔记",
+    "empty": "暂无标题"
+  },
+  "toolbar": {
+    "heading1": "一级标题",
+    "heading2": "二级标题",
+    "heading3": "三级标题",
+    "bold": "粗体",
+    "italic": "斜体",
+    "strikethrough": "删除线",
+    "code": "代码",
+    "quote": "引用",
+    "unorderedList": "无序列表",
+    "orderedList": "有序列表",
+    "link": "链接",
+    "image": "图片",
+    "horizontalRule": "水平分割线",
+    "math": "数学公式"
+  },
+  "graph": {
+    "title": "知识图谱",
+    "noData": "暂无索引笔记",
+    "close": "关闭"
+  },
+  "dailyNote": {
+    "today": "今天",
+    "tooltip": "打开今日日记"
   },
   "actions": {
     "confirm": "确认",

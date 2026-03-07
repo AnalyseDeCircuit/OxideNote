@@ -622,3 +622,108 @@ html {
 [data-frosted="native"] .bg-theme-bg-panel\/50 {
   background-color: color-mix(in srgb, var(--theme-bg-panel) 50%, transparent);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Markdown 预览样式
+   为 .oxide-markdown-preview 容器内的渲染内容提供排版样式，
+   与编辑器主题变量保持视觉一致。
+   ═══════════════════════════════════════════════════════════════ */
+
+.oxide-markdown-preview {
+  color: var(--theme-text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* ── 标题 ──────────────────────────────────────────────────── */
+.oxide-markdown-preview h1 { font-size: 1.75em; font-weight: 700; margin: 1.25em 0 0.5em; border-bottom: 1px solid var(--theme-border); padding-bottom: 0.3em; }
+.oxide-markdown-preview h2 { font-size: 1.4em; font-weight: 600; margin: 1.15em 0 0.4em; border-bottom: 1px solid var(--theme-border); padding-bottom: 0.25em; }
+.oxide-markdown-preview h3 { font-size: 1.2em; font-weight: 600; margin: 1em 0 0.35em; }
+.oxide-markdown-preview h4 { font-size: 1.05em; font-weight: 600; margin: 0.9em 0 0.3em; }
+.oxide-markdown-preview h5,
+.oxide-markdown-preview h6 { font-size: 0.95em; font-weight: 600; margin: 0.8em 0 0.25em; color: var(--theme-text-muted); }
+
+/* ── 段落与行内 ────────────────────────────────────────────── */
+.oxide-markdown-preview p { margin: 0.75em 0; }
+.oxide-markdown-preview a { color: var(--theme-accent); text-decoration: underline; text-underline-offset: 2px; }
+.oxide-markdown-preview a:hover { opacity: 0.85; }
+.oxide-markdown-preview strong { font-weight: 700; }
+
+/* ── WikiLink 样式 ─────────────────────────────────────────── */
+.oxide-markdown-preview a.wikilink {
+  color: var(--theme-accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--theme-accent);
+  cursor: pointer;
+}
+.oxide-markdown-preview a.wikilink:hover { opacity: 0.8; }
+
+/* ── 代码 ──────────────────────────────────────────────────── */
+.oxide-markdown-preview code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--theme-bg-hover);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+.oxide-markdown-preview pre {
+  background: var(--theme-bg-panel);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.oxide-markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+/* ── 引用块 ────────────────────────────────────────────────── */
+.oxide-markdown-preview blockquote {
+  border-left: 3px solid var(--theme-accent);
+  padding-left: 1em;
+  margin: 1em 0;
+  color: var(--theme-text-muted);
+}
+
+/* ── 列表 ──────────────────────────────────────────────────── */
+.oxide-markdown-preview ul { list-style: disc; padding-left: 1.5em; margin: 0.5em 0; }
+.oxide-markdown-preview ol { list-style: decimal; padding-left: 1.5em; margin: 0.5em 0; }
+.oxide-markdown-preview li { margin: 0.2em 0; }
+.oxide-markdown-preview li > ul,
+.oxide-markdown-preview li > ol { margin: 0; }
+
+/* ── 表格 ──────────────────────────────────────────────────── */
+.oxide-markdown-preview table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.oxide-markdown-preview th,
+.oxide-markdown-preview td { border: 1px solid var(--theme-border); padding: 0.5em 0.75em; text-align: left; }
+.oxide-markdown-preview th { background: var(--theme-bg-hover); font-weight: 600; }
+
+/* ── 水平线 ────────────────────────────────────────────────── */
+.oxide-markdown-preview hr { border: none; border-top: 1px solid var(--theme-border); margin: 1.5em 0; }
+
+/* ── 图片 ──────────────────────────────────────────────────── */
+.oxide-markdown-preview img { max-width: 100%; height: auto; border-radius: 6px; margin: 0.5em 0; }
+
+/* ── KaTeX 数学公式 ────────────────────────────────────────── */
+.oxide-markdown-preview .math-block { margin: 1em 0; text-align: center; overflow-x: auto; }
+.oxide-markdown-preview .math-error { color: #ef4444; font-family: var(--font-mono); font-size: 0.85em; }
+
+/* ── Mermaid 图表 ──────────────────────────────────────────── */
+.oxide-markdown-preview .mermaid-container {
+  margin: 1em 0;
+  text-align: center;
+  background: var(--theme-bg-panel);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+}
+.oxide-markdown-preview .mermaid-error { color: var(--theme-text-muted); font-family: var(--font-mono); font-size: 0.85em; }
+
+/* ── 任务列表 ──────────────────────────────────────────────── */
+.oxide-markdown-preview input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--theme-accent); }
