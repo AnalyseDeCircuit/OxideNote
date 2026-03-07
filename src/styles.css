@@ -1,0 +1,569 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OxideNote Theme System
+   Extracted from oxideterm-ui and cleaned for a notes app context.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  --color-oxide-bg: var(--theme-bg);
+  --color-oxide-panel: var(--theme-bg-panel);
+  --color-oxide-border: var(--theme-border);
+  --color-oxide-accent: var(--theme-accent);
+  --color-oxide-accent-hover: var(--theme-accent-hover);
+  --color-oxide-text: var(--theme-text);
+  --color-oxide-text-muted: var(--theme-text-muted);
+
+  --color-theme-bg: var(--theme-bg);
+  --color-theme-bg-panel: var(--theme-bg-panel);
+  --color-theme-bg-hover: var(--theme-bg-hover);
+  --color-theme-border: var(--theme-border);
+  --color-theme-text: var(--theme-text);
+  --color-theme-text-muted: var(--theme-text-muted);
+  --color-theme-accent: var(--theme-accent);
+  --color-theme-accent-hover: var(--theme-accent-hover);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+
+  --radius-sm: max(1px, calc(var(--ui-radius, 6px) * 0.33));
+  --radius-md: var(--ui-radius, 6px);
+  --radius-lg: calc(var(--ui-radius, 6px) * 1.33);
+
+  --animation-speed: 1;
+}
+
+/* ===== Base ===== */
+
+:root {
+  color-scheme: dark;
+  --background: var(--color-oxide-bg);
+  --foreground: var(--color-oxide-text);
+
+  /* Default Theme (Neutral) */
+  --theme-bg: #09090b;
+  --theme-bg-panel: #18181b;
+  --theme-bg-hover: #27272a;
+  --theme-border: #27272a;
+  --theme-text: #f4f4f5;
+  --theme-text-muted: #a1a1aa;
+  --theme-accent: #ea580c;
+  --theme-accent-hover: #c2410c;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Theme Variants
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="neutral"] {
+  --theme-bg: #09090b;
+  --theme-bg-panel: #18181b;
+  --theme-bg-hover: #27272a;
+  --theme-border: #27272a;
+  --theme-text: #f4f4f5;
+  --theme-text-muted: #a1a1aa;
+  --theme-accent: #ea580c;
+  --theme-accent-hover: #c2410c;
+}
+
+[data-theme="github-dark"] {
+  --theme-bg: #0d1117;
+  --theme-bg-panel: #161b22;
+  --theme-bg-hover: #1c2128;
+  --theme-border: #21262d;
+  --theme-text: #f0f6fc;
+  --theme-text-muted: #8b949e;
+  --theme-accent: #58a6ff;
+  --theme-accent-hover: #1f6feb;
+}
+
+[data-theme="verdigris"] {
+  --theme-bg: #1C312C;
+  --theme-bg-panel: #223D37;
+  --theme-bg-hover: #2C4A42;
+  --theme-border: #2C4A42;
+  --theme-text: #2DD4BF;
+  --theme-text-muted: #5FA69B;
+  --theme-accent: #00FFFF;
+  --theme-accent-hover: #66FFFF;
+}
+
+[data-theme="silver-oxide"] {
+  --theme-bg: #1c1c1c;
+  --theme-bg-panel: #2a2a2a;
+  --theme-bg-hover: #3a3a3a;
+  --theme-border: #3a3a3a;
+  --theme-text: #dcdcdc;
+  --theme-text-muted: #888888;
+  --theme-accent: #9b88ff;
+  --theme-accent-hover: #b0a3ff;
+}
+
+[data-theme="cuprite"] {
+  --theme-bg: #221212;
+  --theme-bg-panel: #331a1a;
+  --theme-bg-hover: #442222;
+  --theme-border: #442222;
+  --theme-text: #f5d0c5;
+  --theme-text-muted: #d4a0a0;
+  --theme-accent: #ff4d4d;
+  --theme-accent-hover: #ff6666;
+}
+
+[data-theme="chromium-oxide"] {
+  --theme-bg: #0e1a12;
+  --theme-bg-panel: #16261b;
+  --theme-bg-hover: #1e3626;
+  --theme-border: #1e3626;
+  --theme-text: #b8d8be;
+  --theme-text-muted: #7a9c82;
+  --theme-accent: #00ff41;
+  --theme-accent-hover: #33ff66;
+}
+
+[data-theme="paper-oxide"] {
+  --theme-bg: #f4f0e6;
+  --theme-bg-panel: #ece8dd;
+  --theme-bg-hover: #e4e0d5;
+  --theme-border: #dcd8cc;
+  --theme-text: #3c3c3c;
+  --theme-text-muted: #787878;
+  --theme-accent: #8d6e63;
+  --theme-accent-hover: #795548;
+}
+
+[data-theme="oxide"] {
+  --theme-bg: #331a0d;
+  --theme-bg-panel: #4a2613;
+  --theme-bg-hover: #5e311a;
+  --theme-border: #63341b;
+  --theme-text: #fef3e2;
+  --theme-text-muted: #d4b49a;
+  --theme-accent: #FF6B00;
+  --theme-accent-hover: #ff8533;
+}
+
+[data-theme="dracula"] {
+  --theme-bg: #282a36;
+  --theme-bg-panel: #21222c;
+  --theme-bg-hover: #44475a;
+  --theme-border: #44475a;
+  --theme-text: #f8f8f2;
+  --theme-text-muted: #6272a4;
+  --theme-accent: #bd93f9;
+  --theme-accent-hover: #ff79c6;
+}
+
+[data-theme="nord"] {
+  --theme-bg: #2e3440;
+  --theme-bg-panel: #3b4252;
+  --theme-bg-hover: #434c5e;
+  --theme-border: #434c5e;
+  --theme-text: #d8dee9;
+  --theme-text-muted: #4c566a;
+  --theme-accent: #88c0d0;
+  --theme-accent-hover: #81a1c1;
+}
+
+[data-theme="solarized-dark"] {
+  --theme-bg: #002b36;
+  --theme-bg-panel: #073642;
+  --theme-bg-hover: #586e75;
+  --theme-border: #073642;
+  --theme-text: #839496;
+  --theme-text-muted: #586e75;
+  --theme-accent: #2aa198;
+  --theme-accent-hover: #268bd2;
+}
+
+[data-theme="one-dark"] {
+  --theme-bg: #282c34;
+  --theme-bg-panel: #21252b;
+  --theme-bg-hover: #2c313a;
+  --theme-border: #3e4451;
+  --theme-text: #abb2bf;
+  --theme-text-muted: #5c6370;
+  --theme-accent: #61afef;
+  --theme-accent-hover: #528bff;
+}
+
+[data-theme="monokai"] {
+  --theme-bg: #272822;
+  --theme-bg-panel: #1e1f1c;
+  --theme-bg-hover: #3e3d32;
+  --theme-border: #3e3d32;
+  --theme-text: #f8f8f2;
+  --theme-text-muted: #75715e;
+  --theme-accent: #a6e22e;
+  --theme-accent-hover: #f92672;
+}
+
+[data-theme="catppuccin-mocha"] {
+  --theme-bg: #1e1e2e;
+  --theme-bg-panel: #181825;
+  --theme-bg-hover: #313244;
+  --theme-border: #313244;
+  --theme-text: #cdd6f4;
+  --theme-text-muted: #6c7086;
+  --theme-accent: #89b4fa;
+  --theme-accent-hover: #b4befe;
+}
+
+[data-theme="magnetite"] {
+  --theme-bg: #1A1A1A;
+  --theme-bg-panel: #262626;
+  --theme-bg-hover: #333333;
+  --theme-border: #333333;
+  --theme-text: #E5E7EB;
+  --theme-text-muted: #9CA3AF;
+  --theme-accent: #4682B4;
+  --theme-accent-hover: #5A9BD6;
+}
+
+[data-theme="cobalt"] {
+  --theme-bg: #0F172A;
+  --theme-bg-panel: #1E293B;
+  --theme-bg-hover: #334155;
+  --theme-border: #334155;
+  --theme-text: #CBD5E1;
+  --theme-text-muted: #64748B;
+  --theme-accent: #3B82F6;
+  --theme-accent-hover: #60A5FA;
+}
+
+[data-theme="ochre"] {
+  --theme-bg: #1C1917;
+  --theme-bg-panel: #292524;
+  --theme-bg-hover: #44403C;
+  --theme-border: #44403C;
+  --theme-text: #FDE047;
+  --theme-text-muted: #A8A29E;
+  --theme-accent: #EA580C;
+  --theme-accent-hover: #F97316;
+}
+
+[data-theme="tokyo-night"] {
+  --theme-bg: #1a1b26;
+  --theme-bg-panel: #16161e;
+  --theme-bg-hover: #24283b;
+  --theme-border: #24283b;
+  --theme-text: #c0caf5;
+  --theme-text-muted: #565f89;
+  --theme-accent: #7aa2f7;
+  --theme-accent-hover: #bb9af7;
+}
+
+[data-theme="gruvbox-dark"] {
+  --theme-bg: #282828;
+  --theme-bg-panel: #1d2021;
+  --theme-bg-hover: #3c3836;
+  --theme-border: #3c3836;
+  --theme-text: #ebdbb2;
+  --theme-text-muted: #928374;
+  --theme-accent: #d79921;
+  --theme-accent-hover: #fabd2f;
+}
+
+[data-theme="rose-pine"] {
+  --theme-bg: #191724;
+  --theme-bg-panel: #1f1d2e;
+  --theme-bg-hover: #26233a;
+  --theme-border: #26233a;
+  --theme-text: #e0def4;
+  --theme-text-muted: #908caa;
+  --theme-accent: #c4a7e7;
+  --theme-accent-hover: #ebbcba;
+}
+
+[data-theme="kanagawa"] {
+  --theme-bg: #1F1F28;
+  --theme-bg-panel: #16161D;
+  --theme-bg-hover: #2A2A37;
+  --theme-border: #2A2A37;
+  --theme-text: #DCD7BA;
+  --theme-text-muted: #727169;
+  --theme-accent: #7E9CD8;
+  --theme-accent-hover: #7FB4CA;
+}
+
+[data-theme="synthwave-84"] {
+  --theme-bg: #2b213a;
+  --theme-bg-panel: #241b30;
+  --theme-bg-hover: #453655;
+  --theme-border: #453655;
+  --theme-text: #ffffff;
+  --theme-text-muted: #8e83a3;
+  --theme-accent: #ff7edb;
+  --theme-accent-hover: #03edf9;
+}
+
+[data-theme="azurite"] {
+  --theme-bg: #091A2E;
+  --theme-bg-panel: #0D2238;
+  --theme-bg-hover: #163250;
+  --theme-border: #163250;
+  --theme-text: #C0D8F0;
+  --theme-text-muted: #5D9CEC;
+  --theme-accent: #0066CC;
+  --theme-accent-hover: #4FC1E9;
+}
+
+[data-theme="malachite"] {
+  --theme-bg: #0B231A;
+  --theme-bg-panel: #064E3B;
+  --theme-bg-hover: #086047;
+  --theme-border: #086047;
+  --theme-text: #E0F2E9;
+  --theme-text-muted: #34D399;
+  --theme-accent: #10B981;
+  --theme-accent-hover: #6EE7B7;
+}
+
+[data-theme="hematite"] {
+  --theme-bg: #1C1C1E;
+  --theme-bg-panel: #2C2C2E;
+  --theme-bg-hover: #3A3A3C;
+  --theme-border: #3A3A3C;
+  --theme-text: #D1D1D6;
+  --theme-text-muted: #8E8E93;
+  --theme-accent: #FF3B30;
+  --theme-accent-hover: #FF453A;
+}
+
+[data-theme="bismuth"] {
+  --theme-bg: #120F1D;
+  --theme-bg-panel: #2E1065;
+  --theme-bg-hover: #4C1D95;
+  --theme-border: #4C1D95;
+  --theme-text: #E9D5FF;
+  --theme-text-muted: #A78BFA;
+  --theme-accent: #D946EF;
+  --theme-accent-hover: #E879F9;
+}
+
+[data-theme="fairy-floss"] {
+  --theme-bg: #5a5475;
+  --theme-bg-panel: #463c57;
+  --theme-bg-hover: #605770;
+  --theme-border: #605770;
+  --theme-text: #f8f8f2;
+  --theme-text-muted: #e6c000;
+  --theme-accent: #ff857f;
+  --theme-accent-hover: #ffb8d9;
+}
+
+[data-theme="sakura"] {
+  --theme-bg: #2c242a;
+  --theme-bg-panel: #3f3238;
+  --theme-bg-hover: #5c434f;
+  --theme-border: #5c434f;
+  --theme-text: #e6d2d9;
+  --theme-text-muted: #958189;
+  --theme-accent: #ff79c6;
+  --theme-accent-hover: #ff92df;
+}
+
+[data-theme="hot-pink"] {
+  --theme-bg: #efdfe5;
+  --theme-bg-panel: #fcebf1;
+  --theme-bg-hover: #ebcbd6;
+  --theme-border: #dcbcc6;
+  --theme-text: #8a3a5b;
+  --theme-text-muted: #b0708a;
+  --theme-accent: #e60073;
+  --theme-accent-hover: #c20061;
+}
+
+[data-theme="spring-green"] {
+  --theme-bg: #e2f5e9;
+  --theme-bg-panel: #d1efdb;
+  --theme-bg-hover: #bfe9cc;
+  --theme-border: #a3d9b5;
+  --theme-text: #1a4d33;
+  --theme-text-muted: #3b7a5a;
+  --theme-accent: #16a34a;
+  --theme-accent-hover: #15803d;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Body & Root
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  height: 100%;
+}
+
+html {
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scrollbar Styling
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 10px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--theme-text-muted), transparent 85%);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--theme-text-muted), transparent 60%) !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 3px;
+  width: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 0;
+}
+
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--theme-text-muted), transparent 80%);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-accent) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Utility Classes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.industrial-border {
+  border: 1px solid var(--color-oxide-border);
+}
+
+.industrial-panel {
+  background-color: var(--color-oxide-panel);
+  border: 1px solid var(--color-oxide-border);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+  width: 50%;
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-caret {
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI Density System
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-density="compact"] {
+  --spacing: 0.2rem;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 0.875rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+}
+
+[data-density="spacious"] {
+  --spacing: 0.3125rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Animation Speed Control
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-animation="off"],
+[data-animation="off"] * {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+[data-animation="reduced"] {
+  --animation-speed: 2;
+}
+
+[data-animation="fast"] {
+  --animation-speed: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Frosted Glass (CSS Mode)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-frosted="css"] aside,
+[data-frosted="css"] .frosted-panel {
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+}
+
+[data-frosted="css"] .bg-theme-bg-panel\/50 {
+  background-color: color-mix(in srgb, var(--theme-bg-panel) 65%, transparent);
+  backdrop-filter: blur(8px) saturate(160%);
+  -webkit-backdrop-filter: blur(8px) saturate(160%);
+}
+
+[data-frosted="native"] aside,
+[data-frosted="native"] .frosted-panel {
+  backdrop-filter: blur(4px) saturate(120%);
+  -webkit-backdrop-filter: blur(4px) saturate(120%);
+}
+
+[data-frosted="native"] .bg-theme-bg-panel\/50 {
+  background-color: color-mix(in srgb, var(--theme-bg-panel) 50%, transparent);
+}
