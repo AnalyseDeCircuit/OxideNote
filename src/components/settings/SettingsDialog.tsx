@@ -11,10 +11,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info } from 'lucide-react';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync } from 'lucide-react';
 import { useSettingsStore, type ThemeId, type Density, type Language } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTranslation } from 'react-i18next';
+import { open } from '@tauri-apps/plugin-dialog';
+import { openVault, listTree } from '@/lib/api';
 
 interface ThemeDef {
   id: ThemeId;
@@ -164,10 +167,58 @@ function GeneralTab() {
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const recentVaults = useSettingsStore((s) => s.recentVaults);
+  const vaultPath = useWorkspaceStore((s) => s.vaultPath);
   const { t } = useTranslation();
+
+  const handleSwitchVault = async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (selected) {
+      try {
+        await openVault(selected);
+        const tree = await listTree();
+        useWorkspaceStore.getState().setVaultPath(selected);
+        useWorkspaceStore.getState().setTree(tree);
+        useSettingsStore.getState().setLastVaultPath(selected);
+        useSettingsStore.getState().addRecentVault(selected);
+        useUIStore.getState().setSettingsOpen(false);
+      } catch (err) {
+        console.error('Failed to switch vault:', err);
+      }
+    }
+  };
+
+  const handleSelectRecentVault = async (path: string) => {
+    try {
+      await openVault(path);
+      const tree = await listTree();
+      useWorkspaceStore.getState().setVaultPath(path);
+      useWorkspaceStore.getState().setTree(tree);
+      useSettingsStore.getState().setLastVaultPath(path);
+      useSettingsStore.getState().addRecentVault(path);
+      useUIStore.getState().setSettingsOpen(false);
+    } catch (err) {
+      console.error('Failed to open vault:', err);
+    }
+  };
 
   return (
     <>
+      <SettingsCard title={t('settings.vault', '仓库')}>
+        {vaultPath && (
+          <div className="flex items-center gap-2 mb-3">
+            <FolderOpen size={14} className="text-theme-accent shrink-0" />
+            <span className="text-sm text-foreground truncate">{vaultPath}</span>
+          </div>
+        )}
+        <button
+          onClick={handleSwitchVault}
+          className="flex items-center gap-2 px-4 py-2 rounded-md bg-theme-accent text-white text-sm font-medium hover:opacity-90 transition-opacity"
+        >
+          <FolderSync size={16} />
+          {t('settings.switchVault', '切换仓库')}
+        </button>
+      </SettingsCard>
+
       <SettingsCard title={t('settings.language', '语言')}>
         <SettingRow label={t('settings.language')} hint={t('settings.languageHint', '界面显示语言')}>
           <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
@@ -186,9 +237,13 @@ function GeneralTab() {
         <SettingsCard title={t('settings.recentVaults', '最近的仓库')}>
           <div className="space-y-1">
             {recentVaults.map((v) => (
-              <div key={v} className="text-xs text-muted-foreground truncate px-3 py-2 rounded-md bg-background">
+              <button
+                key={v}
+                onClick={() => handleSelectRecentVault(v)}
+                className="w-full text-left text-xs text-muted-foreground truncate px-3 py-2 rounded-md bg-background hover:bg-theme-bg-hover transition-colors"
+              >
                 {v}
-              </div>
+              </button>
             ))}
           </div>
         </SettingsCard>
@@ -225,21 +280,14 @@ function EditorTab() {
       </SettingsCard>
 
       <SettingsCard title={t('settings.fontFamily', '字体')}>
-        <SettingRow label={t('settings.fontFamily')} hint={t('settings.fontFamilyHint', '编辑器使用的等宽字体')}>
-          <Select value={fontFamily} onValueChange={setFontFamily}>
-            <SelectTrigger className="w-[220px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="'SF Mono', 'Fira Code', 'JetBrains Mono', monospace">
-                SF Mono / Fira Code
-              </SelectItem>
-              <SelectItem value="'JetBrains Mono', monospace">JetBrains Mono</SelectItem>
-              <SelectItem value="'Fira Code', monospace">Fira Code</SelectItem>
-              <SelectItem value="'Cascadia Code', monospace">Cascadia Code</SelectItem>
-              <SelectItem value="monospace">System Monospace</SelectItem>
-            </SelectContent>
-          </Select>
+        <SettingRow label={t('settings.fontFamily')} hint={t('settings.fontFamilyHint', '输入系统已安装的字体名，多个用逗号分隔')}>
+          <input
+            type="text"
+            value={fontFamily}
+            onChange={(e) => setFontFamily(e.target.value)}
+            placeholder="monospace"
+            className="w-[260px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
         </SettingRow>
 
         <SettingRow label={t('settings.fontSize')} hint={t('settings.fontSizeHint', '10 ~ 32px')}>

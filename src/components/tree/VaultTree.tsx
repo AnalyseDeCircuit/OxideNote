@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore } from '@/store/noteStore';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import {
   listTree,
   createNote,
@@ -37,6 +38,43 @@ export function VaultTree() {
   const tree = useWorkspaceStore((s) => s.tree);
   const treeLoading = useWorkspaceStore((s) => s.treeLoading);
 
+  // ── 内联创建状态 ──────────────────────────────────────────
+  // Tauri WebView 不支持 window.prompt()，使用内联输入替代
+  const [inlineCreate, setInlineCreate] = useState<{
+    type: 'note' | 'folder';
+    parentPath: string;
+  } | null>(null);
+
+  const handleNewNote = useCallback(() => {
+    setInlineCreate({ type: 'note', parentPath: '' });
+  }, []);
+
+  const handleNewFolder = useCallback(() => {
+    setInlineCreate({ type: 'folder', parentPath: '' });
+  }, []);
+
+  const handleInlineSubmit = useCallback(async (name: string) => {
+    if (!inlineCreate || !name.trim()) {
+      setInlineCreate(null);
+      return;
+    }
+    const { type, parentPath } = inlineCreate;
+    setInlineCreate(null);
+    try {
+      if (type === 'note') {
+        const path = await createNote(parentPath, name.trim());
+        await refreshTree();
+        const title = name.trim().replace(/\.md$/, '');
+        useNoteStore.getState().openNote(path, title);
+      } else {
+        await createFolder(parentPath, name.trim());
+        await refreshTree();
+      }
+    } catch (err) {
+      toast({ title: `Create ${type} failed`, description: String(err), variant: 'error' });
+    }
+  }, [inlineCreate]);
+
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
@@ -46,11 +84,20 @@ export function VaultTree() {
         </span>
         <div className="flex items-center gap-0.5">
           <ToolbarButton icon={<CalendarDays size={14} />} title={t('dailyNote.tooltip')} onClick={handleCreateDailyNote} />
-          <ToolbarButton icon={<Plus size={14} />} title={t('sidebar.newNote')} onClick={() => handleCreateNote('')} />
-          <ToolbarButton icon={<FolderPlus size={14} />} title={t('sidebar.newFolder')} onClick={() => handleCreateFolder('')} />
+          <ToolbarButton icon={<Plus size={14} />} title={t('sidebar.newNote')} onClick={handleNewNote} />
+          <ToolbarButton icon={<FolderPlus size={14} />} title={t('sidebar.newFolder')} onClick={handleNewFolder} />
           <ToolbarButton icon={<RefreshCw size={14} />} title={t('sidebar.refresh')} onClick={handleRefresh} />
         </div>
       </div>
+
+      {/* 内联创建输入框 */}
+      {inlineCreate && (
+        <InlineCreateInput
+          type={inlineCreate.type}
+          onSubmit={handleInlineSubmit}
+          onCancel={() => setInlineCreate(null)}
+        />
+      )}
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
@@ -80,6 +127,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.name);
   const [dragOver, setDragOver] = useState(false);
+  const [inlineCreate, setInlineCreate] = useState<'note' | 'folder' | null>(null);
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
   const isActive = !node.is_dir && node.path === activeTabPath;
 
@@ -173,7 +221,8 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
     const confirmMsg = node.is_dir
       ? `Delete folder "${node.name}" and all its contents?`
       : `Delete "${node.name}"?`;
-    if (!window.confirm(confirmMsg)) return;
+    const confirmed = await confirm(confirmMsg, { title: 'OxideNote', kind: 'warning' });
+    if (!confirmed) return;
     try {
       await deleteEntry(node.path);
       // Close tab if it was open
@@ -233,7 +282,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
               />
             ) : (
               <span className="truncate text-[13px]">
-                {node.is_dir ? node.name : node.name.replace(/\.md$/, '')}
+                {node.name}
               </span>
             )}
           </div>
@@ -241,6 +290,31 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
           {/* Children */}
           {node.is_dir && expanded && node.children && (
             <div>
+              {/* 文件夹内的内联创建输入框 */}
+              {inlineCreate && (
+                <InlineCreateInput
+                  type={inlineCreate}
+                  onSubmit={async (name) => {
+                    setInlineCreate(null);
+                    if (!name.trim()) return;
+                    try {
+                      if (inlineCreate === 'note') {
+                        const path = await createNote(node.path, name.trim());
+                        await refreshTree();
+                        const title = name.trim().replace(/\.md$/, '');
+                        useNoteStore.getState().openNote(path, title);
+                      } else {
+                        await createFolder(node.path, name.trim());
+                        await refreshTree();
+                      }
+                    } catch (err) {
+                      toast({ title: `Create failed`, description: String(err), variant: 'error' });
+                    }
+                  }}
+                  onCancel={() => setInlineCreate(null)}
+                  depth={depth + 1}
+                />
+              )}
               {node.children.map((child) => (
                 <TreeItem key={child.path} node={child} depth={depth + 1} />
               ))}
@@ -252,11 +326,17 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
       <ContextMenuContent>
         {node.is_dir && (
           <>
-            <ContextMenuItem onClick={() => handleCreateNote(node.path)}>
+            <ContextMenuItem onClick={() => {
+              setExpanded(true);
+              setInlineCreate('note');
+            }}>
               <Plus size={14} className="mr-2" />
               {t('sidebar.newNote')}
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => handleCreateFolder(node.path)}>
+            <ContextMenuItem onClick={() => {
+              setExpanded(true);
+              setInlineCreate('folder');
+            }}>
               <FolderPlus size={14} className="mr-2" />
               {t('sidebar.newFolder')}
             </ContextMenuItem>
@@ -313,6 +393,67 @@ function RenameInput({
   );
 }
 
+// ─── Inline Create Input ─────────────────────────────────────
+// 内联创建笔记/文件夹输入框，替代 Tauri 不支持的 window.prompt()
+
+function InlineCreateInput({
+  type,
+  onSubmit,
+  onCancel,
+  depth = 0,
+}: {
+  type: 'note' | 'folder';
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+  depth?: number;
+}) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState('');
+
+  useEffect(() => {
+    // 延迟 focus 确保 DOM 更新完成
+    requestAnimationFrame(() => ref.current?.focus());
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    onSubmit(value);
+  }, [value, onSubmit]);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    },
+    [handleSubmit, onCancel]
+  );
+
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-0.5"
+      style={{ paddingLeft: `${depth * 16 + 8}px` }}
+    >
+      <span className="shrink-0 text-muted-foreground">
+        {type === 'folder' ? <Folder size={14} /> : <File size={14} />}
+      </span>
+      <input
+        ref={ref}
+        className="flex-1 min-w-0 bg-background text-foreground text-[13px] px-1 py-0.5 rounded border border-theme-accent outline-none"
+        value={value}
+        placeholder={type === 'note' ? t('sidebar.newNote') : t('sidebar.newFolder')}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleSubmit}
+        onKeyDown={handleKeyDown}
+      />
+    </div>
+  );
+}
+
 // ─── Toolbar Button ──────────────────────────────────────────
 
 function ToolbarButton({
@@ -349,29 +490,8 @@ async function refreshTree() {
   }
 }
 
-async function handleCreateNote(parentPath: string) {
-  const name = prompt('Note name:');
-  if (!name) return;
-  try {
-    const path = await createNote(parentPath, name);
-    await refreshTree();
-    const title = name.replace(/\.md$/, '');
-    useNoteStore.getState().openNote(path, title);
-  } catch (err) {
-    toast({ title: 'Create note failed', description: String(err), variant: 'error' });
-  }
-}
-
-async function handleCreateFolder(parentPath: string) {
-  const name = prompt('Folder name:');
-  if (!name) return;
-  try {
-    await createFolder(parentPath, name);
-    await refreshTree();
-  } catch (err) {
-    toast({ title: 'Create folder failed', description: String(err), variant: 'error' });
-  }
-}
+// handleCreateNote / handleCreateFolder 已移入 VaultTree 组件内部，
+// 使用内联输入替代 window.prompt()（Tauri WebView 不支持 prompt）
 
 async function handleRefresh() {
   await refreshTree();

@@ -31,6 +31,7 @@ import { X } from 'lucide-react';
 export function GraphView() {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphInstance>(null);
   const setGraphViewOpen = useUIStore((s) => s.setGraphViewOpen);
 
@@ -107,10 +108,14 @@ export function GraphView() {
 
     graphRef.current = graph;
 
+    // 力导向参数优化：增强节点间斥力，减少重叠
+    graph.d3Force('charge')?.strength(-300);
+    graph.d3Force('link')?.distance(80);
+
     // 居中适配
     setTimeout(() => {
       graph.zoomToFit(400, 60);
-    }, 500);
+    }, 600);
 
     // 响应窗口尺寸变化
     const handleResize = () => {
@@ -128,6 +133,17 @@ export function GraphView() {
   }, [graphData, setGraphViewOpen]);
 
   // ── 键盘事件：Esc 关闭 ───────────────────────────────────
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setGraphViewOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [setGraphViewOpen]);
+
+  // 备用 React 键盘事件
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -139,14 +155,13 @@ export function GraphView() {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-background/95 flex flex-col"
+      className="fixed inset-0 z-50 bg-background flex flex-col"
       onKeyDown={handleKeyDown}
       tabIndex={-1}
-      // eslint-disable-next-line jsx-a11y/no-autofocus
-      autoFocus
+      ref={overlayRef}
     >
-      {/* ── 标题栏 ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-theme-border shrink-0">
+      {/* ── 标题栏（z-index 高于 canvas 防止被图谱遮挡） ───── */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-theme-border shrink-0 relative z-10">
         <span className="text-sm font-medium text-foreground">
           {t('graph.title')}
         </span>

@@ -23,6 +23,12 @@
   --color-theme-accent: var(--theme-accent);
   --color-theme-accent-hover: var(--theme-accent-hover);
 
+  /* Semantic aliases used by bg-surface / bg-background / text-foreground etc. */
+  --color-surface: var(--theme-bg-panel);
+  --color-background: var(--theme-bg);
+  --color-foreground: var(--theme-text);
+  --color-muted-foreground: var(--theme-text-muted);
+
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
 
@@ -39,6 +45,12 @@
   color-scheme: dark;
   --background: var(--color-oxide-bg);
   --foreground: var(--color-oxide-text);
+
+  /* CSS vars used by CodeMirror theme */
+  --bg-surface: var(--theme-bg-panel);
+  --bg-background: var(--theme-bg);
+  --text-foreground: var(--theme-text);
+  --text-muted-foreground: var(--theme-text-muted);
 
   /* Default Theme (Neutral) */
   --theme-bg: #09090b;
@@ -681,6 +693,36 @@ html {
   font-size: 0.85em;
   line-height: 1.6;
 }
+
+/* ── highlight.js 语法高亮配色 ─────────────────────────────── */
+/* 使用 CSS 变量适配主题，覆盖常用的 hljs token 类型 */
+.oxide-markdown-preview .hljs-keyword,
+.oxide-markdown-preview .hljs-selector-tag,
+.oxide-markdown-preview .hljs-built_in,
+.oxide-markdown-preview .hljs-type { color: #c678dd; }
+.oxide-markdown-preview .hljs-string,
+.oxide-markdown-preview .hljs-addition { color: #98c379; }
+.oxide-markdown-preview .hljs-number,
+.oxide-markdown-preview .hljs-literal { color: #d19a66; }
+.oxide-markdown-preview .hljs-comment,
+.oxide-markdown-preview .hljs-quote { color: #5c6370; font-style: italic; }
+.oxide-markdown-preview .hljs-title,
+.oxide-markdown-preview .hljs-title\.class_,
+.oxide-markdown-preview .hljs-title\.function_ { color: #61afef; }
+.oxide-markdown-preview .hljs-variable,
+.oxide-markdown-preview .hljs-template-variable { color: #e06c75; }
+.oxide-markdown-preview .hljs-attr,
+.oxide-markdown-preview .hljs-attribute { color: #d19a66; }
+.oxide-markdown-preview .hljs-meta { color: #56b6c2; }
+.oxide-markdown-preview .hljs-deletion { color: #e06c75; }
+.oxide-markdown-preview .hljs-symbol,
+.oxide-markdown-preview .hljs-bullet { color: #61afef; }
+.oxide-markdown-preview .hljs-regexp { color: #98c379; }
+.oxide-markdown-preview .hljs-params { color: #abb2bf; }
+.oxide-markdown-preview .hljs-tag { color: #e06c75; }
+.oxide-markdown-preview .hljs-name { color: #e06c75; }
+.oxide-markdown-preview .hljs-selector-class,
+.oxide-markdown-preview .hljs-selector-id { color: #61afef; }
 
 /* ── 引用块 ────────────────────────────────────────────────── */
 .oxide-markdown-preview blockquote {

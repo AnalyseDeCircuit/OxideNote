@@ -14,6 +14,7 @@
 
 import type { MutableRefObject } from 'react';
 import type { EditorView } from '@codemirror/view';
+import { useTranslation } from 'react-i18next';
 import {
   Bold,
   Italic,
@@ -40,6 +41,8 @@ interface EditorToolbarProps {
 }
 
 export function EditorToolbar({ viewRef }: EditorToolbarProps) {
+  const { t } = useTranslation();
+
   // ── 包裹选中文本的通用操作 ────────────────────────────────
   // 如果没有选中文本，插入占位符并选中它
   const wrapSelection = (prefix: string, suffix: string, placeholder: string) => {
@@ -74,6 +77,39 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     view.focus();
   };
 
+  // ── 标题层级切换 ──────────────────────────────────────────
+  // 如果行首已有标题前缀，先移除再替换（避免叠加）
+  const toggleHeading = (level: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    const { from } = view.state.selection.main;
+    const line = view.state.doc.lineAt(from);
+    const lineText = view.state.sliceDoc(line.from, line.to);
+    const headingMatch = lineText.match(/^(#{1,6})\s/);
+    const prefix = '#'.repeat(level) + ' ';
+
+    if (headingMatch) {
+      // 如果当前标题层级与目标相同 → 取消标题
+      // 否则替换为新层级
+      const existingPrefix = headingMatch[0];
+      if (headingMatch[1].length === level) {
+        view.dispatch({
+          changes: { from: line.from, to: line.from + existingPrefix.length, insert: '' },
+        });
+      } else {
+        view.dispatch({
+          changes: { from: line.from, to: line.from + existingPrefix.length, insert: prefix },
+        });
+      }
+    } else {
+      view.dispatch({
+        changes: { from: line.from, to: line.from, insert: prefix },
+      });
+    }
+    view.focus();
+  };
+
   // ── 插入独立文本块 ────────────────────────────────────────
   const insertBlock = (text: string) => {
     const view = viewRef.current;
@@ -91,38 +127,38 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     <div className="flex items-center gap-0.5 px-2 py-1 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Heading1 size={14} />} title="Heading 1" onClick={() => insertLinePrefix('# ')} />
-        <ToolbarBtn icon={<Heading2 size={14} />} title="Heading 2" onClick={() => insertLinePrefix('## ')} />
-        <ToolbarBtn icon={<Heading3 size={14} />} title="Heading 3" onClick={() => insertLinePrefix('### ')} />
+        <ToolbarBtn icon={<Heading1 size={14} />} title={t('toolbar.heading1')} onClick={() => toggleHeading(1)} />
+        <ToolbarBtn icon={<Heading2 size={14} />} title={t('toolbar.heading2')} onClick={() => toggleHeading(2)} />
+        <ToolbarBtn icon={<Heading3 size={14} />} title={t('toolbar.heading3')} onClick={() => toggleHeading(3)} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
       {/* ── 行内格式 ───────────────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Bold size={14} />} title="Bold (Ctrl+B)" onClick={() => wrapSelection('**', '**', 'bold')} />
-        <ToolbarBtn icon={<Italic size={14} />} title="Italic (Ctrl+I)" onClick={() => wrapSelection('*', '*', 'italic')} />
-        <ToolbarBtn icon={<Strikethrough size={14} />} title="Strikethrough" onClick={() => wrapSelection('~~', '~~', 'text')} />
-        <ToolbarBtn icon={<Code size={14} />} title="Code" onClick={() => wrapSelection('`', '`', 'code')} />
+        <ToolbarBtn icon={<Bold size={14} />} title={t('toolbar.bold')} onClick={() => wrapSelection('**', '**', 'bold')} />
+        <ToolbarBtn icon={<Italic size={14} />} title={t('toolbar.italic')} onClick={() => wrapSelection('*', '*', 'italic')} />
+        <ToolbarBtn icon={<Strikethrough size={14} />} title={t('toolbar.strikethrough')} onClick={() => wrapSelection('~~', '~~', 'text')} />
+        <ToolbarBtn icon={<Code size={14} />} title={t('toolbar.code')} onClick={() => wrapSelection('`', '`', 'code')} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
       {/* ── 块级元素 ───────────────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Quote size={14} />} title="Blockquote" onClick={() => insertLinePrefix('> ')} />
-        <ToolbarBtn icon={<List size={14} />} title="Unordered List" onClick={() => insertLinePrefix('- ')} />
-        <ToolbarBtn icon={<ListOrdered size={14} />} title="Ordered List" onClick={() => insertLinePrefix('1. ')} />
-        <ToolbarBtn icon={<Minus size={14} />} title="Horizontal Rule" onClick={() => insertBlock('\n---\n')} />
+        <ToolbarBtn icon={<Quote size={14} />} title={t('toolbar.quote')} onClick={() => insertLinePrefix('> ')} />
+        <ToolbarBtn icon={<List size={14} />} title={t('toolbar.unorderedList')} onClick={() => insertLinePrefix('- ')} />
+        <ToolbarBtn icon={<ListOrdered size={14} />} title={t('toolbar.orderedList')} onClick={() => insertLinePrefix('1. ')} />
+        <ToolbarBtn icon={<Minus size={14} />} title={t('toolbar.horizontalRule')} onClick={() => insertBlock('\n---\n')} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
       {/* ── 嵌入 ───────────────────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Link size={14} />} title="Link" onClick={() => wrapSelection('[', '](url)', 'link text')} />
-        <ToolbarBtn icon={<Image size={14} />} title="Image" onClick={() => insertBlock('![alt](image-url)')} />
-        <ToolbarBtn icon={<Sigma size={14} />} title="Math Block" onClick={() => insertBlock('\n$$\nE = mc^2\n$$\n')} />
+        <ToolbarBtn icon={<Link size={14} />} title={t('toolbar.link')} onClick={() => wrapSelection('[', '](url)', 'link text')} />
+        <ToolbarBtn icon={<Image size={14} />} title={t('toolbar.image')} onClick={() => insertBlock('![alt](image-url)')} />
+        <ToolbarBtn icon={<Sigma size={14} />} title={t('toolbar.math')} onClick={() => insertBlock('\n$$\nE = mc^2\n$$\n')} />
       </ToolbarGroup>
     </div>
   );

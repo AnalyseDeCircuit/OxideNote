@@ -39,9 +39,6 @@ export function BacklinksPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b border-theme-border">
-        {t('backlinks.title')}
-      </div>
       <div className="flex-1 overflow-y-auto p-2">
         {loading ? (
           <div className="p-2 text-sm text-muted-foreground">{t('backlinks.loading')}</div>

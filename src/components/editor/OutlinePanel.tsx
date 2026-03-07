@@ -14,6 +14,7 @@
 
 import { useMemo } from 'react';
 import { useNoteStore } from '@/store/noteStore';
+import { useUIStore } from '@/store/uiStore';
 import { useTranslation } from 'react-i18next';
 
 // ── 标题条目类型 ────────────────────────────────────────────
@@ -117,7 +118,7 @@ function OutlinePanelContent() {
             <button
               className="w-full text-left px-3 py-1 text-[13px] truncate hover:bg-theme-hover transition-colors text-foreground/80 hover:text-foreground"
               style={{ paddingLeft: `${(heading.level - minLevel) * 16 + 12}px` }}
-              onClick={() => scrollToLine(heading.line)}
+              onClick={() => scrollToLine(heading.line, heading.text)}
               title={heading.text}
             >
               <span className="text-theme-accent mr-1.5 text-xs font-mono opacity-50">
@@ -181,9 +182,28 @@ function useEditorHeadings(): HeadingItem[] {
   return headings;
 }
 
-// ── 滚动编辑器到指定行 ──────────────────────────────────────
+// ── 滚动编辑器/预览到指定行 ─────────────────────────────────
+// 编辑模式：滚动 CodeMirror 行
+// 预览模式：定位到预览面板中对应的标题元素
 
-function scrollToLine(line: number) {
+function scrollToLine(line: number, headingText: string) {
+  const editorMode = useUIStore.getState().editorMode;
+
+  // 预览模式下，在预览面板中查找匹配标题并滚动
+  if (editorMode === 'preview') {
+    const preview = document.querySelector('.oxide-markdown-preview');
+    if (!preview) return;
+    const headings = preview.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    for (const el of headings) {
+      if (el.textContent?.trim() === headingText) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+    return;
+  }
+
+  // 编辑/分屏模式：滚动 CodeMirror 行
   const cmEditor = document.querySelector('.cm-editor');
   if (!cmEditor) return;
 
