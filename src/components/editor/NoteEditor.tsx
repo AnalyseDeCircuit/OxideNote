@@ -109,19 +109,22 @@ export function NoteEditor() {
     };
   }, []);
 
-  if (!activeTabPath) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-        <div className="text-center">
-          <p className="text-lg mb-1">{t('editor.noSelection')}</p>
-          <p className="text-xs">{t('editor.noSelectionHint')}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div ref={containerRef} className="h-full w-full overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none" />
+    <div className="h-full w-full relative">
+      {/* Always render so CodeMirror initializes on mount */}
+      <div
+        ref={containerRef}
+        className={`h-full w-full overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none ${!activeTabPath ? 'hidden' : ''}`}
+      />
+      {!activeTabPath && (
+        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
+          <div className="text-center">
+            <p className="text-lg mb-1">{t('editor.noSelection')}</p>
+            <p className="text-xs">{t('editor.noSelectionHint')}</p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
