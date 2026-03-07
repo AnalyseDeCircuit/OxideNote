@@ -1,15 +1,19 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { useSettingsStore } from '@/store/settingsStore';
+import { useSettingsStore, initTabSync } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
-import { useNoteStore } from '@/store/noteStore';
+import { useNoteStore, flushAllPendingSaves, flushPendingSave } from '@/store/noteStore';
 import { AppShell } from '@/components/layout/AppShell';
 import { WelcomeScreen } from '@/components/layout/WelcomeScreen';
 import { QuickOpen } from '@/components/search/QuickOpen';
 import { GlobalSearch } from '@/components/search/GlobalSearch';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { Toaster } from '@/components/ui/toaster';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { openVault, listTree, createNote } from '@/lib/api';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { confirm } from '@tauri-apps/plugin-dialog';
+import i18n from '@/i18n';
 
 function App() {
   const vaultPath = useWorkspaceStore((s) => s.vaultPath);
@@ -17,19 +21,50 @@ function App() {
 
   // Restore last vault on startup
   useEffect(() => {
+    initTabSync();
     const lastVault = useSettingsStore.getState().lastVaultPath;
     if (lastVault && !vaultPath) {
       openVault(lastVault)
-        .then(() => listTree())
+        .then(() => listTree('', useSettingsStore.getState().sortMode))
         .then((tree) => {
           useWorkspaceStore.getState().setVaultPath(lastVault);
           useWorkspaceStore.getState().setTree(tree);
+          // Restore previously open tabs
+          const { lastOpenTabs, lastActiveTabPath } = useSettingsStore.getState();
+          if (lastOpenTabs.length > 0) {
+            for (const tab of lastOpenTabs) {
+              useNoteStore.getState().openNote(tab.path, tab.title);
+            }
+            if (lastActiveTabPath) {
+              useNoteStore.getState().setActiveTab(lastActiveTabPath);
+            }
+          }
         })
         .catch(() => {
           // Vault doesn't exist anymore, clear it
           useSettingsStore.getState().setLastVaultPath(null);
         });
     }
+  }, []);
+
+  // ── Exit confirmation: flush saves before closing ─────────
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onCloseRequested(async (event) => {
+      const hasDirty = useNoteStore.getState().openTabs.some((t) => t.isDirty);
+      if (hasDirty) {
+        const ok = await confirm(i18n.t('actions.unsavedExit'), {
+          title: 'OxideNote',
+          kind: 'warning',
+        });
+        if (!ok) {
+          event.preventDefault();
+          return;
+        }
+      }
+      await flushAllPendingSaves();
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   // Global keyboard shortcuts
@@ -67,11 +102,37 @@ function App() {
         useUIStore.getState().toggleSidePanel();
       }
 
-      // Cmd+W → Close Current Tab
+      // Cmd+W → Close Current Tab (flush first)
       if (mod && e.key === 'w' && !e.shiftKey) {
         e.preventDefault();
         const active = useNoteStore.getState().activeTabPath;
-        if (active) useNoteStore.getState().closeTab(active);
+        if (active) {
+          flushPendingSave(active).then(() => {
+            useNoteStore.getState().closeTab(active);
+          });
+        }
+      }
+
+      // Cmd+Option+Left → Previous Tab
+      if (mod && e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const { openTabs, activeTabPath } = useNoteStore.getState();
+        if (openTabs.length > 1 && activeTabPath) {
+          const idx = openTabs.findIndex((t) => t.path === activeTabPath);
+          const prev = idx > 0 ? idx - 1 : openTabs.length - 1;
+          useNoteStore.getState().setActiveTab(openTabs[prev].path);
+        }
+      }
+
+      // Cmd+Option+Right → Next Tab
+      if (mod && e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        const { openTabs, activeTabPath } = useNoteStore.getState();
+        if (openTabs.length > 1 && activeTabPath) {
+          const idx = openTabs.findIndex((t) => t.path === activeTabPath);
+          const next = idx < openTabs.length - 1 ? idx + 1 : 0;
+          useNoteStore.getState().setActiveTab(openTabs[next].path);
+        }
       }
 
       // Cmd+N → New Note in vault root
@@ -81,7 +142,7 @@ function App() {
           const name = `Untitled ${Date.now()}`;
           createNote('', name)
             .then(async (path) => {
-              const tree = await listTree();
+              const tree = await listTree('', useSettingsStore.getState().sortMode);
               useWorkspaceStore.getState().setTree(tree);
               useNoteStore.getState().openNote(path, name);
             })
@@ -96,7 +157,13 @@ function App() {
 
   return (
     <>
-      {vaultPath ? <AppShell /> : <WelcomeScreen />}
+      {vaultPath ? (
+        <ErrorBoundary>
+          <AppShell />
+        </ErrorBoundary>
+      ) : (
+        <WelcomeScreen />
+      )}
       <QuickOpen />
       <GlobalSearch open={globalSearchOpen} onClose={() => useUIStore.getState().setGlobalSearchOpen(false)} />
       <SettingsDialog />

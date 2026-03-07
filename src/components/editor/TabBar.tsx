@@ -6,9 +6,9 @@
 //   • Dirty indicator (accent dot) for unsaved changes
 // ────────────────────────────────────────────────────────────────────────────
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { X } from 'lucide-react';
-import { useNoteStore, type Tab } from '@/store/noteStore';
+import { useNoteStore, flushPendingSave, type Tab } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
 
 export function TabBar() {
@@ -18,7 +18,11 @@ export function TabBar() {
   if (openTabs.length === 0) return null;
 
   return (
-    <div className="flex items-center border-b border-theme-border bg-surface overflow-x-auto shrink-0">
+    <div
+      role="tablist"
+      aria-label="Open tabs"
+      className="flex items-center border-b border-theme-border bg-surface overflow-x-auto shrink-0"
+    >
       {openTabs.map((tab) => (
         <TabItem
           key={tab.path}
@@ -37,11 +41,12 @@ interface CtxMenu {
   path: string;
 }
 
-function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
+const TabItem = memo(function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
   const setActiveTab = useNoteStore((s) => s.setActiveTab);
   const closeTab = useNoteStore((s) => s.closeTab);
   const closeAllTabs = useNoteStore((s) => s.closeAllTabs);
   const closeOtherTabs = useNoteStore((s) => s.closeOtherTabs);
+  const closeTabsToRight = useNoteStore((s) => s.closeTabsToRight);
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
@@ -61,6 +66,8 @@ function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
   return (
     <>
       <div
+        role="tab"
+        aria-selected={isActive}
         className={`group flex items-center gap-1.5 px-3 py-1.5 text-[13px] cursor-pointer select-none border-r border-theme-border transition-colors ${
           isActive
             ? 'bg-background text-foreground'
@@ -71,7 +78,7 @@ function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
         onMouseDown={(e) => {
           if (e.button === 1) {
             e.preventDefault();
-            closeTab(tab.path);
+            flushPendingSave(tab.path).then(() => closeTab(tab.path));
           }
         }}
         onContextMenu={(e) => {
@@ -86,9 +93,10 @@ function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
         <span className="truncate max-w-[150px]">{tab.title}</span>
         <button
           className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-theme-hover transition-opacity"
+          aria-label={t('actions.closeTab', 'Close tab')}
           onClick={(e) => {
             e.stopPropagation();
-            closeTab(tab.path);
+            flushPendingSave(tab.path).then(() => closeTab(tab.path));
           }}
         >
           <X size={12} />
@@ -105,11 +113,15 @@ function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
         >
           <CtxMenuItem
             label={t('tabs.close', '关闭')}
-            onClick={() => { closeTab(ctx.path); setCtx(null); }}
+            onClick={() => { flushPendingSave(ctx.path).then(() => closeTab(ctx.path)); setCtx(null); }}
           />
           <CtxMenuItem
             label={t('tabs.closeOthers', '关闭其他')}
             onClick={() => { closeOtherTabs(ctx.path); setCtx(null); }}
+          />
+          <CtxMenuItem
+            label={t('tabs.closeRight', '关闭右侧')}
+            onClick={() => { closeTabsToRight(ctx.path); setCtx(null); }}
           />
           <CtxMenuItem
             label={t('tabs.closeAll', '关闭所有')}
@@ -119,7 +131,7 @@ function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
       )}
     </>
   );
-}
+});
 
 /** A single row in the tab context menu */
 function CtxMenuItem({ label, onClick }: { label: string; onClick: () => void }) {

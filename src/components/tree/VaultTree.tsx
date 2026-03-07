@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from 'react';
+import { useState, useCallback, useRef, useEffect, memo, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import {
@@ -11,9 +11,12 @@ import {
   FolderPlus,
   RefreshCw,
   CalendarDays,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useNoteStore } from '@/store/noteStore';
+import { validateFilename } from '@/lib/validateFilename';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import {
   listTree,
@@ -38,6 +41,13 @@ export function VaultTree() {
   const { t } = useTranslation();
   const tree = useWorkspaceStore((s) => s.tree);
   const treeLoading = useWorkspaceStore((s) => s.treeLoading);
+  const sortMode = useSettingsStore((s) => s.sortMode);
+
+  const handleToggleSort = useCallback(() => {
+    const next = sortMode === 'name' ? 'modified' : 'name';
+    useSettingsStore.getState().setSortMode(next);
+    refreshTree();
+  }, [sortMode]);
 
   // ── 内联创建状态 ──────────────────────────────────────────
   // Tauri WebView 不支持 window.prompt()，使用内联输入替代
@@ -56,6 +66,13 @@ export function VaultTree() {
 
   const handleInlineSubmit = useCallback(async (name: string) => {
     if (!inlineCreate || !name.trim()) {
+      setInlineCreate(null);
+      return;
+    }
+    const err = validateFilename(name.trim());
+    if (err) {
+      const msg = err === 'empty' ? t('sidebar.emptyFilename') : err === 'reserved' ? t('sidebar.reservedFilename') : t('sidebar.invalidFilename');
+      toast({ title: msg, variant: 'error' });
       setInlineCreate(null);
       return;
     }
@@ -88,6 +105,11 @@ export function VaultTree() {
           <ToolbarButton icon={<Plus size={14} />} title={t('sidebar.newNote')} onClick={handleNewNote} />
           <ToolbarButton icon={<FolderPlus size={14} />} title={t('sidebar.newFolder')} onClick={handleNewFolder} />
           <ToolbarButton icon={<RefreshCw size={14} />} title={t('sidebar.refresh')} onClick={handleRefresh} />
+          <ToolbarButton
+            icon={<ArrowUpDown size={14} />}
+            title={sortMode === 'name' ? t('sidebar.sortByModified') : t('sidebar.sortByName')}
+            onClick={handleToggleSort}
+          />
         </div>
       </div>
 
@@ -101,7 +123,7 @@ export function VaultTree() {
       )}
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto py-1" role="tree" aria-label={t('sidebar.files')}>
         {treeLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
             {t('sidebar.loading')}
@@ -122,7 +144,7 @@ export function VaultTree() {
 
 // ─── Tree Item ───────────────────────────────────────────────
 
-function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
+const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -193,6 +215,14 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
 
   const handleRenameSubmit = useCallback(async () => {
     if (renameValue && renameValue !== node.name) {
+      const err = validateFilename(renameValue.trim());
+      if (err) {
+        const msg = err === 'empty' ? t('sidebar.emptyFilename') : err === 'reserved' ? t('sidebar.reservedFilename') : t('sidebar.invalidFilename');
+        toast({ title: msg, variant: 'error' });
+        setRenaming(false);
+        setRenameValue(node.name);
+        return;
+      }
       try {
         const newPath = await renameEntry(node.path, renameValue);
         // If it was an open tab, update its path
@@ -254,6 +284,9 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            role="treeitem"
+            aria-selected={isActive}
+            aria-expanded={node.is_dir ? expanded : undefined}
           >
             {/* Chevron or spacer */}
             {node.is_dir ? (
@@ -298,6 +331,12 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
                   onSubmit={async (name) => {
                     setInlineCreate(null);
                     if (!name.trim()) return;
+                    const err = validateFilename(name.trim());
+                    if (err) {
+                      const msg = err === 'empty' ? t('sidebar.emptyFilename') : err === 'reserved' ? t('sidebar.reservedFilename') : t('sidebar.invalidFilename');
+                      toast({ title: msg, variant: 'error' });
+                      return;
+                    }
                     try {
                       if (inlineCreate === 'note') {
                         const path = await createNote(node.path, name.trim());
@@ -358,7 +397,7 @@ function TreeItem({ node, depth }: { node: TreeNode; depth: number }) {
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});
 
 // ─── Rename Input ────────────────────────────────────────────
 
@@ -470,6 +509,7 @@ function ToolbarButton({
     <button
       className="p-1 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
       title={title}
+      aria-label={title}
       onClick={onClick}
     >
       {icon}
@@ -479,16 +519,27 @@ function ToolbarButton({
 
 // ─── Helpers ─────────────────────────────────────────────────
 
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function refreshTree() {
-  useWorkspaceStore.getState().setTreeLoading(true);
-  try {
-    const tree = await listTree();
-    useWorkspaceStore.getState().setTree(tree);
-  } catch (err) {
-    console.error('Failed to refresh tree:', err);
-  } finally {
-    useWorkspaceStore.getState().setTreeLoading(false);
-  }
+  // Debounce rapid successive calls (e.g. create → rename → delete)
+  if (refreshTimer) clearTimeout(refreshTimer);
+  return new Promise<void>((resolve) => {
+    refreshTimer = setTimeout(async () => {
+      refreshTimer = null;
+      useWorkspaceStore.getState().setTreeLoading(true);
+      try {
+        const sortMode = useSettingsStore.getState().sortMode;
+        const tree = await listTree('', sortMode);
+        useWorkspaceStore.getState().setTree(tree);
+      } catch (err) {
+        console.error('Failed to refresh tree:', err);
+      } finally {
+        useWorkspaceStore.getState().setTreeLoading(false);
+      }
+      resolve();
+    }, 150);
+  });
 }
 
 // handleCreateNote / handleCreateFolder 已移入 VaultTree 组件内部，

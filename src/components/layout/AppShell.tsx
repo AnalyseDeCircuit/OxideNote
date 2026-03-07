@@ -3,6 +3,7 @@ import { Panel, Group, Separator } from 'react-resizable-panels';
 import { listen } from '@tauri-apps/api/event';
 import { useUIStore, type EditorMode, type SidePanelTab } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { VaultTree } from '@/components/tree/VaultTree';
 import { TabBar } from '@/components/editor/TabBar';
 import { NoteEditor } from '@/components/editor/NoteEditor';
@@ -23,7 +24,7 @@ export function AppShell() {
   useEffect(() => {
     const unlisten = listen('vault:file-changed', async () => {
       try {
-        const tree = await listTree();
+        const tree = await listTree('', useSettingsStore.getState().sortMode);
         useWorkspaceStore.getState().setTree(tree);
       } catch {
         // Vault may have been removed
@@ -147,6 +148,7 @@ function Titlebar() {
         onClick={toggleSidebar}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
         title={t('actions.toggleSidebar')}
+        aria-label={t('actions.toggleSidebar')}
       >
         <SidebarIcon />
       </button>
@@ -164,6 +166,7 @@ function Titlebar() {
         onClick={() => setGraphViewOpen(true)}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
         title={t('actions.knowledgeGraph')}
+        aria-label={t('actions.knowledgeGraph')}
       >
         <GraphIcon />
       </button>
@@ -172,6 +175,7 @@ function Titlebar() {
         onClick={toggleSidePanel}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
         title={t('actions.toggleSidePanel')}
+        aria-label={t('actions.toggleSidePanel')}
       >
         <BacklinksIcon />
       </button>
@@ -179,6 +183,7 @@ function Titlebar() {
         onClick={() => setSettingsOpen(true)}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
         title={t('actions.settings')}
+        aria-label={t('actions.settings')}
       >
         <SettingsIcon />
       </button>
@@ -208,6 +213,8 @@ function EditorModeSwitch({ mode, onChange }: { mode: EditorMode; onChange: (m: 
               : 'text-muted-foreground hover:text-foreground hover:bg-theme-hover'
           }`}
           onClick={() => onChange(key)}
+          aria-label={label}
+          aria-pressed={mode === key}
         >
           {label}
         </button>

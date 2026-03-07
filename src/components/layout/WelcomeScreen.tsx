@@ -68,7 +68,7 @@ async function handleOpenVault() {
 async function handleSelectVault(path: string) {
   try {
     await openVault(path);
-    const tree = await listTree();
+    const tree = await listTree('', useSettingsStore.getState().sortMode);
     useWorkspaceStore.getState().setVaultPath(path);
     useWorkspaceStore.getState().setTree(tree);
     useSettingsStore.getState().setLastVaultPath(path);

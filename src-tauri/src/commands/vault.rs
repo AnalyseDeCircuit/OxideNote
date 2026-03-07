@@ -81,11 +81,14 @@ pub struct TreeNode {
 
 /// List the vault directory tree. Returns top-level entries.
 /// Directories get their immediate children populated (one level of lookahead).
+/// `sort_by` can be "name" (default) or "modified" (by modification time, newest first).
 #[tauri::command]
 pub async fn list_tree(
     path: String,
+    sort_by: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<TreeNode>, VaultError> {
+    let sort_mode = sort_by.unwrap_or_default();
     let vault_path = state.vault_path.read();
     let base = vault_path
         .as_ref()
@@ -110,21 +113,16 @@ pub async fn list_tree(
         return Err(VaultError::NotFound(path));
     }
 
-    let mut entries = list_dir_entries(&target, base)?;
-    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
+    let entries = list_dir_entries(&target, base, &sort_mode)?;
 
     Ok(entries)
 }
 
-fn list_dir_entries(dir: &Path, base: &Path) -> Result<Vec<TreeNode>, VaultError> {
+fn list_dir_entries(dir: &Path, base: &Path, sort_mode: &str) -> Result<Vec<TreeNode>, VaultError> {
     let read_dir = std::fs::read_dir(dir)
         .map_err(|_| VaultError::NotReadable(dir.display().to_string()))?;
 
-    let mut nodes = Vec::new();
+    let mut items: Vec<(TreeNode, std::time::SystemTime)> = Vec::new();
 
     for entry in read_dir.flatten() {
         let file_name = entry.file_name().to_string_lossy().to_string();
@@ -150,6 +148,10 @@ fn list_dir_entries(dir: &Path, base: &Path) -> Result<Vec<TreeNode>, VaultError
             continue;
         }
 
+        let mtime = entry.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
+
         let rel_path = entry
             .path()
             .strip_prefix(base)
@@ -159,28 +161,34 @@ fn list_dir_entries(dir: &Path, base: &Path) -> Result<Vec<TreeNode>, VaultError
 
         let children = if is_dir {
             // One level lookahead for directories
-            match list_dir_entries(&entry.path(), base) {
-                Ok(mut c) => {
-                    c.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-                        (true, false) => std::cmp::Ordering::Less,
-                        (false, true) => std::cmp::Ordering::Greater,
-                        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                    });
-                    Some(c)
-                }
+            match list_dir_entries(&entry.path(), base, sort_mode) {
+                Ok(c) => Some(c),
                 Err(_) => Some(vec![]),
             }
         } else {
             None
         };
 
-        nodes.push(TreeNode {
+        items.push((TreeNode {
             name: file_name,
             path: rel_path,
             is_dir,
             children,
-        });
+        }, mtime));
     }
 
-    Ok(nodes)
+    // Sort: folders first, then by sort mode
+    items.sort_by(|(a, a_time), (b, b_time)| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => {
+            if sort_mode == "modified" {
+                b_time.cmp(a_time) // newest first
+            } else {
+                a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            }
+        }
+    });
+
+    Ok(items.into_iter().map(|(node, _)| node).collect())
 }

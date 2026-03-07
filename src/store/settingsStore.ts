@@ -44,6 +44,9 @@ export type ThemeId =
 
 export type Density = 'compact' | 'comfortable' | 'spacious';
 export type Language = 'zh-CN' | 'en';
+export type SortMode = 'name' | 'modified';
+
+interface TabSnapshot { path: string; title: string; }
 
 interface SettingsState {
   // Appearance
@@ -60,6 +63,11 @@ interface SettingsState {
   // Vault
   lastVaultPath: string | null;
   recentVaults: string[];
+  // Session restore
+  lastOpenTabs: TabSnapshot[];
+  lastActiveTabPath: string | null;
+  // Sidebar
+  sortMode: SortMode;
 
   // Actions
   setTheme: (theme: ThemeId) => void;
@@ -73,6 +81,7 @@ interface SettingsState {
   setAutoSaveDelay: (ms: number) => void;
   setLastVaultPath: (path: string | null) => void;
   addRecentVault: (path: string) => void;
+  setSortMode: (mode: SortMode) => void;
 }
 
 const STORAGE_KEY = 'oxidenote-settings';
@@ -100,6 +109,9 @@ function persistSettings(state: SettingsState) {
     autoSaveDelay: state.autoSaveDelay,
     lastVaultPath: state.lastVaultPath,
     recentVaults: state.recentVaults,
+    lastOpenTabs: state.lastOpenTabs,
+    lastActiveTabPath: state.lastActiveTabPath,
+    sortMode: state.sortMode,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -119,8 +131,12 @@ export const useSettingsStore = create<SettingsState>()(
   autoSaveDelay: persisted.autoSaveDelay ?? 1500,
   lastVaultPath: persisted.lastVaultPath ?? null,
   recentVaults: persisted.recentVaults ?? [],
+  lastOpenTabs: (persisted as any).lastOpenTabs ?? [],
+  lastActiveTabPath: (persisted as any).lastActiveTabPath ?? null,
+  sortMode: ((persisted as any).sortMode as SortMode) ?? 'name',
 
   setTheme: (theme) => set({ theme }),
+  setSortMode: (mode) => set({ sortMode: mode }),
   setDensity: (density) => set({ density }),
   setLanguage: (lang) => set({ language: lang }),
   setEditorFontSize: (size) => set({ editorFontSize: size }),
@@ -170,3 +186,25 @@ useSettingsStore.subscribe(
 useSettingsStore.subscribe(() => {
   persistSettings(useSettingsStore.getState());
 });
+
+// ─── Sync tab state from noteStore → settingsStore for persistence ──
+// Import lazily to avoid circular dependency
+let _noteStoreSubscribed = false;
+export function initTabSync() {
+  if (_noteStoreSubscribed) return;
+  _noteStoreSubscribed = true;
+  import('./noteStore').then(({ useNoteStore }) => {
+    let prevTabs = useNoteStore.getState().openTabs;
+    let prevActive = useNoteStore.getState().activeTabPath;
+    useNoteStore.subscribe((state) => {
+      if (state.openTabs !== prevTabs || state.activeTabPath !== prevActive) {
+        prevTabs = state.openTabs;
+        prevActive = state.activeTabPath;
+        useSettingsStore.setState({
+          lastOpenTabs: state.openTabs.map((t) => ({ path: t.path, title: t.title })),
+          lastActiveTabPath: state.activeTabPath,
+        });
+      }
+    });
+  });
+}

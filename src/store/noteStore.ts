@@ -6,6 +6,30 @@ export interface Tab {
   isDirty: boolean;
 }
 
+// ── Pending save callbacks ──────────────────────────────────
+// NoteEditor registers a flush callback for the active note.
+// When a tab is closed or app is exiting, we invoke the callback
+// to ensure unsaved content is written to disk immediately.
+const pendingSaveCallbacks = new Map<string, () => Promise<void>>();
+
+export function registerPendingSave(path: string, flush: () => Promise<void>) {
+  pendingSaveCallbacks.set(path, flush);
+}
+
+export function unregisterPendingSave(path: string) {
+  pendingSaveCallbacks.delete(path);
+}
+
+export async function flushPendingSave(path: string) {
+  const flush = pendingSaveCallbacks.get(path);
+  if (flush) await flush();
+}
+
+export async function flushAllPendingSaves() {
+  const promises = Array.from(pendingSaveCallbacks.values()).map((fn) => fn());
+  await Promise.all(promises);
+}
+
 interface NoteState {
   openTabs: Tab[];
   activeTabPath: string | null;
@@ -23,6 +47,7 @@ interface NoteState {
   updateTabPath: (oldPath: string, newPath: string, newTitle: string) => void;
   closeAllTabs: () => void;
   closeOtherTabs: (path: string) => void;
+  closeTabsToRight: (path: string) => void;
   setActiveContent: (content: string) => void;
   setCursorPosition: (line: number, col: number) => void;
 }
@@ -98,6 +123,18 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     const { openTabs } = get();
     const kept = openTabs.filter((t) => t.path === path);
     set({ openTabs: kept, activeTabPath: kept.length > 0 ? path : null });
+  },
+
+  // Close every tab to the right of the specified one.
+  closeTabsToRight: (path) => {
+    const { openTabs, activeTabPath } = get();
+    const idx = openTabs.findIndex((t) => t.path === path);
+    if (idx < 0) return;
+    const kept = openTabs.slice(0, idx + 1);
+    const newActive = kept.find((t) => t.path === activeTabPath)
+      ? activeTabPath
+      : path;
+    set({ openTabs: kept, activeTabPath: newActive });
   },
 
   setActiveContent: (content) => set({ activeContent: content }),

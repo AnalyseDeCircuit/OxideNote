@@ -25,7 +25,12 @@
     "renameFailed": "重命名失败",
     "deleteFailed": "删除失败",
     "deleteConfirmFile": "确定要删除 \"{{name}}\" 吗？",
-    "deleteConfirmFolder": "确定要删除文件夹 \"{{name}}\" 及其所有内容吗？"
+    "deleteConfirmFolder": "确定要删除文件夹 \"{{name}}\" 及其所有内容吗？",
+    "invalidFilename": "文件名包含非法字符",
+    "emptyFilename": "文件名不能为空",
+    "reservedFilename": "该文件名是系统保留名",
+    "sortByName": "按名称排序",
+    "sortByModified": "按修改时间排序"
   },
   "editor": {
     "untitled": "无标题",
@@ -43,7 +48,9 @@
   "tabs": {
     "close": "关闭",
     "closeOthers": "关闭其他",
-    "closeAll": "关闭所有"
+    "closeAll": "关闭所有",
+    "closeRight": "关闭右侧",
+    "closeTabConfirm": "\"{{name}}\" 有未保存的更改，确定要关闭吗？"
   },
   "backlinks": {
     "title": "反向链接",
@@ -153,7 +160,9 @@
     "knowledgeGraph": "知识图谱",
     "settings": "设置",
     "openVaultFailed": "打开仓库失败",
-    "switchVaultFailed": "切换仓库失败"
+    "switchVaultFailed": "切换仓库失败",
+    "unsavedExit": "有未保存的更改，确定要退出吗？",
+    "closeTab": "关闭标签"
   },
   "statusBar": {
     "words": "字",

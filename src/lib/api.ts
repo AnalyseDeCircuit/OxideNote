@@ -20,8 +20,8 @@ export async function openVault(path: string): Promise<string> {
   return invoke<string>('open_vault', { path });
 }
 
-export async function listTree(path: string = ''): Promise<TreeNode[]> {
-  return invoke<TreeNode[]>('list_tree', { path });
+export async function listTree(path: string = '', sortBy?: string): Promise<TreeNode[]> {
+  return invoke<TreeNode[]>('list_tree', { path, sortBy });
 }
 
 // ─── Note commands ───────────────────────────────────────────

@@ -25,7 +25,12 @@
     "renameFailed": "Rename failed",
     "deleteFailed": "Delete failed",
     "deleteConfirmFile": "Delete \"{{name}}\"?",
-    "deleteConfirmFolder": "Delete folder \"{{name}}\" and all its contents?"
+    "deleteConfirmFolder": "Delete folder \"{{name}}\" and all its contents?",
+    "invalidFilename": "Filename contains invalid characters",
+    "emptyFilename": "Filename cannot be empty",
+    "reservedFilename": "This filename is reserved by the system",
+    "sortByName": "Sort by Name",
+    "sortByModified": "Sort by Modified"
   },
   "editor": {
     "untitled": "Untitled",
@@ -43,7 +48,9 @@
   "tabs": {
     "close": "Close",
     "closeOthers": "Close Others",
-    "closeAll": "Close All"
+    "closeAll": "Close All",
+    "closeRight": "Close to the Right",
+    "closeTabConfirm": "\"{{name}}\" has unsaved changes. Close anyway?"
   },
   "backlinks": {
     "title": "Backlinks",
@@ -153,7 +160,9 @@
     "knowledgeGraph": "Knowledge Graph",
     "settings": "Settings",
     "openVaultFailed": "Failed to open vault",
-    "switchVaultFailed": "Failed to switch vault"
+    "switchVaultFailed": "Failed to switch vault",
+    "unsavedExit": "You have unsaved changes. Exit anyway?",
+    "closeTab": "Close tab"
   },
   "statusBar": {
     "words": "words",

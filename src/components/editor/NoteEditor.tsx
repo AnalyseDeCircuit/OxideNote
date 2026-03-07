@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useNoteStore } from '@/store/noteStore';
+import { registerPendingSave, unregisterPendingSave } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment } from '@/lib/api';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -128,6 +129,17 @@ export function NoteEditor() {
       return;
     }
 
+    // Register a flush callback so external callers (e.g. close-tab, app exit)
+    // can force an immediate save of any pending changes.
+    registerPendingSave(activeTabPath, async () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const path = activePathRef.current;
+      if (path) await saveNote(path, contentRef.current);
+    });
+
     let cancelled = false;
 
     readNote(activeTabPath)
@@ -151,14 +163,18 @@ export function NoteEditor() {
 
     return () => {
       cancelled = true;
+      unregisterPendingSave(activeTabPath);
     };
   }, [activeTabPath, setContent]);
 
-  // ── 组件卸载时清理定时器 ──────────────────────────────────
+  // ── 组件卸载时立即保存未写入的内容 ────────────────────────
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        const path = activePathRef.current;
+        if (path) saveNote(path, contentRef.current);
       }
     };
   }, []);

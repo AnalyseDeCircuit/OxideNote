@@ -176,7 +176,7 @@ function GeneralTab() {
     if (selected) {
       try {
         await openVault(selected);
-        const tree = await listTree();
+        const tree = await listTree('', useSettingsStore.getState().sortMode);
         useWorkspaceStore.getState().setVaultPath(selected);
         useWorkspaceStore.getState().setTree(tree);
         useSettingsStore.getState().setLastVaultPath(selected);
@@ -191,7 +191,7 @@ function GeneralTab() {
   const handleSelectRecentVault = async (path: string) => {
     try {
       await openVault(path);
-      const tree = await listTree();
+      const tree = await listTree('', useSettingsStore.getState().sortMode);
       useWorkspaceStore.getState().setVaultPath(path);
       useWorkspaceStore.getState().setTree(tree);
       useSettingsStore.getState().setLastVaultPath(path);
