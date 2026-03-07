@@ -27,14 +27,7 @@
   },
   "plugins": {
     "fs": {
-      "scope": {
-        "allow": ["**"],
-        "requireLiteralLeadingDot": true
-      }
-    },
-    "dialog": {
-      "open": true,
-      "save": true
+      "requireLiteralLeadingDot": false
     }
   },
   "bundle": {

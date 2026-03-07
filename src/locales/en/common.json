@@ -12,6 +12,7 @@
     "createVault": "Create New Vault"
   },
   "sidebar": {
+    "files": "Files",
     "newNote": "New Note",
     "newFolder": "New Folder",
     "rename": "Rename",
@@ -26,7 +27,15 @@
     "unsaved": "Unsaved",
     "preview": "Preview",
     "edit": "Edit",
-    "split": "Split"
+    "split": "Split",
+    "noSelection": "No note selected",
+    "noSelectionHint": "Select a note from the sidebar or create a new one"
+  },
+  "backlinks": {
+    "title": "Backlinks",
+    "noNote": "No note open",
+    "loading": "Loading...",
+    "empty": "No backlinks found"
   },
   "settings": {
     "title": "Settings",
@@ -43,15 +52,26 @@
     "fontSize": "Font Size",
     "fontFamily": "Font Family",
     "tabSize": "Tab Size",
+    "lineHeight": "Line Height",
     "wordWrap": "Word Wrap",
     "autoSave": "Auto Save",
-    "version": "Version"
+    "autoSaveDelay": "Auto Save Delay",
+    "recentVaults": "Recent Vaults",
+    "version": "Version",
+    "darkThemes": "Dark Themes",
+    "lightThemes": "Light Themes",
+    "aboutDescription": "A local-first Markdown knowledge vault.",
+    "aboutBuiltWith": "Built with Tauri 2 + React. Your notes always stay local."
   },
   "search": {
     "placeholder": "Search notes...",
     "quickOpen": "Quick Open",
+    "quickOpenPlaceholder": "Search by filename...",
     "globalSearch": "Global Search",
-    "noResults": "No matching results found"
+    "searchContent": "Search note content...",
+    "searching": "Searching...",
+    "noResults": "No matching results found",
+    "noContentResults": "No matching content found"
   },
   "actions": {
     "confirm": "Confirm",

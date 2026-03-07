@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
@@ -11,6 +11,8 @@ pub enum VaultError {
     NotFound(String),
     #[error("Directory is not readable: {0}")]
     NotReadable(String),
+    #[error("Index error: {0}")]
+    IndexError(String),
 }
 
 impl Serialize for VaultError {
@@ -25,6 +27,7 @@ impl Serialize for VaultError {
 pub async fn open_vault(
     path: String,
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<String, VaultError> {
     let vault_path = PathBuf::from(&path);
 
@@ -37,7 +40,32 @@ pub async fn open_vault(
     }
 
     tracing::info!("Opening vault at: {}", path);
-    *state.vault_path.write() = Some(vault_path);
+    *state.vault_path.write() = Some(vault_path.clone());
+
+    // Initialize index database
+    match crate::indexing::db::open_db(&vault_path) {
+        Ok(conn) => {
+            // Scan vault to build/update index
+            if let Err(e) = crate::indexing::scanner::scan_vault(&vault_path, &conn) {
+                tracing::warn!("Vault scan failed: {}", e);
+            }
+            *state.db.lock() = Some(conn);
+            tracing::info!("Index database initialized");
+        }
+        Err(e) => {
+            tracing::error!("Failed to open index database: {}", e);
+            return Err(VaultError::IndexError(format!("Failed to open index: {}", e)));
+        }
+    }
+
+    // Start file system watcher (with incremental indexing)
+    let db_arc = state.db.clone();
+    if let Ok(debouncer) = crate::watcher::start_watcher(&vault_path, app_handle.clone(), db_arc) {
+        *state.watcher.lock() = Some(debouncer);
+        tracing::info!("File watcher started for vault");
+    } else {
+        tracing::warn!("Failed to start file watcher");
+    }
 
     Ok(path)
 }
@@ -66,7 +94,16 @@ pub async fn list_tree(
     let target = if path.is_empty() {
         base.clone()
     } else {
-        base.join(&path)
+        let joined = base.join(&path);
+        // Validate the listed path is inside vault
+        let canonical_base = base.canonicalize()
+            .map_err(|_| VaultError::NotReadable("Cannot resolve vault path".into()))?;
+        let canonical_target = joined.canonicalize()
+            .map_err(|_| VaultError::NotFound(path.clone()))?;
+        if !canonical_target.starts_with(&canonical_base) {
+            return Err(VaultError::NotFound("Access denied".into()));
+        }
+        joined
     };
 
     if !target.exists() || !target.is_dir() {
@@ -83,7 +120,7 @@ pub async fn list_tree(
     Ok(entries)
 }
 
-fn list_dir_entries(dir: &PathBuf, base: &PathBuf) -> Result<Vec<TreeNode>, VaultError> {
+fn list_dir_entries(dir: &Path, base: &Path) -> Result<Vec<TreeNode>, VaultError> {
     let read_dir = std::fs::read_dir(dir)
         .map_err(|_| VaultError::NotReadable(dir.display().to_string()))?;
 

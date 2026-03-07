@@ -12,6 +12,7 @@
     "createVault": "创建新知识库"
   },
   "sidebar": {
+    "files": "文件",
     "newNote": "新建笔记",
     "newFolder": "新建文件夹",
     "rename": "重命名",
@@ -26,7 +27,15 @@
     "unsaved": "未保存",
     "preview": "预览",
     "edit": "编辑",
-    "split": "分栏"
+    "split": "分栏",
+    "noSelection": "未选择笔记",
+    "noSelectionHint": "从侧栏选择笔记或创建新笔记"
+  },
+  "backlinks": {
+    "title": "反向链接",
+    "noNote": "没有打开的笔记",
+    "loading": "加载中...",
+    "empty": "暂无反向链接"
   },
   "settings": {
     "title": "设置",
@@ -38,20 +47,31 @@
     "theme": "主题",
     "density": "密度",
     "compact": "紧凑",
-    "comfortable": "舒适",
+    "comfortable": "适中",
     "spacious": "宽松",
     "fontSize": "字号",
     "fontFamily": "字体",
     "tabSize": "缩进宽度",
+    "lineHeight": "行高",
     "wordWrap": "自动换行",
     "autoSave": "自动保存",
-    "version": "版本"
+    "autoSaveDelay": "自动保存延迟",
+    "recentVaults": "最近打开的仓库",
+    "version": "版本",
+    "darkThemes": "深色主题",
+    "lightThemes": "浅色主题",
+    "aboutDescription": "一个本地优先的 Markdown 知识库应用。",
+    "aboutBuiltWith": "使用 Tauri 2 + React 构建，你的笔记始终保存在本地。"
   },
   "search": {
     "placeholder": "搜索笔记...",
     "quickOpen": "快速打开",
+    "quickOpenPlaceholder": "输入文件名搜索...",
     "globalSearch": "全局搜索",
-    "noResults": "未找到匹配的结果"
+    "searchContent": "搜索笔记内容...",
+    "searching": "搜索中...",
+    "noResults": "未找到匹配的结果",
+    "noContentResults": "未找到匹配内容"
   },
   "actions": {
     "confirm": "确认",

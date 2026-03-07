@@ -1,7 +1,9 @@
 //! OxideNote - A local-first markdown note app
 
 mod commands;
+mod indexing;
 mod state;
+mod watcher;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -29,6 +31,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::vault::open_vault,
             commands::vault::list_tree,
+            commands::note::read_note,
+            commands::note::write_note,
+            commands::note::create_note,
+            commands::note::create_folder,
+            commands::note::rename_entry,
+            commands::note::delete_entry,
+            commands::search::search_notes,
+            commands::search::search_by_filename,
+            commands::search::get_backlinks,
+            commands::search::reindex_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
