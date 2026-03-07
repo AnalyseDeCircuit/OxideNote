@@ -3,7 +3,21 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import i18n from '@/i18n';
 
 export type ThemeId =
+  // Oxide originals
   | 'neutral'
+  | 'oxide'
+  | 'azurite'
+  | 'bismuth'
+  | 'chromium-oxide'
+  | 'cobalt'
+  | 'cuprite'
+  | 'hematite'
+  | 'magnetite'
+  | 'malachite'
+  | 'ochre'
+  | 'silver-oxide'
+  | 'verdigris'
+  // Classic dark
   | 'github-dark'
   | 'dracula'
   | 'nord'
@@ -11,23 +25,22 @@ export type ThemeId =
   | 'tokyo-night'
   | 'solarized-dark'
   | 'gruvbox-dark'
-  | 'one-dark-pro'
-  | 'ayu-dark'
+  | 'one-dark'
+  | 'monokai'
   | 'rose-pine'
   | 'kanagawa'
-  | 'everforest-dark'
-  | 'material-ocean'
-  | 'night-owl'
+  | 'synthwave-84'
+  | 'fairy-floss'
+  | 'sakura'
+  // Light
+  | 'paper-oxide'
   | 'github-light'
   | 'catppuccin-latte'
   | 'solarized-light'
   | 'gruvbox-light'
-  | 'ayu-light'
   | 'rose-pine-dawn'
-  | 'everforest-light'
-  | 'tokyo-night-light'
-  | 'one-light'
-  | 'flexoki-light';
+  | 'hot-pink'
+  | 'spring-green';
 
 export type Density = 'compact' | 'comfortable' | 'spacious';
 export type Language = 'zh-CN' | 'en';

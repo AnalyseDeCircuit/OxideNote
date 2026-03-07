@@ -385,6 +385,61 @@
   --theme-accent-hover: #15803d;
 }
 
+[data-theme="github-light"] {
+  --theme-bg: #ffffff;
+  --theme-bg-panel: #f6f8fa;
+  --theme-bg-hover: #eaeef2;
+  --theme-border: #d0d7de;
+  --theme-text: #1f2328;
+  --theme-text-muted: #656d76;
+  --theme-accent: #0969da;
+  --theme-accent-hover: #0550ae;
+}
+
+[data-theme="catppuccin-latte"] {
+  --theme-bg: #eff1f5;
+  --theme-bg-panel: #e6e9ef;
+  --theme-bg-hover: #dce0e8;
+  --theme-border: #ccd0da;
+  --theme-text: #4c4f69;
+  --theme-text-muted: #8c8fa1;
+  --theme-accent: #1e66f5;
+  --theme-accent-hover: #7287fd;
+}
+
+[data-theme="solarized-light"] {
+  --theme-bg: #fdf6e3;
+  --theme-bg-panel: #eee8d5;
+  --theme-bg-hover: #e4dcc8;
+  --theme-border: #d6cdb5;
+  --theme-text: #657b83;
+  --theme-text-muted: #93a1a1;
+  --theme-accent: #268bd2;
+  --theme-accent-hover: #2aa198;
+}
+
+[data-theme="gruvbox-light"] {
+  --theme-bg: #fbf1c7;
+  --theme-bg-panel: #f2e5bc;
+  --theme-bg-hover: #ebdbb2;
+  --theme-border: #d5c4a1;
+  --theme-text: #3c3836;
+  --theme-text-muted: #928374;
+  --theme-accent: #d65d0e;
+  --theme-accent-hover: #af3a03;
+}
+
+[data-theme="rose-pine-dawn"] {
+  --theme-bg: #faf4ed;
+  --theme-bg-panel: #fffaf3;
+  --theme-bg-hover: #f2e9e1;
+  --theme-border: #dfdad9;
+  --theme-text: #575279;
+  --theme-text-muted: #9893a5;
+  --theme-accent: #907aa9;
+  --theme-accent-hover: #b4637a;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Body & Root
    ═══════════════════════════════════════════════════════════════════════════ */
