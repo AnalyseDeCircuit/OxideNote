@@ -55,7 +55,11 @@ export function NoteEditor() {
 
   // ── Sync-scroll refs ──────────────────────────────────────
   const previewScrollRef = useRef<HTMLDivElement>(null);
-  const scrollSourceRef = useRef<'editor' | 'preview' | null>(null);
+  // 滚动源锁定：使用时间戳（而非 rAF 单帧）防止反馈循环。
+  // 当一侧主动发起同步滚动时，另一侧在 SCROLL_LOCK_MS 内忽略自身 scroll 事件，
+  // 避免 scrollTop 取整误差产生无限微调导致"慢慢往上滑"。
+  const scrollLockRef = useRef<{ source: 'editor' | 'preview'; until: number } | null>(null);
+  const SCROLL_LOCK_MS = 80;
 
   // 预览模式使用 state 驱动，确保内容变化时重新渲染
   const [previewContent, setPreviewContent] = useState('');
@@ -338,8 +342,11 @@ export function NoteEditor() {
     const scrollDOM = view.scrollDOM;
 
     const onEditorScroll = () => {
-      if (scrollSourceRef.current === 'preview') return;
-      scrollSourceRef.current = 'editor';
+      // 若预览侧刚发起同步滚动，忽略由它导致的编辑器 scroll 事件
+      const lock = scrollLockRef.current;
+      if (lock && lock.source === 'preview' && Date.now() < lock.until) return;
+
+      scrollLockRef.current = { source: 'editor', until: Date.now() + SCROLL_LOCK_MS };
       const el = previewScrollRef.current;
       if (!el) return;
       const maxEditor = scrollDOM.scrollHeight - scrollDOM.clientHeight;
@@ -347,7 +354,6 @@ export function NoteEditor() {
       const fraction = scrollDOM.scrollTop / maxEditor;
       const maxPreview = el.scrollHeight - el.clientHeight;
       el.scrollTop = fraction * maxPreview;
-      requestAnimationFrame(() => { scrollSourceRef.current = null; });
     };
 
     scrollDOM.addEventListener('scroll', onEditorScroll, { passive: true });
@@ -356,14 +362,16 @@ export function NoteEditor() {
 
   // ── Sync scroll: preview → editor ────────────────────────
   const handlePreviewScroll = useCallback((fraction: number) => {
-    if (scrollSourceRef.current === 'editor') return;
-    scrollSourceRef.current = 'preview';
+    // 若编辑器侧刚发起同步滚动，忽略由它导致的预览 scroll 事件
+    const lock = scrollLockRef.current;
+    if (lock && lock.source === 'editor' && Date.now() < lock.until) return;
+
+    scrollLockRef.current = { source: 'preview', until: Date.now() + SCROLL_LOCK_MS };
     const view = viewRef.current;
     if (!view) return;
     const scrollDOM = view.scrollDOM;
     const maxEditor = scrollDOM.scrollHeight - scrollDOM.clientHeight;
     scrollDOM.scrollTop = fraction * maxEditor;
-    requestAnimationFrame(() => { scrollSourceRef.current = null; });
   }, [viewRef]);
 
   // ── 粘贴事件：检测剪贴板中的图片 ─────────────────────────
