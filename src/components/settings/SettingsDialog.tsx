@@ -15,6 +15,7 @@ import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, Shi
 import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { useNoteStore, flushAllPendingSaves } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openVault, listTree } from '@/lib/api';
@@ -171,17 +172,42 @@ function GeneralTab() {
   const vaultPath = useWorkspaceStore((s) => s.vaultPath);
   const { t } = useTranslation();
 
+  const switchVaultSafely = async (path: string) => {
+    const outcomes = await flushAllPendingSaves();
+    const hasConflicts =
+      Object.values(outcomes).some((outcome) => outcome === 'conflict') ||
+      Object.keys(useNoteStore.getState().conflicts).length > 0;
+
+    if (hasConflicts) {
+      const firstConflictPath = Object.keys(useNoteStore.getState().conflicts)[0];
+      if (firstConflictPath) {
+        useNoteStore.getState().setActiveTab(firstConflictPath);
+      }
+      useUIStore.getState().setSettingsOpen(false);
+      toast({
+        title: t('conflict.resolveBeforeSwitchVaultTitle'),
+        description: t('conflict.resolveBeforeSwitchVaultMessage'),
+        variant: 'warning',
+      });
+      return;
+    }
+
+    await openVault(path);
+    const tree = await listTree('', useSettingsStore.getState().sortMode);
+    useNoteStore.getState().closeAllTabs();
+    useNoteStore.getState().clearAllConflicts();
+    useWorkspaceStore.getState().setVaultPath(path);
+    useWorkspaceStore.getState().setTree(tree);
+    useSettingsStore.getState().setLastVaultPath(path);
+    useSettingsStore.getState().addRecentVault(path);
+    useUIStore.getState().setSettingsOpen(false);
+  };
+
   const handleSwitchVault = async () => {
     const selected = await open({ directory: true, multiple: false });
     if (selected) {
       try {
-        await openVault(selected);
-        const tree = await listTree('', useSettingsStore.getState().sortMode);
-        useWorkspaceStore.getState().setVaultPath(selected);
-        useWorkspaceStore.getState().setTree(tree);
-        useSettingsStore.getState().setLastVaultPath(selected);
-        useSettingsStore.getState().addRecentVault(selected);
-        useUIStore.getState().setSettingsOpen(false);
+        await switchVaultSafely(selected);
       } catch (err) {
         toast({ title: t('actions.switchVaultFailed'), description: String(err), variant: 'error' });
       }
@@ -190,13 +216,7 @@ function GeneralTab() {
 
   const handleSelectRecentVault = async (path: string) => {
     try {
-      await openVault(path);
-      const tree = await listTree('', useSettingsStore.getState().sortMode);
-      useWorkspaceStore.getState().setVaultPath(path);
-      useWorkspaceStore.getState().setTree(tree);
-      useSettingsStore.getState().setLastVaultPath(path);
-      useSettingsStore.getState().addRecentVault(path);
-      useUIStore.getState().setSettingsOpen(false);
+      await switchVaultSafely(path);
     } catch (err) {
       toast({ title: t('actions.openVaultFailed'), description: String(err), variant: 'error' });
     }

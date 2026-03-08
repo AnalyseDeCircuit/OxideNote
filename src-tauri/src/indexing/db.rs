@@ -1,4 +1,5 @@
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Open or create the index database for a vault.
@@ -43,6 +44,14 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         CREATE INDEX IF NOT EXISTS idx_links_source ON links(source_id);
         CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_path);
+
+        CREATE TABLE IF NOT EXISTS aliases (
+            note_id INTEGER NOT NULL,
+            alias TEXT NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
+        CREATE INDEX IF NOT EXISTS idx_aliases_note ON aliases(note_id);
         ",
     )?;
 
@@ -60,8 +69,9 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-/// Insert or update a note in the index (within a transaction).
-pub fn upsert_note(
+/// Insert or update a note — raw version without transaction management.
+/// Caller must wrap in a transaction if atomicity is needed.
+pub fn upsert_note_raw(
     conn: &Connection,
     path: &str,
     title: &str,
@@ -71,11 +81,10 @@ pub fn upsert_note(
     frontmatter_json: Option<&str>,
     tags: &[String],
     links: &[String],
+    aliases: &[String],
 ) -> Result<(), rusqlite::Error> {
-    let tx = conn.unchecked_transaction()?;
-
     // Upsert note
-    tx.execute(
+    conn.execute(
         "INSERT INTO notes (path, title, created_at, modified_at, frontmatter)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(path) DO UPDATE SET
@@ -86,49 +95,84 @@ pub fn upsert_note(
         params![path, title, created_at, modified_at, frontmatter_json],
     )?;
 
-    let note_id: i64 = tx.query_row(
+    let note_id: i64 = conn.query_row(
         "SELECT id FROM notes WHERE path = ?1",
         params![path],
         |row| row.get(0),
     )?;
 
     // Replace tags
-    tx.execute("DELETE FROM tags WHERE note_id = ?1", params![note_id])?;
+    conn.execute("DELETE FROM tags WHERE note_id = ?1", params![note_id])?;
     for tag in tags {
-        tx.execute(
+        conn.execute(
             "INSERT INTO tags (note_id, tag) VALUES (?1, ?2)",
             params![note_id, tag],
         )?;
     }
 
     // Replace links
-    tx.execute("DELETE FROM links WHERE source_id = ?1", params![note_id])?;
+    conn.execute("DELETE FROM links WHERE source_id = ?1", params![note_id])?;
     for link in links {
-        tx.execute(
+        conn.execute(
             "INSERT INTO links (source_id, target_path) VALUES (?1, ?2)",
             params![note_id, link],
         )?;
     }
 
+    // Replace aliases
+    conn.execute("DELETE FROM aliases WHERE note_id = ?1", params![note_id])?;
+    for alias in aliases {
+        conn.execute(
+            "INSERT INTO aliases (note_id, alias) VALUES (?1, ?2)",
+            params![note_id, alias],
+        )?;
+    }
+
     // Update FTS
-    tx.execute(
+    conn.execute(
         "DELETE FROM notes_fts WHERE path = ?1",
         params![path],
     )?;
-    tx.execute(
+    conn.execute(
         "INSERT INTO notes_fts (path, title, content) VALUES (?1, ?2, ?3)",
         params![path, title, content],
     )?;
 
+    Ok(())
+}
+
+/// Insert or update a note in the index (wrapped in its own transaction).
+/// Standalone entry point for single-file operations (e.g. watcher triggered indexing).
+#[allow(dead_code)] // 保留为公开 API，scanner::index_single_file 当前使用 raw 版本
+pub fn upsert_note(
+    conn: &Connection,
+    path: &str,
+    title: &str,
+    content: &str,
+    created_at: Option<&str>,
+    modified_at: Option<&str>,
+    frontmatter_json: Option<&str>,
+    tags: &[String],
+    links: &[String],
+    aliases: &[String],
+) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    upsert_note_raw(&tx, path, title, content, created_at, modified_at, frontmatter_json, tags, links, aliases)?;
     tx.commit()?;
     Ok(())
 }
 
-/// Remove a note from the index.
+/// Remove a note — raw version without transaction management.
+pub fn delete_note_raw(conn: &Connection, path: &str) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM notes_fts WHERE path = ?1", params![path])?;
+    conn.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
+    Ok(())
+}
+
+/// Remove a note from the index (wrapped in its own transaction).
 pub fn delete_note(conn: &Connection, path: &str) -> Result<(), rusqlite::Error> {
     let tx = conn.unchecked_transaction()?;
-    tx.execute("DELETE FROM notes_fts WHERE path = ?1", params![path])?;
-    tx.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
+    delete_note_raw(&tx, path)?;
     tx.commit()?;
     Ok(())
 }
@@ -298,4 +342,21 @@ pub fn search_by_tag(conn: &Connection, tag: &str) -> Result<Vec<SearchResult>, 
         })
     })?.collect::<Result<Vec<_>, _>>()?;
     Ok(results)
+}
+
+/// Query all aliases as (lowercase alias → note path) mapping.
+/// Used by health check and graph/backlink resolution.
+pub fn query_all_aliases(conn: &Connection) -> Result<HashMap<String, String>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT a.alias, n.path FROM aliases a JOIN notes n ON n.id = a.note_id"
+    )?;
+    let map = stmt
+        .query_map([], |row| {
+            let alias: String = row.get(0)?;
+            let path: String = row.get(1)?;
+            Ok((alias.to_lowercase(), path))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(map)
 }

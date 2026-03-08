@@ -42,11 +42,21 @@ pub async fn open_vault(
     tracing::info!("Opening vault at: {}", path);
     *state.vault_path.write() = Some(vault_path.clone());
 
-    // Initialize index database
+    // Initialize index database (write connection)
     match crate::indexing::db::open_db(&vault_path) {
         Ok(conn) => {
+            // Open a second connection for read-only queries (avoids blocking writes)
+            match crate::indexing::db::open_db(&vault_path) {
+                Ok(read_conn) => {
+                    *state.read_db.lock() = Some(read_conn);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to open read connection, reads will share write conn: {}", e);
+                }
+            }
+
             *state.db.lock() = Some(conn);
-            tracing::info!("Index database initialized");
+            tracing::info!("Index database initialized (read+write connections)");
 
             // Scan vault in background to avoid blocking the UI
             let db_arc = state.db.clone();

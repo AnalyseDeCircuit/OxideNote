@@ -14,6 +14,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { openVault, listTree, createNote } from '@/lib/api';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { confirm } from '@tauri-apps/plugin-dialog';
+import { toast } from '@/hooks/useToast';
 import i18n from '@/i18n';
 
 function App() {
@@ -52,7 +53,8 @@ function App() {
   useEffect(() => {
     const appWindow = getCurrentWindow();
     const unlisten = appWindow.onCloseRequested(async (event) => {
-      const hasDirty = useNoteStore.getState().openTabs.some((t) => t.isDirty);
+      const noteState = useNoteStore.getState();
+      const hasDirty = noteState.openTabs.some((t) => t.isDirty);
       if (hasDirty) {
         const ok = await confirm(i18n.t('actions.unsavedExit'), {
           title: 'OxideNote',
@@ -63,7 +65,23 @@ function App() {
           return;
         }
       }
-      await flushAllPendingSaves();
+      const outcomes = await flushAllPendingSaves();
+      const conflictPaths = Object.entries(outcomes)
+        .filter(([, outcome]) => outcome === 'conflict')
+        .map(([path]) => path);
+
+      if (conflictPaths.length > 0 || Object.keys(useNoteStore.getState().conflicts).length > 0) {
+        event.preventDefault();
+        const firstConflictPath = conflictPaths[0] ?? Object.keys(useNoteStore.getState().conflicts)[0];
+        if (firstConflictPath) {
+          useNoteStore.getState().setActiveTab(firstConflictPath);
+        }
+        toast({
+          title: i18n.t('conflict.resolveBeforeExitTitle'),
+          description: i18n.t('conflict.resolveBeforeExitMessage'),
+          variant: 'warning',
+        });
+      }
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
@@ -108,8 +126,10 @@ function App() {
         e.preventDefault();
         const active = useNoteStore.getState().activeTabPath;
         if (active) {
-          flushPendingSave(active).then(() => {
-            useNoteStore.getState().closeTab(active);
+          flushPendingSave(active).then((outcome) => {
+            if (outcome === 'saved' || outcome === 'noop') {
+              useNoteStore.getState().closeTab(active);
+            }
           });
         }
       }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { useNoteStore } from '@/store/noteStore';
+import { useNoteStore, type SaveOutcome } from '@/store/noteStore';
 import { registerPendingSave, unregisterPendingSave } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment, createNote } from '@/lib/api';
@@ -8,7 +8,7 @@ import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
 import { setEditorView } from '@/lib/editorViewRef';
 import { MarkdownPreview } from './MarkdownPreview';
 import { EditorToolbar } from './EditorToolbar';
-import { ConflictDialog } from './ConflictDialog';
+import { ConflictDialog } from '@/components/editor/ConflictDialog';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -25,6 +25,9 @@ import { listen } from '@tauri-apps/api/event';
 
 export function NoteEditor() {
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
+  const conflictState = useNoteStore((s) =>
+    activeTabPath ? s.conflicts[activeTabPath] ?? null : null
+  );
   const editorMode = useUIStore((s) => s.editorMode);
   const { t } = useTranslation();
   const fontSize = useSettingsStore((s) => s.editorFontSize);
@@ -36,6 +39,7 @@ export function NoteEditor() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef('');
   const activePathRef = useRef(activeTabPath);
   activePathRef.current = activeTabPath;
@@ -43,10 +47,11 @@ export function NoteEditor() {
   // ── Conflict detection refs ────────────────────────────────
   // Tracks the file mtime (epoch ms) at last read/save, per path
   const mtimeRef = useRef<Map<string, number | null>>(new Map());
-  const [conflictState, setConflictState] = useState<{
-    path: string;
-    localContent: string;
-  } | null>(null);
+
+  // ── Watcher source marking ────────────────────────────────
+  // 记录我们自己触发的写入路径及时间戳，
+  // 当 watcher 事件到来时识别为"自己写的"而非外部修改，避免伪冲突
+  const recentWritesRef = useRef<Map<string, number>>(new Map());
 
   // ── Sync-scroll refs ──────────────────────────────────────
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -57,11 +62,16 @@ export function NoteEditor() {
 
   const handleChange = useCallback((content: string) => {
     contentRef.current = content;
-    useNoteStore.getState().setActiveContent(content);
     const path = activePathRef.current;
     if (!path) return;
 
     useNoteStore.getState().markDirty(path);
+
+    // Debounce setActiveContent to reduce Zustand rerenders (OutlinePanel etc.)
+    if (contentUpdateTimerRef.current) clearTimeout(contentUpdateTimerRef.current);
+    contentUpdateTimerRef.current = setTimeout(() => {
+      useNoteStore.getState().setActiveContent(contentRef.current);
+    }, 150);
 
     // Debounce preview update to avoid re-parsing on every keystroke
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
@@ -83,7 +93,10 @@ export function NoteEditor() {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    saveNoteWithConflictCheck(path, contentRef.current);
+    // 优先从 EditorView 取最新内容，避免 debounce 间隙的过期数据
+    const content = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    contentRef.current = content;
+    saveNoteWithConflictCheck(path, content);
   }, []);
 
   const handleNavigate = useCallback(async (target: string) => {
@@ -171,7 +184,11 @@ export function NoteEditor() {
         saveTimerRef.current = null;
       }
       const path = activePathRef.current;
-      if (path) await saveNoteWithConflictCheck(path, contentRef.current);
+      if (!path) return 'noop';
+      // 取 EditorView 最新内容，避免 debounce 间隙导致的数据过期
+      const content = viewRef.current?.state.doc.toString() ?? contentRef.current;
+      contentRef.current = content;
+      return saveNoteWithConflictCheck(path, content);
     });
 
     let cancelled = false;
@@ -223,6 +240,14 @@ export function NoteEditor() {
       const currentPath = activePathRef.current;
       if (!currentPath || changedPath !== currentPath) return;
 
+      // 检查是否为我们自己的写入触发的 watcher 事件
+      const writeTime = recentWritesRef.current.get(currentPath);
+      if (writeTime && Date.now() - writeTime < 2000) {
+        // 自己写的，不是外部修改，忽略并清除标记
+        recentWritesRef.current.delete(currentPath);
+        return;
+      }
+
       // The file we're editing was modified externally.
       // If the editor has dirty (unsaved) content, surface a conflict.
       const tab = useNoteStore.getState().openTabs.find((t) => t.path === currentPath);
@@ -232,7 +257,7 @@ export function NoteEditor() {
           clearTimeout(saveTimerRef.current);
           saveTimerRef.current = null;
         }
-        setConflictState({ path: currentPath, localContent: contentRef.current });
+        useNoteStore.getState().setConflict(currentPath, contentRef.current);
       } else {
         // No local changes — silently reload
         readNote(currentPath)
@@ -263,11 +288,11 @@ export function NoteEditor() {
       const note = await readNote(path);
       mtimeRef.current.set(path, note.modified_at_ms);
       useNoteStore.getState().markClean(path);
+      useNoteStore.getState().clearConflict(path);
       reindexNote(path).catch(() => {});
     } catch (err) {
       toast({ title: i18n.t('editor.saveFailed'), description: String(err), variant: 'error' });
     }
-    setConflictState(null);
   }, [conflictState]);
 
   const handleConflictLoadRemote = useCallback(async () => {
@@ -281,10 +306,10 @@ export function NoteEditor() {
       useNoteStore.getState().setActiveContent(note.content);
       useNoteStore.getState().markClean(path);
       mtimeRef.current.set(path, note.modified_at_ms);
+      useNoteStore.getState().clearConflict(path);
     } catch (err) {
       toast({ title: i18n.t('editor.saveFailed'), description: String(err), variant: 'error' });
     }
-    setConflictState(null);
   }, [conflictState, setContent]);
 
   // ── 判断各面板是否可见 ────────────────────────────────────
@@ -410,11 +435,14 @@ export function NoteEditor() {
   );
 
   // ── Inner: save with mtime-based conflict check ───────────
-  async function saveNoteWithConflictCheck(path: string, content: string) {
+  async function saveNoteWithConflictCheck(path: string, content: string): Promise<SaveOutcome> {
     const expectedMtime = mtimeRef.current.get(path) ?? undefined;
     try {
       await writeNote(path, content, expectedMtime);
+      // 标记为自己的写入，避免 watcher 事件误判为外部修改
+      recentWritesRef.current.set(path, Date.now());
       useNoteStore.getState().markClean(path);
+      useNoteStore.getState().clearConflict(path);
       // Re-read to update mtime after successful save
       readNote(path)
         .then((note) => {
@@ -424,6 +452,7 @@ export function NoteEditor() {
       reindexNote(path).catch((err) => {
         console.warn('[reindex] failed for', path, err);
       });
+      return 'saved';
     } catch (err) {
       const errStr = String(err);
       if (errStr.includes('CONFLICT')) {
@@ -432,9 +461,11 @@ export function NoteEditor() {
           clearTimeout(saveTimerRef.current);
           saveTimerRef.current = null;
         }
-        setConflictState({ path, localContent: content });
+        useNoteStore.getState().setConflict(path, content);
+        return 'conflict';
       } else {
         toast({ title: i18n.t('editor.saveFailed'), description: errStr, variant: 'error' });
+        return 'failed';
       }
     }
   }

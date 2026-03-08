@@ -6,13 +6,21 @@ export interface Tab {
   isDirty: boolean;
 }
 
+export interface ConflictRecord {
+  path: string;
+  localContent: string;
+  detectedAt: number;
+}
+
+export type SaveOutcome = 'saved' | 'conflict' | 'noop' | 'failed';
+
 // ── Pending save callbacks ──────────────────────────────────
 // NoteEditor registers a flush callback for the active note.
 // When a tab is closed or app is exiting, we invoke the callback
 // to ensure unsaved content is written to disk immediately.
-const pendingSaveCallbacks = new Map<string, () => Promise<void>>();
+const pendingSaveCallbacks = new Map<string, () => Promise<SaveOutcome>>();
 
-export function registerPendingSave(path: string, flush: () => Promise<void>) {
+export function registerPendingSave(path: string, flush: () => Promise<SaveOutcome>) {
   pendingSaveCallbacks.set(path, flush);
 }
 
@@ -22,17 +30,23 @@ export function unregisterPendingSave(path: string) {
 
 export async function flushPendingSave(path: string) {
   const flush = pendingSaveCallbacks.get(path);
-  if (flush) await flush();
+  if (!flush) return 'noop' as SaveOutcome;
+  return flush();
 }
 
 export async function flushAllPendingSaves() {
-  const promises = Array.from(pendingSaveCallbacks.values()).map((fn) => fn());
-  await Promise.all(promises);
+  const entries = Array.from(pendingSaveCallbacks.entries());
+  const settled = await Promise.all(
+    entries.map(async ([path, fn]) => [path, await fn()] as const)
+  );
+
+  return Object.fromEntries(settled) as Record<string, SaveOutcome>;
 }
 
 interface NoteState {
   openTabs: Tab[];
   activeTabPath: string | null;
+  conflicts: Record<string, ConflictRecord>;
   /** Current editor content for the active tab (used by OutlinePanel etc.) */
   activeContent: string;
   /** Cursor position in the active editor */
@@ -49,6 +63,9 @@ interface NoteState {
   closeOtherTabs: (path: string) => void;
   closeTabsToRight: (path: string) => void;
   moveTab: (fromIndex: number, toIndex: number) => void;
+  setConflict: (path: string, localContent: string) => void;
+  clearConflict: (path: string) => void;
+  clearAllConflicts: () => void;
   setActiveContent: (content: string) => void;
   setCursorPosition: (line: number, col: number) => void;
 }
@@ -56,6 +73,7 @@ interface NoteState {
 export const useNoteStore = create<NoteState>((set, get) => ({
   openTabs: [],
   activeTabPath: null,
+  conflicts: {},
   activeContent: '',
   cursorLine: 1,
   cursorCol: 1,
@@ -74,7 +92,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   closeTab: (path) => {
-    const { openTabs, activeTabPath } = get();
+    const { openTabs, activeTabPath, conflicts } = get();
     const idx = openTabs.findIndex((t) => t.path === path);
     const filtered = openTabs.filter((t) => t.path !== path);
 
@@ -89,7 +107,10 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       }
     }
 
-    set({ openTabs: filtered, activeTabPath: newActive });
+    const nextConflicts = { ...conflicts };
+    delete nextConflicts[path];
+
+    set({ openTabs: filtered, activeTabPath: newActive, conflicts: nextConflicts });
   },
 
   setActiveTab: (path) => set({ activeTabPath: path }),
@@ -117,7 +138,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
         state.activeTabPath === oldPath ? newPath : state.activeTabPath,
     })),
 
-  closeAllTabs: () => set({ openTabs: [], activeTabPath: null, activeContent: '' }),
+  closeAllTabs: () => set({ openTabs: [], activeTabPath: null, activeContent: '', conflicts: {} }),
 
   // Close every tab except the specified one, then activate it.
   closeOtherTabs: (path) => {
@@ -146,6 +167,27 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     tabs.splice(toIndex, 0, moved);
     set({ openTabs: tabs });
   },
+
+  setConflict: (path, localContent) =>
+    set((state) => ({
+      conflicts: {
+        ...state.conflicts,
+        [path]: {
+          path,
+          localContent,
+          detectedAt: Date.now(),
+        },
+      },
+    })),
+
+  clearConflict: (path) =>
+    set((state) => {
+      const conflicts = { ...state.conflicts };
+      delete conflicts[path];
+      return { conflicts };
+    }),
+
+  clearAllConflicts: () => set({ conflicts: {} }),
 
   setActiveContent: (content) => set({ activeContent: content }),
 

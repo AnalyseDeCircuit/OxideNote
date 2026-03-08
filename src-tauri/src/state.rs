@@ -10,7 +10,11 @@ use rusqlite::Connection;
 pub struct AppState {
     pub vault_path: RwLock<Option<PathBuf>>,
     pub watcher: Mutex<Option<Debouncer<RecommendedWatcher>>>,
+    /// Write connection — used by watcher indexing and note save operations
     pub db: Arc<Mutex<Option<Connection>>>,
+    /// Read-only connection — used by search/backlink/graph queries,
+    /// separate from write path to avoid read starvation under WAL mode
+    pub read_db: Arc<Mutex<Option<Connection>>>,
 }
 
 impl AppState {
@@ -19,6 +23,7 @@ impl AppState {
             vault_path: RwLock::new(None),
             watcher: Mutex::new(None),
             db: Arc::new(Mutex::new(None)),
+            read_db: Arc::new(Mutex::new(None)),
         }
     }
 }

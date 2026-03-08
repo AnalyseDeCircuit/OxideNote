@@ -51,7 +51,8 @@ pub async fn search_notes(
     query: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::SearchResult>, SearchError> {
-    let db_guard = state.db.lock();
+    // 使用读连接避免阻塞写操作
+    let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
 
     db::search_fts(conn, &query).map_err(|e| SearchError::Internal(e.to_string()))
@@ -63,19 +64,20 @@ pub async fn search_by_filename(
     query: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::SearchResult>, SearchError> {
-    let db_guard = state.db.lock();
+    let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
 
     db::search_by_filename(conn, &query).map_err(|e| SearchError::Internal(e.to_string()))
 }
 
 /// Get all notes that link to the specified note path.
+/// Considers both direct path/stem matches and frontmatter aliases.
 #[tauri::command]
 pub async fn get_backlinks(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::BacklinkResult>, SearchError> {
-    let db_guard = state.db.lock();
+    let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
 
     // WikiLinks can reference either the full path or just the filename
@@ -92,6 +94,24 @@ pub async fn get_backlinks(
         let by_stem = db::get_backlinks(conn, &file_stem)
             .map_err(|e| SearchError::Internal(e.to_string()))?;
         for r in by_stem {
+            if !results.iter().any(|existing| existing.path == r.path) {
+                results.push(r);
+            }
+        }
+    }
+
+    // Also find backlinks that target any of this note's aliases
+    let alias_map = db::query_all_aliases(conn)
+        .map_err(|e| SearchError::Internal(e.to_string()))?;
+    let my_aliases: Vec<&String> = alias_map
+        .iter()
+        .filter(|(_, note_path)| *note_path == &path)
+        .map(|(alias, _)| alias)
+        .collect();
+    for alias in my_aliases {
+        let by_alias = db::get_backlinks(conn, alias)
+            .map_err(|e| SearchError::Internal(e.to_string()))?;
+        for r in by_alias {
             if !results.iter().any(|existing| existing.path == r.path) {
                 results.push(r);
             }
@@ -127,11 +147,12 @@ pub async fn reindex_note(
 ///
 /// 从索引数据库中查询所有笔记和链接关系，
 /// 构建前端 force-graph 所需的 { nodes, links } 数据结构。
+/// 链接解析同时支持 path/stem 匹配和 frontmatter alias 匹配。
 #[tauri::command]
 pub async fn get_graph_data(
     state: State<'_, AppState>,
 ) -> Result<GraphData, SearchError> {
-    let db_guard = state.db.lock();
+    let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
 
     // 查询所有笔记节点（含时间戳）
@@ -167,6 +188,10 @@ pub async fn get_graph_data(
         })
         .collect();
 
+    // 构建 alias → path 映射，用于 alias-aware 链接解析
+    let alias_to_path = db::query_all_aliases(conn)
+        .map_err(|e| SearchError::Internal(e.to_string()))?;
+
     // 查询所有链接关系
     let mut link_stmt = conn
         .prepare(
@@ -184,19 +209,28 @@ pub async fn get_graph_data(
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?
         .filter_map(|r| r.ok())
-        // 仅保留两端都存在的连边，WikiLink stem → full path 解析
+        // 仅保留两端都存在的连边，依次尝试 path → stem → alias 解析
         .filter_map(|mut link| {
             if !node_ids.contains(link.source.as_str()) {
                 return None;
             }
+            // 直接路径匹配
             if node_ids.contains(link.target.as_str()) {
-                Some(link)
-            } else if let Some(&full_path) = stem_to_path.get(&link.target) {
-                link.target = full_path.to_string();
-                Some(link)
-            } else {
-                None
+                return Some(link);
             }
+            // file_stem 匹配
+            if let Some(&full_path) = stem_to_path.get(&link.target) {
+                link.target = full_path.to_string();
+                return Some(link);
+            }
+            // Alias 匹配
+            if let Some(resolved) = alias_to_path.get(&link.target.to_lowercase()) {
+                if node_ids.contains(resolved.as_str()) {
+                    link.target = resolved.clone();
+                    return Some(link);
+                }
+            }
+            None
         })
         .collect();
 
@@ -208,7 +242,7 @@ pub async fn get_graph_data(
 pub async fn list_all_tags(
     state: State<'_, AppState>,
 ) -> Result<Vec<db::TagCount>, SearchError> {
-    let db_guard = state.db.lock();
+    let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
     db::list_all_tags(conn).map_err(|e| SearchError::Internal(e.to_string()))
 }
@@ -219,7 +253,7 @@ pub async fn search_by_tag(
     tag: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::SearchResult>, SearchError> {
-    let db_guard = state.db.lock();
+    let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
     db::search_by_tag(conn, &tag).map_err(|e| SearchError::Internal(e.to_string()))
 }

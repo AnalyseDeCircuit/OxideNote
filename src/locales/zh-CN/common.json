@@ -174,7 +174,13 @@
     "description": "\"{{name}}\" 在编辑器外被修改，与本地更改产生冲突。",
     "hint": "选择「保留本地」将覆盖外部修改；选择「加载外部」将丢弃本地未保存的更改。",
     "keepMine": "保留本地",
-    "loadRemote": "加载外部版本"
+    "loadRemote": "加载外部版本",
+    "resolveBeforeExitTitle": "存在未解决冲突",
+    "resolveBeforeExitMessage": "请先处理当前文件冲突，再退出应用。",
+    "resolveBeforeSwitchVaultTitle": "存在未解决冲突",
+    "resolveBeforeSwitchVaultMessage": "请先处理当前文件冲突，再切换知识库。",
+    "resolveBeforeCloseTitle": "存在未解决冲突",
+    "resolveBeforeCloseMessage": "请先处理当前文件冲突，再关闭这个标签页。"
   },
   "health": {
     "title": "知识库健康检查",

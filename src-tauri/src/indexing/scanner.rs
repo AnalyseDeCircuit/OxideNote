@@ -6,12 +6,9 @@ use walkdir::WalkDir;
 use super::parser::parse_note;
 use super::db;
 
-/// Scan all markdown files in the vault and index them.
-pub fn scan_vault(vault_path: &Path, conn: &Connection) -> Result<(), String> {
+/// Inner scan logic without transaction management — caller provides tx.
+pub fn scan_vault_raw(vault_path: &Path, conn: &Connection) -> Result<usize, String> {
     let mut count: usize = 0;
-
-    // Wrap in a single RAII transaction for performance and safety
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
     for entry in WalkDir::new(vault_path)
         .into_iter()
@@ -33,21 +30,29 @@ pub fn scan_vault(vault_path: &Path, conn: &Connection) -> Result<(), String> {
             continue;
         }
 
-        if let Err(e) = index_single_file(vault_path, path, &tx) {
+        if let Err(e) = index_single_file_raw(vault_path, path, conn) {
             tracing::warn!("Failed to index {}: {}", path.display(), e);
         } else {
             count += 1;
         }
     }
 
+    Ok(count)
+}
+
+/// Scan all markdown files in the vault and index them.
+/// Wraps the entire operation in a single transaction.
+pub fn scan_vault(vault_path: &Path, conn: &Connection) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let count = scan_vault_raw(vault_path, &tx)?;
     tx.commit().map_err(|e| e.to_string())?;
 
     tracing::info!("Indexed {} notes", count);
     Ok(())
 }
 
-/// Index a single file into the database.
-pub fn index_single_file(
+/// Inner indexing logic without transaction — caller manages the tx.
+pub fn index_single_file_raw(
     vault_path: &Path,
     file_path: &Path,
     conn: &Connection,
@@ -76,7 +81,7 @@ pub fn index_single_file(
             dt.format("%Y-%m-%d %H:%M:%S").to_string()
         });
 
-    db::upsert_note(
+    db::upsert_note_raw(
         conn,
         &rel_path,
         &parsed.title,
@@ -86,8 +91,21 @@ pub fn index_single_file(
         parsed.frontmatter_json.as_deref(),
         &parsed.tags,
         &parsed.links,
+        &parsed.aliases,
     )
     .map_err(|e| e.to_string())
+}
+
+/// Index a single file with its own transaction.
+pub fn index_single_file(
+    vault_path: &Path,
+    file_path: &Path,
+    conn: &Connection,
+) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    index_single_file_raw(vault_path, file_path, &tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Remove a file from the index.

@@ -7,6 +7,7 @@ pub struct ParsedNote {
     pub title: String,
     pub tags: Vec<String>,
     pub links: Vec<String>,       // WikiLink targets (resolved name)
+    pub aliases: Vec<String>,     // Frontmatter aliases for WikiLink resolution
     pub created_at: Option<String>,
     pub frontmatter_json: Option<String>,
     pub content: String,          // Body text for FTS (frontmatter stripped)
@@ -151,13 +152,15 @@ fn parse_frontmatter(yaml_str: &str, result: &mut ParsedNote) {
                 }
             }
 
-            // Aliases (treat as additional link targets)
+            // Aliases for WikiLink resolution (e.g. [[old-name]] resolves to this note)
             if let Some(aliases) = mapping.get(&serde_yaml::Value::String("aliases".into())) {
                 if let Some(seq) = aliases.as_sequence() {
                     for a in seq {
                         if let Some(s) = a.as_str() {
-                            // Aliases don't go into links — they're used for wikilink resolution
-                            let _ = s;
+                            let alias = s.to_string();
+                            if !result.aliases.contains(&alias) {
+                                result.aliases.push(alias);
+                            }
                         }
                     }
                 }

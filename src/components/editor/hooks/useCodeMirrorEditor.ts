@@ -147,10 +147,21 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Debounce doc.toString() to reduce GC pressure on large documents.
+    // On a 100KB file, toString() is O(n) — batching rapid keystrokes
+    // reduces string allocations from N per keystroke to ~1 per 50ms.
+    let changeTimer: ReturnType<typeof setTimeout> | undefined;
+
     const updateListener = EditorView.updateListener.of((update: ViewUpdate) => {
       if (update.docChanged) {
-        onChangeRef.current?.(update.state.doc.toString());
+        if (changeTimer) clearTimeout(changeTimer);
+        changeTimer = setTimeout(() => {
+          if (viewRef.current) {
+            onChangeRef.current?.(viewRef.current.state.doc.toString());
+          }
+        }, 50);
       }
+      // Cursor position uses O(log n) B-tree lookup, no string conversion needed
       if (update.docChanged || update.selectionSet) {
         const pos = update.state.selection.main.head;
         const line = update.state.doc.lineAt(pos);
@@ -249,6 +260,7 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
     });
 
     return () => {
+      if (changeTimer) clearTimeout(changeTimer);
       observer.disconnect();
       view.destroy();
       viewRef.current = null;

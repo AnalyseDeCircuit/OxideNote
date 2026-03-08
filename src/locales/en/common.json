@@ -174,7 +174,13 @@
     "description": "\"{{name}}\" was modified outside the editor and conflicts with your local changes.",
     "hint": "\"Keep Mine\" will overwrite external changes; \"Load External\" will discard your unsaved edits.",
     "keepMine": "Keep Mine",
-    "loadRemote": "Load External"
+    "loadRemote": "Load External",
+    "resolveBeforeExitTitle": "Unresolved conflict",
+    "resolveBeforeExitMessage": "Resolve the current file conflict before closing the app.",
+    "resolveBeforeSwitchVaultTitle": "Unresolved conflict",
+    "resolveBeforeSwitchVaultMessage": "Resolve the current file conflict before switching vaults.",
+    "resolveBeforeCloseTitle": "Unresolved conflict",
+    "resolveBeforeCloseMessage": "Resolve the current file conflict before closing this tab."
   },
   "health": {
     "title": "Vault Health Check",

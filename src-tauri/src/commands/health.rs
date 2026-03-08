@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use serde::Serialize;
 use tauri::State;
 use walkdir::WalkDir;
@@ -12,6 +14,7 @@ pub enum HealthError {
     #[error("No index available")]
     NoIndex,
     #[error("IO error: {0}")]
+    #[allow(dead_code)] // 保留用于未来可能的文件系统错误场景
     Io(String),
     #[error("DB error: {0}")]
     Db(String),
@@ -49,15 +52,77 @@ pub struct BrokenLink {
 }
 
 /// Run a read-only health check on the vault index.
+/// Uses the read connection to avoid blocking write operations.
 #[tauri::command]
 pub async fn vault_health_check(
     state: State<'_, AppState>,
 ) -> Result<HealthReport, HealthError> {
     let vault_path = state.vault_path.read();
     let base = vault_path.as_ref().ok_or(HealthError::NoVault)?;
+    let disk_files = collect_disk_files(base);
 
-    // 1. Collect all .md files on disk
-    let mut disk_files: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // 使用读连接
+    let db_guard = state.read_db.lock();
+    let conn = db_guard.as_ref().ok_or(HealthError::NoIndex)?;
+
+    build_health_report(conn, &disk_files)
+}
+
+/// Repair the vault index: remove orphans, index missing files, rebuild FTS if inconsistent.
+/// All repair operations are wrapped in a single transaction to avoid nested tx issues.
+#[tauri::command]
+pub async fn repair_vault(
+    state: State<'_, AppState>,
+) -> Result<HealthReport, HealthError> {
+    let vault_path = state.vault_path.read();
+    let base = vault_path.as_ref().ok_or(HealthError::NoVault)?.clone();
+    drop(vault_path);
+
+    let disk_files = collect_disk_files(&base);
+
+    let db_guard = state.db.lock();
+    let conn = db_guard.as_ref().ok_or(HealthError::NoIndex)?;
+
+    // 先在写连接上获取当前状态
+    let report = build_health_report(conn, &disk_files)?;
+
+    // 所有修复操作包在一个事务中，使用 raw 版本避免嵌套事务
+    let tx = conn.unchecked_transaction()
+        .map_err(|e| HealthError::Db(e.to_string()))?;
+
+    // 删除孤立索引条目
+    for path in &report.orphaned_entries {
+        db::delete_note_raw(&tx, path)
+            .map_err(|e| HealthError::Db(e.to_string()))?;
+    }
+
+    // 索引未收录的文件
+    for rel_path in &report.unindexed_files {
+        let full_path = base.join(rel_path);
+        if let Err(e) = scanner::index_single_file_raw(&base, &full_path, &tx) {
+            tracing::warn!("Repair: failed to index {}: {}", rel_path, e);
+        }
+    }
+
+    // FTS 不一致时重建 — 清除后在同一事务内重新扫描
+    if !report.fts_consistent {
+        tx.execute_batch("DELETE FROM notes_fts")
+            .map_err(|e| HealthError::Db(e.to_string()))?;
+        if let Err(e) = scanner::scan_vault_raw(&base, &tx) {
+            tracing::warn!("FTS rebuild scan failed: {}", e);
+        }
+    }
+
+    tx.commit().map_err(|e| HealthError::Db(e.to_string()))?;
+
+    // 修复完成后返回最新报告
+    let fresh_disk = collect_disk_files(&base);
+    build_health_report(conn, &fresh_disk)
+}
+
+/// Collect all .md files on disk as vault-relative paths.
+fn collect_disk_files(base: &Path) -> std::collections::HashSet<String> {
+    let mut disk_files = std::collections::HashSet::new();
     for entry in WalkDir::new(base)
         .into_iter()
         .filter_entry(|e| {
@@ -80,11 +145,15 @@ pub async fn vault_health_check(
             .to_string();
         disk_files.insert(rel);
     }
+    disk_files
+}
 
-    let db_guard = state.db.lock();
-    let conn = db_guard.as_ref().ok_or(HealthError::NoIndex)?;
-
-    // 2. Collect all indexed paths
+/// Build a health report from a database connection and the set of on-disk files.
+fn build_health_report(
+    conn: &rusqlite::Connection,
+    disk_files: &std::collections::HashSet<String>,
+) -> Result<HealthReport, HealthError> {
+    // Collect all indexed paths
     let mut indexed_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
     {
         let mut stmt = conn
@@ -100,22 +169,19 @@ pub async fn vault_health_check(
         }
     }
 
-    // 3. Compute differences
     let unindexed_files: Vec<String> = disk_files
         .difference(&indexed_paths)
         .cloned()
         .collect();
 
     let orphaned_entries: Vec<String> = indexed_paths
-        .difference(&disk_files)
+        .difference(disk_files)
         .cloned()
         .collect();
 
-    // 4. Find broken links
-    let broken_links = find_broken_links(conn, &disk_files)
+    let broken_links = find_broken_links(conn, disk_files)
         .map_err(|e| HealthError::Db(e.to_string()))?;
 
-    // 5. FTS consistency: count notes vs notes_fts rows
     let notes_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
         .map_err(|e| HealthError::Db(e.to_string()))?;
@@ -133,6 +199,8 @@ pub async fn vault_health_check(
     })
 }
 
+/// Check whether a link target resolves to any note.
+/// Considers full path match, filename stem match, and frontmatter aliases.
 fn find_broken_links(
     conn: &rusqlite::Connection,
     disk_files: &std::collections::HashSet<String>,
@@ -151,6 +219,9 @@ fn find_broken_links(
         })
         .collect();
 
+    // Build alias set for resolution (lowercase alias → exists)
+    let alias_map = db::query_all_aliases(conn).unwrap_or_default();
+
     let results = stmt
         .query_map([], |row| {
             let source: String = row.get(0)?;
@@ -159,142 +230,28 @@ fn find_broken_links(
         })?
         .filter_map(|r| r.ok())
         .filter(|(_, target)| {
-            // A link is broken if:
-            // 1. target doesn't match any full path on disk
-            // 2. target stem doesn't match any filename stem on disk
             let target_lower = target.to_lowercase();
-            let path_match = disk_files.iter().any(|p| p.to_lowercase() == target_lower);
-            if path_match {
+
+            // 1. Full path match
+            if disk_files.iter().any(|p| p.to_lowercase() == target_lower) {
                 return false;
             }
+            // 2. Filename stem match
             let stem = std::path::Path::new(target)
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_lowercase())
                 .unwrap_or_else(|| target_lower.clone());
-            !stems.contains(&stem)
+            if stems.contains(&stem) {
+                return false;
+            }
+            // 3. Alias match — link target resolves to a note via its alias
+            if alias_map.contains_key(&target_lower) {
+                return false;
+            }
+            true
         })
         .map(|(source, target)| BrokenLink { source, target })
         .collect();
 
     Ok(results)
-}
-
-/// Repair the vault index: remove orphans, index missing files, rebuild FTS if inconsistent.
-#[tauri::command]
-pub async fn repair_vault(
-    state: State<'_, AppState>,
-) -> Result<HealthReport, HealthError> {
-    // First run the health check to see what needs fixing
-    let report = vault_health_check_inner(&state)?;
-
-    let vault_path = state.vault_path.read();
-    let base = vault_path.as_ref().ok_or(HealthError::NoVault)?.clone();
-    drop(vault_path);
-
-    let db_guard = state.db.lock();
-    let conn = db_guard.as_ref().ok_or(HealthError::NoIndex)?;
-
-    // Remove orphaned entries
-    for path in &report.orphaned_entries {
-        db::delete_note(conn, path)
-            .map_err(|e| HealthError::Db(e.to_string()))?;
-    }
-
-    // Index unindexed files
-    for rel_path in &report.unindexed_files {
-        let full_path = base.join(rel_path);
-        if let Err(e) = scanner::index_single_file(&base, &full_path, conn) {
-            tracing::warn!("Repair: failed to index {}: {}", rel_path, e);
-        }
-    }
-
-    // Rebuild FTS if inconsistent — full re-scan
-    if !report.fts_consistent {
-        conn.execute_batch("DELETE FROM notes_fts")
-            .map_err(|e| HealthError::Db(e.to_string()))?;
-        scanner::scan_vault(&base, conn)
-            .map_err(|e| HealthError::Io(e))?;
-    }
-
-    drop(db_guard);
-
-    // Return a fresh report after repairs
-    vault_health_check_inner(&state)
-}
-
-/// Synchronous inner implementation used by both check and repair.
-fn vault_health_check_inner(state: &AppState) -> Result<HealthReport, HealthError> {
-    let vault_path = state.vault_path.read();
-    let base = vault_path.as_ref().ok_or(HealthError::NoVault)?;
-
-    let mut disk_files: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for entry in WalkDir::new(base)
-        .into_iter()
-        .filter_entry(|e| {
-            let name = e.file_name().to_string_lossy();
-            !name.starts_with('.') && name != "node_modules"
-        })
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let rel = path
-            .strip_prefix(base)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        disk_files.insert(rel);
-    }
-
-    let db_guard = state.db.lock();
-    let conn = db_guard.as_ref().ok_or(HealthError::NoIndex)?;
-
-    let mut indexed_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
-    {
-        let mut stmt = conn
-            .prepare("SELECT path FROM notes")
-            .map_err(|e| HealthError::Db(e.to_string()))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| HealthError::Db(e.to_string()))?;
-        for row in rows {
-            if let Ok(p) = row {
-                indexed_paths.insert(p);
-            }
-        }
-    }
-
-    let unindexed_files: Vec<String> = disk_files
-        .difference(&indexed_paths)
-        .cloned()
-        .collect();
-
-    let orphaned_entries: Vec<String> = indexed_paths
-        .difference(&disk_files)
-        .cloned()
-        .collect();
-
-    let broken_links = find_broken_links(conn, &disk_files)
-        .map_err(|e| HealthError::Db(e.to_string()))?;
-
-    let notes_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
-        .map_err(|e| HealthError::Db(e.to_string()))?;
-    let fts_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM notes_fts", [], |row| row.get(0))
-        .map_err(|e| HealthError::Db(e.to_string()))?;
-
-    Ok(HealthReport {
-        total_files: disk_files.len(),
-        total_indexed: indexed_paths.len(),
-        unindexed_files,
-        orphaned_entries,
-        broken_links,
-        fts_consistent: notes_count == fts_count,
-    })
 }

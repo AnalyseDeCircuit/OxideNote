@@ -8,7 +8,8 @@
 
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { X } from 'lucide-react';
-import { useNoteStore, flushPendingSave, type Tab } from '@/store/noteStore';
+import { useNoteStore, flushPendingSave, type SaveOutcome, type Tab } from '@/store/noteStore';
+import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
 
 export function TabBar() {
@@ -55,15 +56,50 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
   dragOverIndex: number | null;
   setDragOverIndex: (i: number | null) => void;
 }) {
+  const openTabs = useNoteStore((s) => s.openTabs);
   const setActiveTab = useNoteStore((s) => s.setActiveTab);
   const closeTab = useNoteStore((s) => s.closeTab);
-  const closeAllTabs = useNoteStore((s) => s.closeAllTabs);
-  const closeOtherTabs = useNoteStore((s) => s.closeOtherTabs);
-  const closeTabsToRight = useNoteStore((s) => s.closeTabsToRight);
   const moveTab = useNoteStore((s) => s.moveTab);
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+
+  const tryCloseTab = useCallback(async (path: string) => {
+    const outcome = await flushPendingSave(path);
+    if (outcome === 'saved' || outcome === 'noop') {
+      closeTab(path);
+      return;
+    }
+
+    setActiveTab(path);
+    toast({
+      title: t('conflict.resolveBeforeCloseTitle'),
+      description: t('conflict.resolveBeforeCloseMessage'),
+      variant: 'warning',
+    });
+  }, [closeTab, setActiveTab, t]);
+
+  const tryCloseTabs = useCallback(async (paths: string[]) => {
+    const blockedPaths: string[] = [];
+
+    for (const path of paths) {
+      const outcome = await flushPendingSave(path);
+      if (outcome === 'saved' || outcome === 'noop') {
+        closeTab(path);
+      } else {
+        blockedPaths.push(path);
+      }
+    }
+
+    if (blockedPaths.length > 0) {
+      setActiveTab(blockedPaths[0]);
+      toast({
+        title: t('conflict.resolveBeforeCloseTitle'),
+        description: t('conflict.resolveBeforeCloseMessage'),
+        variant: 'warning',
+      });
+    }
+  }, [closeTab, setActiveTab, t]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -116,7 +152,7 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
         onMouseDown={(e) => {
           if (e.button === 1) {
             e.preventDefault();
-            flushPendingSave(tab.path).then(() => closeTab(tab.path));
+            void tryCloseTab(tab.path);
           }
         }}
         onContextMenu={(e) => {
@@ -134,7 +170,7 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
           aria-label={t('actions.closeTab', 'Close tab')}
           onClick={(e) => {
             e.stopPropagation();
-            flushPendingSave(tab.path).then(() => closeTab(tab.path));
+            void tryCloseTab(tab.path);
           }}
         >
           <X size={12} />
@@ -151,19 +187,31 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
         >
           <CtxMenuItem
             label={t('tabs.close', '关闭')}
-            onClick={() => { flushPendingSave(ctx.path).then(() => closeTab(ctx.path)); setCtx(null); }}
+            onClick={() => { void tryCloseTab(ctx.path); setCtx(null); }}
           />
           <CtxMenuItem
             label={t('tabs.closeOthers', '关闭其他')}
-            onClick={() => { closeOtherTabs(ctx.path); setCtx(null); }}
+            onClick={() => {
+              void tryCloseTabs(openTabs.filter((openTab) => openTab.path !== ctx.path).map((openTab) => openTab.path));
+              setCtx(null);
+            }}
           />
           <CtxMenuItem
             label={t('tabs.closeRight', '关闭右侧')}
-            onClick={() => { closeTabsToRight(ctx.path); setCtx(null); }}
+            onClick={() => {
+              const currentIndex = openTabs.findIndex((openTab) => openTab.path === ctx.path);
+              if (currentIndex >= 0) {
+                void tryCloseTabs(openTabs.slice(currentIndex + 1).map((openTab) => openTab.path));
+              }
+              setCtx(null);
+            }}
           />
           <CtxMenuItem
             label={t('tabs.closeAll', '关闭所有')}
-            onClick={() => { closeAllTabs(); setCtx(null); }}
+            onClick={() => {
+              void tryCloseTabs(openTabs.map((openTab) => openTab.path));
+              setCtx(null);
+            }}
           />
         </div>
       )}
