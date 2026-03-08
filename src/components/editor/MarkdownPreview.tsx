@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
-import { Marked } from 'marked';
+import { Marked, type Token } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
 import mermaid from 'mermaid';
@@ -22,6 +22,7 @@ import DOMPurify from 'dompurify';
 import { useNoteStore } from '@/store/noteStore';
 import { searchByFilename, createNote, readNote } from '@/lib/api';
 import { ImageLightbox } from '@/components/editor/ImageLightbox';
+import { getSourceLineForPreviewOffset } from '@/components/editor/scrollSync';
 import 'katex/dist/katex.min.css';
 
 // ── Mermaid 初始化 ──────────────────────────────────────────
@@ -39,17 +40,15 @@ function getMermaidConfig() {
     startOnLoad: false,
     theme: getMermaidTheme(),
     securityLevel: 'strict' as const,
-    flowchart: {
-      // Keep labels as native SVG text so DOMPurify's SVG sanitization
-      // does not strip them with foreignObject-based HTML labels.
-      htmlLabels: false,
-    },
   };
 }
 
 mermaid.initialize(getMermaidConfig());
 
-// ── 自增 ID，用于 Mermaid 图表容器唯一标识 ─────────────────
+// Mermaid needs globally unique IDs per render call.
+// Use a combination of a per-session prefix and an incrementing counter
+// to avoid collisions when the same content is re-rendered (e.g. split mode).
+const mermaidSessionId = Math.random().toString(36).slice(2, 8);
 let mermaidIdCounter = 0;
 
 /**
@@ -79,7 +78,7 @@ function getCalloutIcon(type: string): string {
  *   · WikiLink [[target]] 解析
  *   · highlight.js 代码高亮
  */
-function createMarkedInstance() {
+function createMarkedInstance(getTokenLine: (token: object) => number | undefined) {
   const marked = new Marked();
 
   // ── KaTeX 块级公式扩展 ($$ ... $$) ───────────────────────
@@ -257,21 +256,38 @@ function createMarkedInstance() {
   // ── 代码块渲染器：highlight.js + Mermaid 占位 ───────────
   marked.use({
     renderer: {
-      code({ text, lang }: { text: string; lang?: string }) {
-        // Mermaid 代码块 → 插入占位 div，后续异步渲染
-        if (lang === 'mermaid') {
-          const id = `mermaid-${++mermaidIdCounter}`;
-          return `<div class="mermaid-container" data-mermaid-id="${id}">${escapeHtml(text)}</div>`;
+      code(token: { text: string; lang?: string } & object) {
+        const startLine = getTokenLine(token) ?? 0;
+
+        // Mermaid code block → placeholder div, rendered async later
+        if (token.lang === 'mermaid') {
+          const id = `mermaid-${mermaidSessionId}-${++mermaidIdCounter}`;
+          return `<div class="mermaid-container code-line" data-mermaid-id="${id}" data-line="${startLine}">${escapeHtml(token.text)}</div>`;
         }
 
-        // 常规代码块 → highlight.js
-        if (lang && hljs.getLanguage(lang)) {
-          const highlighted = hljs.highlight(text, { language: lang }).value;
-          return `<pre><code class="hljs language-${escapeAttr(lang)}">${highlighted}</code></pre>`;
+        // Standard code block: single data-line on <code> element,
+        // full-block highlight (VS Code style — one anchor per block)
+        const languageClass = token.lang ? ` language-${escapeAttr(token.lang)}` : '';
+        let highlighted: string;
+        if (token.lang && hljs.getLanguage(token.lang)) {
+          highlighted = hljs.highlight(token.text, { language: token.lang }).value;
+        } else if (token.text.trim()) {
+          highlighted = hljs.highlightAuto(token.text).value;
+        } else {
+          highlighted = escapeHtml(token.text);
         }
-        // 无语言标注的代码块 → 自动检测
-        const auto = hljs.highlightAuto(text).value;
-        return `<pre><code class="hljs">${auto}</code></pre>`;
+        return `<pre><code class="hljs${languageClass} code-line" data-line="${startLine}">${highlighted}</code></pre>`;
+      },
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      listitem(token: any) {
+        const startLine = getTokenLine(token) ?? 0;
+        const body = this.parser.parse(token.tokens);
+        const checkbox = token.task
+          ? `<input ${token.checked ? 'checked="" ' : ''}disabled="" type="checkbox">`
+          : '';
+        const className = token.task ? 'task-list-item code-line' : 'code-line';
+        return `<li class="${className}" data-line="${startLine}">${checkbox}${body}</li>`;
       },
     },
   });
@@ -336,30 +352,60 @@ function escapeAttr(text: string): string {
 interface MarkdownPreviewProps {
   content: string;
   className?: string;
-  onScroll?: (scrollFraction: number) => void;
+  onScroll?: (sourceLine: number) => void;
   scrollRef?: React.RefObject<HTMLDivElement | null>;
+}
+
+interface PreviewBlock {
+  line: number;
+  html: string;
+  anchored: boolean;
 }
 
 export function MarkdownPreview({ content, className = '', onScroll, scrollRef }: MarkdownPreviewProps) {
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = scrollRef ?? internalRef;
-  const marked = useMemo(() => createMarkedInstance(), []);
+  const tokenLineMapRef = useRef<WeakMap<object, number>>(new WeakMap());
+  const marked = useMemo(() => createMarkedInstance((token) => tokenLineMapRef.current.get(token)), []);
 
   // ── Image lightbox state ──────────────────────────────────
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState<string>('');
 
-  // ── 解析 Markdown → HTML（DOMPurify 净化）─────────────────
-  const html = useMemo(() => {
-    if (!content) return '';
+  // ── 解析 Markdown → 带源码行号锚点的块列表 ────────────────
+  const blocks = useMemo(() => {
+    if (!content) return [] as PreviewBlock[];
+
     try {
-      const raw = marked.parse(content) as string;
-      return DOMPurify.sanitize(raw, {
-        ADD_TAGS: ['math-block', 'details', 'summary'],
-        ADD_ATTR: ['data-target', 'data-mermaid-id', 'data-callout', 'data-embed-target', 'open'],
-      });
+      const tokens = marked.lexer(content) as Token[];
+      tokenLineMapRef.current = buildTokenLineMap(tokens);
+      const renderedBlocks: PreviewBlock[] = [];
+      let currentLine = 0;
+
+      for (const token of tokens) {
+        const startLine = currentLine;
+        const raw = typeof token.raw === 'string' ? token.raw : '';
+        currentLine += countLineBreaks(raw);
+
+        const rendered = marked.parser([token]) as string;
+        const sanitized = sanitizeMarkdownHtml(rendered);
+        if (sanitized.trim()) {
+          renderedBlocks.push({
+            line: startLine,
+            html: sanitized,
+            anchored: shouldAnchorBlock(token),
+          });
+        }
+      }
+
+      if (renderedBlocks.length > 0) {
+        return renderedBlocks;
+      }
+
+      const fallback = sanitizeMarkdownHtml(marked.parse(content) as string);
+      return fallback.trim() ? [{ line: 0, html: fallback, anchored: true }] : [];
     } catch {
-      return `<p class="text-red-400">Render error</p>`;
+      return [{ line: 0, html: '<p class="text-red-400">Render error</p>', anchored: true }];
     }
   }, [content, marked]);
 
@@ -379,14 +425,25 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
 
       for (const container of mermaidContainers) {
         if (cancelled) break;
+        // Skip already-rendered containers
+        if (container.classList.contains('mermaid-rendered')) continue;
         const id = container.dataset.mermaidId;
         const code = container.textContent || '';
         if (!id || !code) continue;
         try {
+          // Clean up any stale SVG element from a previous render attempt
+          // (Mermaid creates a temp element with the given ID in document body)
+          document.getElementById(id)?.remove();
+
           const { svg } = await mermaid.render(id, code);
           if (!cancelled) {
-            // 对 Mermaid 生成的 SVG 进行 DOMPurify 净化，防止 SVG 内嵌脚本
-            container.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } });
+            // Mermaid uses foreignObject with HTML inside SVG for node labels.
+            // Allow both SVG + HTML profiles so DOMPurify does not strip label content.
+            // Mermaid's own securityLevel:'strict' already prevents script injection.
+            container.innerHTML = DOMPurify.sanitize(svg, {
+              USE_PROFILES: { svg: true, svgFilters: true, html: true },
+              ADD_TAGS: ['foreignObject'],
+            });
             container.classList.add('mermaid-rendered');
           }
         } catch {
@@ -399,7 +456,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     return () => {
       cancelled = true;
     };
-  }, [html]);
+  }, [blocks]);
 
   // ── 异步加载嵌入笔记 ![[note]] ────────────────────────────
   useEffect(() => {
@@ -424,10 +481,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
             const noteContent = await readNote(best.path);
             if (cancelled) break;
             const embedHtml = marked.parse(noteContent.content) as string;
-            const sanitized = DOMPurify.sanitize(embedHtml, {
-              ADD_TAGS: ['math-block', 'details', 'summary'],
-              ADD_ATTR: ['data-target', 'data-mermaid-id', 'data-callout', 'open'],
-            });
+            const sanitized = sanitizeMarkdownHtml(embedHtml);
             // Add title header + rendered content
             const titleLabel = best.title || target;
             container.innerHTML = `<div class="note-embed-title">${escapeHtml(titleLabel)}</div>${sanitized}`;
@@ -443,7 +497,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     })();
 
     return () => { cancelled = true; };
-  }, [html, marked]);
+  }, [blocks, marked]);
 
   // ── WikiLink 点击导航 + Image 灯箱 ───────────────────────
   const handleClick = useCallback(async (e: React.MouseEvent) => {
@@ -487,9 +541,10 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     if (!onScroll) return;
     const el = containerRef.current;
     if (!el) return;
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    if (maxScroll <= 0) return;
-    onScroll(el.scrollTop / maxScroll);
+    const sourceLine = getSourceLineForPreviewOffset(el, el.scrollTop);
+    if (typeof sourceLine === 'number' && !Number.isNaN(sourceLine)) {
+      onScroll(sourceLine);
+    }
   }, [onScroll, containerRef]);
 
   return (
@@ -497,11 +552,19 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
       <div
         ref={containerRef}
         className={`oxide-markdown-preview overflow-y-auto p-6 ${className}`}
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: html }}
         onClick={handleClick}
         onScroll={handleScroll}
-      />
+      >
+        {blocks.map((block, index) => (
+          <div
+            key={`${block.line}-${index}`}
+            className={block.anchored ? 'preview-block code-line' : 'preview-block'}
+            data-line={block.anchored ? block.line : undefined}
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: block.html }}
+          />
+        ))}
+      </div>
       {lightboxSrc && (
         <ImageLightbox
           src={lightboxSrc}
@@ -512,3 +575,59 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     </>
   );
 }
+
+function sanitizeMarkdownHtml(raw: string): string {
+  return DOMPurify.sanitize(raw, {
+    ADD_TAGS: ['math-block', 'details', 'summary'],
+    ADD_ATTR: ['data-target', 'data-mermaid-id', 'data-callout', 'data-embed-target', 'data-line', 'open'],
+  });
+}
+
+function countLineBreaks(text: string): number {
+  return text.match(/\n/g)?.length ?? 0;
+}
+
+function shouldAnchorBlock(token: Token): boolean {
+  // Lists and code blocks have internal code-line anchors
+  // (on <li> and <code> elements respectively), so the wrapper div
+  // should not duplicate them — matching VS Code's approach.
+  if (token.type === 'list') return false;
+  if (token.type === 'code') return false;
+  return true;
+}
+
+function buildTokenLineMap(tokens: Token[]): WeakMap<object, number> {
+  const lineMap = new WeakMap<object, number>();
+  assignTokenLines(tokens, 0, lineMap);
+  return lineMap;
+}
+
+function assignTokenLines(tokens: Token[], startLine: number, lineMap: WeakMap<object, number>): number {
+  let currentLine = startLine;
+
+  for (const token of tokens) {
+    lineMap.set(token, currentLine);
+    assignNestedTokenLines(token, currentLine, lineMap);
+    currentLine += countLineBreaks(token.raw || '');
+  }
+
+  return currentLine;
+}
+
+function assignNestedTokenLines(token: Token, startLine: number, lineMap: WeakMap<object, number>) {
+  if (token.type === 'list') {
+    let itemLine = startLine;
+    for (const item of token.items) {
+      lineMap.set(item, itemLine);
+      assignNestedTokenLines(item as Token, itemLine, lineMap);
+      itemLine += countLineBreaks(item.raw || '');
+    }
+    return;
+  }
+
+  if ('tokens' in token && Array.isArray(token.tokens)) {
+    assignTokenLines(token.tokens as Token[], startLine, lineMap);
+  }
+}
+
+

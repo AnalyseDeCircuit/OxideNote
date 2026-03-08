@@ -223,7 +223,7 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
 function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
   return (
     <button
-      className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
         active
           ? 'text-theme-accent border-b-2 border-theme-accent'
           : 'text-muted-foreground hover:text-foreground'
@@ -260,18 +260,18 @@ function Titlebar() {
 
   return (
     <div
-      className="h-10 flex items-center px-3 gap-2 border-b border-theme-border bg-surface select-none shrink-0"
+      className="h-11 flex items-center px-3 gap-1 border-b border-theme-border bg-surface select-none shrink-0"
       data-tauri-drag-region
     >
       <button
         onClick={toggleSidebar}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('actions.toggleSidebar')}
         aria-label={t('actions.toggleSidebar')}
       >
         <SidebarIcon />
       </button>
-      <span className="text-sm font-medium text-foreground" data-tauri-drag-region>
+      <span className="text-sm font-semibold text-foreground ml-1" data-tauri-drag-region>
         OxideNote
       </span>
 
@@ -283,7 +283,7 @@ function Titlebar() {
       {/* ── 全局搜索入口 ────────────────────────────────── */}
       <button
         onClick={() => setGlobalSearchOpen(true)}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('actions.search')}
         aria-label={t('actions.search')}
       >
@@ -293,7 +293,7 @@ function Titlebar() {
       {/* ── 知识图谱入口 ────────────────────────────────── */}
       <button
         onClick={() => setGraphViewOpen(true)}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('actions.knowledgeGraph')}
         aria-label={t('actions.knowledgeGraph')}
       >
@@ -303,7 +303,7 @@ function Titlebar() {
       {/* ── 闪卡入口 ────────────────────────────────────── */}
       <button
         onClick={() => setFlashcardOpen(true)}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('flashcard.title')}
         aria-label={t('flashcard.title')}
       >
@@ -313,7 +313,7 @@ function Titlebar() {
       {/* ── 视频面板入口 ────────────────────────────────── */}
       <button
         onClick={() => setVideoPanelOpen(!useUIStore.getState().videoPanelOpen)}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('video.title')}
         aria-label={t('video.title')}
       >
@@ -323,7 +323,7 @@ function Titlebar() {
       {/* ── 浏览器面板入口 ──────────────────────────────── */}
       <button
         onClick={() => setBrowserPanelOpen(!useUIStore.getState().browserPanelOpen)}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('browser.title')}
         aria-label={t('browser.title')}
       >
@@ -333,7 +333,7 @@ function Titlebar() {
       {/* ── 反向链接面板 ────────────────────────────────── */}
       <button
         onClick={handleBacklinksToggle}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('backlinks.title')}
         aria-label={t('backlinks.title')}
       >
@@ -341,7 +341,7 @@ function Titlebar() {
       </button>
       <button
         onClick={() => setSettingsOpen(true)}
-        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
         title={t('actions.settings')}
         aria-label={t('actions.settings')}
       >
@@ -363,14 +363,14 @@ function EditorModeSwitch({ mode, onChange }: { mode: EditorMode; onChange: (m: 
   ];
 
   return (
-    <div className="flex items-center ml-3 bg-background rounded border border-theme-border overflow-hidden">
+    <div className="flex items-center ml-3 rounded-full bg-background border border-theme-border overflow-hidden">
       {modes.map(({ key, label }) => (
         <button
           key={key}
-          className={`px-2.5 py-0.5 text-xs font-medium transition-colors ${
+          className={`px-3 py-1 text-xs font-medium transition-all ${
             mode === key
-              ? 'bg-theme-accent text-white'
-              : 'text-muted-foreground hover:text-foreground hover:bg-theme-hover'
+              ? 'bg-theme-accent text-white rounded-full shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
           onClick={() => onChange(key)}
           aria-label={label}

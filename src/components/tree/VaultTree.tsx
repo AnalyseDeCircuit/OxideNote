@@ -100,17 +100,17 @@ export function VaultTree() {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-theme-border shrink-0">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-theme-border shrink-0">
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
           {t('sidebar.files')}
         </span>
         <div className="flex items-center gap-0.5">
-          <ToolbarButton icon={<CalendarDays size={14} />} title={t('dailyNote.tooltip')} onClick={handleCreateDailyNote} />
-          <ToolbarButton icon={<Plus size={14} />} title={t('sidebar.newNote')} onClick={handleNewNote} />
-          <ToolbarButton icon={<FolderPlus size={14} />} title={t('sidebar.newFolder')} onClick={handleNewFolder} />
-          <ToolbarButton icon={<RefreshCw size={14} />} title={t('sidebar.refresh')} onClick={handleRefresh} />
+          <ToolbarButton icon={<CalendarDays size={15} />} title={t('dailyNote.tooltip')} onClick={handleCreateDailyNote} />
+          <ToolbarButton icon={<Plus size={15} />} title={t('sidebar.newNote')} onClick={handleNewNote} />
+          <ToolbarButton icon={<FolderPlus size={15} />} title={t('sidebar.newFolder')} onClick={handleNewFolder} />
+          <ToolbarButton icon={<RefreshCw size={15} />} title={t('sidebar.refresh')} onClick={handleRefresh} />
           <ToolbarButton
-            icon={<ArrowUpDown size={14} />}
+            icon={<ArrowUpDown size={15} />}
             title={sortMode === 'name' ? t('sidebar.sortByModified') : t('sidebar.sortByName')}
             onClick={handleToggleSort}
           />
@@ -127,7 +127,7 @@ export function VaultTree() {
       )}
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1" role="tree" aria-label={t('sidebar.files')}>
+      <div className="flex-1 overflow-y-auto py-1.5 px-1.5" role="tree" aria-label={t('sidebar.files')}>
         {treeLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
             {t('sidebar.loading')}
@@ -278,10 +278,10 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
         <div>
           {/* Row */}
           <div
-            className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer text-sm select-none hover:bg-theme-hover transition-colors ${
-              isActive ? 'bg-theme-hover text-foreground' : 'text-foreground/80'
+            className={`flex items-center gap-1.5 px-2 py-[5px] cursor-pointer text-sm select-none rounded-md transition-colors ${
+              isActive ? 'bg-theme-accent/10 text-foreground' : 'text-foreground/80 hover:bg-theme-hover'
             } ${dragOver ? 'ring-1 ring-theme-accent bg-theme-hover/50' : ''}`}
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            style={{ paddingLeft: `${depth * 14 + 8}px` }}
             onClick={handleClick}
             draggable
             onDragStart={handleDragStart}
@@ -520,7 +520,7 @@ function ToolbarButton({
 }) {
   return (
     <button
-      className="p-1 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+      className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
       title={title}
       aria-label={title}
       onClick={onClick}

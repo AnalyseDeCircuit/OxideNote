@@ -648,6 +648,12 @@ html {
   line-height: 1.75;
 }
 
+/* ── Large-file performance: skip layout/paint for off-screen blocks ── */
+.oxide-markdown-preview > .preview-block {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
 /* ── 标题 ──────────────────────────────────────────────────── */
 .oxide-markdown-preview h1 { font-size: 1.75em; font-weight: 700; margin: 1.25em 0 0.5em; border-bottom: 1px solid var(--theme-border); padding-bottom: 0.3em; }
 .oxide-markdown-preview h2 { font-size: 1.4em; font-weight: 600; margin: 1.15em 0 0.4em; border-bottom: 1px solid var(--theme-border); padding-bottom: 0.25em; }

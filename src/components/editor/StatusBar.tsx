@@ -28,7 +28,7 @@ export function StatusBar() {
   if (!activeTabPath) return null;
 
   return (
-    <div className="h-6 flex items-center px-3 gap-4 border-t border-theme-border bg-surface text-xs text-muted-foreground select-none shrink-0">
+    <div className="h-7 flex items-center px-4 gap-4 border-t border-theme-border bg-surface text-[11px] text-muted-foreground select-none shrink-0">
       <span>
         Ln {cursorLine}, Col {cursorCol}
       </span>

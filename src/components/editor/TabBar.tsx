@@ -23,7 +23,7 @@ export function TabBar() {
     <div
       role="tablist"
       aria-label="Open tabs"
-      className="flex items-center border-b border-theme-border bg-surface overflow-x-auto shrink-0"
+      className="flex items-center border-b border-theme-border bg-surface overflow-x-auto shrink-0 h-9"
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={() => setDragOverIndex(null)}
       onDrop={() => setDragOverIndex(null)}
@@ -143,7 +143,7 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        className={`group flex items-center gap-1.5 px-3 py-1.5 text-[13px] cursor-pointer select-none border-r border-theme-border transition-colors ${
+        className={`group relative flex items-center gap-1.5 px-3.5 py-2 text-[13px] cursor-pointer select-none border-r border-theme-border transition-colors ${
           isActive
             ? 'bg-background text-foreground'
             : 'text-muted-foreground hover:bg-theme-hover hover:text-foreground'
@@ -181,6 +181,10 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
           >
             <X size={12} />
           </button>
+        )}
+        {/* Active tab bottom accent line */}
+        {isActive && (
+          <span className="absolute bottom-0 left-1 right-1 h-0.5 rounded-full bg-theme-accent" />
         )}
       </div>
 

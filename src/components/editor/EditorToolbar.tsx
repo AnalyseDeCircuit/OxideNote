@@ -207,7 +207,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   };
 
   return (
-    <div className="flex items-center gap-0.5 px-2 py-1 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
+    <div className="flex items-center gap-1 px-3 py-1.5 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
       <ToolbarGroup>
         <ToolbarBtn icon={<Heading1 size={14} />} title={t('toolbar.heading1')} onClick={() => toggleHeading(1)} />
@@ -285,7 +285,7 @@ function ToolbarBtn({
 }) {
   return (
     <button
-      className={`p-1.5 rounded hover:bg-theme-hover transition-colors ${
+      className={`p-1.5 rounded-md hover:bg-theme-hover transition-colors ${
         active ? 'text-theme-accent bg-theme-accent/10' : 'text-muted-foreground hover:text-foreground'
       }`}
       title={title}
@@ -302,5 +302,5 @@ function ToolbarGroup({ children }: { children: React.ReactNode }) {
 }
 
 function ToolbarDivider() {
-  return <div className="w-px h-4 bg-theme-border mx-1" />;
+  return <div className="w-px h-4 bg-theme-border mx-1.5" />;
 }

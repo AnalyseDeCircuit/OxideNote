@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, startTransition } from 'react';
 import { useNoteStore, type SaveOutcome } from '@/store/noteStore';
 import { registerPendingSave, unregisterPendingSave } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
 import { setEditorView } from '@/lib/editorViewRef';
 import { MarkdownPreview } from './MarkdownPreview';
+import { getPreviewScrollTopForSourceLine } from '@/components/editor/scrollSync';
 import { EditorToolbar } from './EditorToolbar';
 import { ConflictDialog } from '@/components/editor/ConflictDialog';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
@@ -79,9 +80,10 @@ export function NoteEditor() {
       useNoteStore.getState().setActiveContent(contentRef.current);
     }, 150);
 
-    // Debounce preview update to avoid re-parsing on every keystroke
+    // Debounce preview update to avoid re-parsing on every keystroke.
+    // Use a longer delay to reduce layout churn for large documents.
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    previewTimerRef.current = setTimeout(() => setPreviewContent(content), 300);
+    previewTimerRef.current = setTimeout(() => startTransition(() => setPreviewContent(content)), 500);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -349,18 +351,15 @@ export function NoteEditor() {
     const scrollDOM = view.scrollDOM;
 
     const onEditorScroll = () => {
-      // 若预览侧刚发起同步滚动，忽略由它导致的编辑器 scroll 事件
       const lock = scrollLockRef.current;
       if (lock && lock.source === 'preview' && Date.now() < lock.until) return;
 
       scrollLockRef.current = { source: 'editor', until: Date.now() + SCROLL_LOCK_MS };
       const el = previewScrollRef.current;
       if (!el) return;
-      const maxEditor = scrollDOM.scrollHeight - scrollDOM.clientHeight;
-      if (maxEditor <= 0) return;
-      const fraction = scrollDOM.scrollTop / maxEditor;
-      const maxPreview = el.scrollHeight - el.clientHeight;
-      el.scrollTop = fraction * maxPreview;
+
+      const visibleLine = getTopVisibleEditorLine(view, scrollDOM.scrollTop);
+      el.scrollTop = getPreviewScrollTopForSourceLine(el, visibleLine);
     };
 
     scrollDOM.addEventListener('scroll', onEditorScroll, { passive: true });
@@ -368,17 +367,15 @@ export function NoteEditor() {
   }, [editorMode, viewRef]);
 
   // ── Sync scroll: preview → editor ────────────────────────
-  const handlePreviewScroll = useCallback((fraction: number) => {
-    // 若编辑器侧刚发起同步滚动，忽略由它导致的预览 scroll 事件
+  const handlePreviewScroll = useCallback((sourceLine: number) => {
     const lock = scrollLockRef.current;
     if (lock && lock.source === 'editor' && Date.now() < lock.until) return;
 
     scrollLockRef.current = { source: 'preview', until: Date.now() + SCROLL_LOCK_MS };
     const view = viewRef.current;
     if (!view) return;
-    const scrollDOM = view.scrollDOM;
-    const maxEditor = scrollDOM.scrollHeight - scrollDOM.clientHeight;
-    scrollDOM.scrollTop = fraction * maxEditor;
+
+    setEditorScrollTopForLine(view, sourceLine);
   }, [viewRef]);
 
   // ── 粘贴事件：检测剪贴板中的图片 ─────────────────────────
@@ -510,4 +507,25 @@ export function NoteEditor() {
       }
     }
   }
+}
+
+function getTopVisibleEditorLine(view: NonNullable<ReturnType<typeof useCodeMirrorEditor>['viewRef']['current']>, scrollTop: number): number {
+  const block = view.lineBlockAtHeight(scrollTop);
+  const sourceLine = view.state.doc.lineAt(block.from).number - 1;
+  const nextLineNumber = Math.min(sourceLine + 2, view.state.doc.lines);
+  const nextBlock = view.lineBlockAt(view.state.doc.line(nextLineNumber).from);
+  const blockHeight = Math.max(nextBlock.top - block.top, 1);
+  const progress = Math.min(1, Math.max(0, (scrollTop - block.top) / blockHeight));
+  return sourceLine + progress;
+}
+
+function setEditorScrollTopForLine(view: NonNullable<ReturnType<typeof useCodeMirrorEditor>['viewRef']['current']>, sourceLine: number) {
+  const clampedLine = Math.max(0, Math.min(sourceLine, view.state.doc.lines - 1));
+  const baseLineNumber = Math.floor(clampedLine) + 1;
+  const fraction = clampedLine - Math.floor(clampedLine);
+  const baseBlock = view.lineBlockAt(view.state.doc.line(baseLineNumber).from);
+  const nextLineNumber = Math.min(baseLineNumber + 1, view.state.doc.lines);
+  const nextBlock = view.lineBlockAt(view.state.doc.line(nextLineNumber).from);
+  const blockHeight = Math.max(nextBlock.top - baseBlock.top, 1);
+  view.scrollDOM.scrollTop = baseBlock.top + fraction * blockHeight;
 }
