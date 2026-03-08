@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2 } from 'lucide-react';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck } from 'lucide-react';
 import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -217,6 +217,16 @@ function GeneralTab() {
         >
           <FolderSync size={16} />
           {t('settings.switchVault', '切换仓库')}
+        </button>
+        <button
+          onClick={() => {
+            useUIStore.getState().setSettingsOpen(false);
+            useUIStore.getState().setHealthOpen(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2 rounded-md border border-theme-border text-sm font-medium text-foreground hover:bg-theme-bg-hover transition-colors mt-2"
+        >
+          <ShieldCheck size={16} />
+          {t('settings.vaultHealth')}
         </button>
       </SettingsCard>
 

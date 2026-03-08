@@ -18,6 +18,8 @@ interface UIState {
   sidePanelTab: SidePanelTab;
   /** 知识图谱视图是否打开 */
   graphViewOpen: boolean;
+  /** Vault health dialog */
+  healthOpen: boolean;
 
   toggleSidebar: () => void;
   toggleSidePanel: () => void;
@@ -29,6 +31,7 @@ interface UIState {
   setEditorMode: (mode: EditorMode) => void;
   setSidePanelTab: (tab: SidePanelTab) => void;
   setGraphViewOpen: (v: boolean) => void;
+  setHealthOpen: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -40,6 +43,7 @@ export const useUIStore = create<UIState>((set) => ({
   editorMode: 'edit',
   sidePanelTab: 'backlinks',
   graphViewOpen: false,
+  healthOpen: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
@@ -51,4 +55,5 @@ export const useUIStore = create<UIState>((set) => ({
   setEditorMode: (mode) => set({ editorMode: mode }),
   setSidePanelTab: (tab) => set({ sidePanelTab: tab }),
   setGraphViewOpen: (v) => set({ graphViewOpen: v }),
+  setHealthOpen: (v) => set({ healthOpen: v }),
 }));

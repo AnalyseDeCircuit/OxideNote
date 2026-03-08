@@ -12,6 +12,7 @@ export interface TreeNode {
 export interface NoteContent {
   path: string;
   content: string;
+  modified_at_ms: number | null;
 }
 
 // ─── Vault commands ──────────────────────────────────────────
@@ -30,8 +31,8 @@ export async function readNote(path: string): Promise<NoteContent> {
   return invoke<NoteContent>('read_note', { path });
 }
 
-export async function writeNote(path: string, content: string): Promise<void> {
-  return invoke<void>('write_note', { path, content });
+export async function writeNote(path: string, content: string, expectedModifiedAtMs?: number | null): Promise<void> {
+  return invoke<void>('write_note', { path, content, expectedModifiedAtMs: expectedModifiedAtMs ?? null });
 }
 
 export async function createNote(parentPath: string, name: string, template?: string): Promise<string> {
@@ -133,4 +134,30 @@ export async function searchByTag(tag: string): Promise<SearchResult[]> {
 /** 移动文件/文件夹到新的父目录 */
 export async function moveEntry(sourcePath: string, targetDir: string): Promise<string> {
   return invoke<string>('move_entry', { sourcePath, targetDir });
+}
+
+// ─── Health commands ─────────────────────────────────────────
+
+export interface BrokenLink {
+  source: string;
+  target: string;
+}
+
+export interface HealthReport {
+  unindexed_files: string[];
+  orphaned_entries: string[];
+  broken_links: BrokenLink[];
+  total_files: number;
+  total_indexed: number;
+  fts_consistent: boolean;
+}
+
+/** Run a read-only vault health check */
+export async function vaultHealthCheck(): Promise<HealthReport> {
+  return invoke<HealthReport>('vault_health_check');
+}
+
+/** Repair the vault index (remove orphans, index missing, rebuild FTS) */
+export async function repairVault(): Promise<HealthReport> {
+  return invoke<HealthReport>('repair_vault');
 }

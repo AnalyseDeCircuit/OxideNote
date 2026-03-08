@@ -8,6 +8,7 @@ import { WelcomeScreen } from '@/components/layout/WelcomeScreen';
 import { QuickOpen } from '@/components/search/QuickOpen';
 import { GlobalSearch } from '@/components/search/GlobalSearch';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
+import { VaultHealthDialog } from '@/components/settings/VaultHealthDialog';
 import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { openVault, listTree, createNote } from '@/lib/api';
@@ -169,6 +170,7 @@ function App() {
       <QuickOpen />
       <GlobalSearch open={globalSearchOpen} onClose={() => useUIStore.getState().setGlobalSearchOpen(false)} />
       <SettingsDialog />
+      <VaultHealthDialog />
       <Toaster />
     </>
   );

@@ -111,7 +111,8 @@
     "templatesHint": "创建笔记时可选用模板。支持变量: {{title}}, {{date}}, {{datetime}}",
     "addTemplate": "添加模板",
     "newTemplate": "新模板",
-    "templateName": "模板名称"
+    "templateName": "模板名称",
+    "vaultHealth": "知识库健康检查"
   },
   "search": {
     "placeholder": "搜索笔记...",
@@ -167,6 +168,31 @@
   },
   "wikilink": {
     "created": "已创建笔记: {{name}}"
+  },
+  "conflict": {
+    "title": "文件冲突",
+    "description": "\"{{name}}\" 在编辑器外被修改，与本地更改产生冲突。",
+    "hint": "选择「保留本地」将覆盖外部修改；选择「加载外部」将丢弃本地未保存的更改。",
+    "keepMine": "保留本地",
+    "loadRemote": "加载外部版本"
+  },
+  "health": {
+    "title": "知识库健康检查",
+    "checking": "正在检查...",
+    "totalFiles": "磁盘文件: {{count}} 篇",
+    "totalIndexed": "已索引: {{count}} 篇",
+    "fts": "全文索引",
+    "ftsOk": "一致",
+    "ftsInconsistent": "不一致，需要修复",
+    "orphaned": "孤儿索引",
+    "orphanedCount": "{{count}} 条索引对应的文件已不存在",
+    "unindexed": "未索引文件",
+    "unindexedCount": "{{count}} 个文件未被索引",
+    "brokenLinks": "断裂链接",
+    "brokenLinksCount": "{{count}} 个 WikiLink 指向不存在的笔记",
+    "none": "无",
+    "allGood": "✓ 知识库状态良好",
+    "repair": "修复"
   },
   "tags": {
     "title": "标签",

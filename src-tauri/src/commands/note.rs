@@ -15,6 +15,8 @@ pub enum NoteError {
     Io(String),
     #[error("Access denied: path outside vault")]
     AccessDenied,
+    #[error("CONFLICT: file was modified externally")]
+    Conflict,
 }
 
 impl Serialize for NoteError {
@@ -27,6 +29,9 @@ impl Serialize for NoteError {
 pub struct NoteContent {
     pub path: String,
     pub content: String,
+    /// File modification time as Unix epoch milliseconds.
+    /// Used by the frontend to detect external modifications before saving.
+    pub modified_at_ms: Option<i64>,
 }
 
 /// Validate that a resolved path is within the vault root.
@@ -52,6 +57,15 @@ fn validate_inside_vault(base: &Path, rel_path: &str) -> Result<PathBuf, NoteErr
     }
 }
 
+/// Get file modification time as epoch milliseconds.
+fn get_mtime_ms(path: &Path) -> Option<i64> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+}
+
 /// Read a note's content by its vault-relative path.
 #[tauri::command]
 pub async fn read_note(
@@ -69,14 +83,19 @@ pub async fn read_note(
     let content = std::fs::read_to_string(&full_path)
         .map_err(|e| NoteError::Io(e.to_string()))?;
 
-    Ok(NoteContent { path, content })
+    let modified_at_ms = get_mtime_ms(&full_path);
+
+    Ok(NoteContent { path, content, modified_at_ms })
 }
 
 /// Write note content. Uses atomic write (write to .tmp then rename).
+/// If `expected_modified_at_ms` is provided, the current file mtime is checked first.
+/// A mismatch means the file was modified externally → returns `NoteError::Conflict`.
 #[tauri::command]
 pub async fn write_note(
     path: String,
     content: String,
+    expected_modified_at_ms: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<(), NoteError> {
     let vault_path = state.vault_path.read();
@@ -90,6 +109,17 @@ pub async fn write_note(
             let canonical_parent = parent.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
             if !canonical_parent.starts_with(&canonical_base) {
                 return Err(NoteError::AccessDenied);
+            }
+        }
+    }
+
+    // Conflict detection: compare expected mtime with current mtime
+    if let Some(expected) = expected_modified_at_ms {
+        if full_path.exists() {
+            if let Some(current) = get_mtime_ms(&full_path) {
+                if current != expected {
+                    return Err(NoteError::Conflict);
+                }
             }
         }
     }

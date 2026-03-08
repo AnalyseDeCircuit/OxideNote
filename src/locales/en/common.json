@@ -111,7 +111,8 @@
     "templatesHint": "Select a template when creating notes. Variables: {{title}}, {{date}}, {{datetime}}",
     "addTemplate": "Add template",
     "newTemplate": "New Template",
-    "templateName": "Template name"
+    "templateName": "Template name",
+    "vaultHealth": "Vault Health Check"
   },
   "search": {
     "placeholder": "Search notes...",
@@ -167,6 +168,31 @@
   },
   "wikilink": {
     "created": "Created note: {{name}}"
+  },
+  "conflict": {
+    "title": "File Conflict",
+    "description": "\"{{name}}\" was modified outside the editor and conflicts with your local changes.",
+    "hint": "\"Keep Mine\" will overwrite external changes; \"Load External\" will discard your unsaved edits.",
+    "keepMine": "Keep Mine",
+    "loadRemote": "Load External"
+  },
+  "health": {
+    "title": "Vault Health Check",
+    "checking": "Checking...",
+    "totalFiles": "Files on disk: {{count}}",
+    "totalIndexed": "Indexed: {{count}}",
+    "fts": "Full-text index",
+    "ftsOk": "Consistent",
+    "ftsInconsistent": "Inconsistent, repair needed",
+    "orphaned": "Orphaned entries",
+    "orphanedCount": "{{count}} indexed entries have no matching file",
+    "unindexed": "Unindexed files",
+    "unindexedCount": "{{count}} files are not indexed",
+    "brokenLinks": "Broken links",
+    "brokenLinksCount": "{{count}} WikiLinks point to non-existent notes",
+    "none": "None",
+    "allGood": "✓ Vault is healthy",
+    "repair": "Repair"
   },
   "tags": {
     "title": "Tags",

@@ -46,6 +46,8 @@ pub fn run() {
             commands::search::list_all_tags,
             commands::search::search_by_tag,
             commands::attachment::save_attachment,
+            commands::health::vault_health_check,
+            commands::health::repair_vault,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
