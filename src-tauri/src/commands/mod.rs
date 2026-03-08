@@ -4,6 +4,7 @@ pub mod browser;
 pub mod canvas;
 pub mod clip;
 pub mod crypto;
+pub mod embedding;
 pub mod export;
 pub mod health;
 pub mod history;

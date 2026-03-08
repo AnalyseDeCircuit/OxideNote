@@ -11,14 +11,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard } from 'lucide-react';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard, Brain } from 'lucide-react';
 import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate, type ActionId, DEFAULT_KEYBINDINGS } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore, flushAllPendingSaves } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { openVault, listTree } from '@/lib/api';
+import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, type EmbeddingConfig, type EmbeddingStatus } from '@/lib/api';
 import { toast } from '@/hooks/useToast';
 
 interface ThemeDef {
@@ -74,6 +74,7 @@ const SIDEBAR_TABS = [
   { id: 'editor', icon: Type },
   { id: 'appearance', icon: Palette },
   { id: 'keybindings', icon: Keyboard },
+  { id: 'ai', icon: Brain },
   { id: 'about', icon: Info },
 ] as const;
 
@@ -159,6 +160,7 @@ export function SettingsDialog() {
             {tab === 'editor' && <EditorTab />}
             {tab === 'appearance' && <AppearanceTab />}
             {tab === 'keybindings' && <KeybindingsTab />}
+            {tab === 'ai' && <AITab />}
             {tab === 'about' && <AboutTab />}
           </div>
         </div>
@@ -683,6 +685,164 @@ function KeybindingsTab() {
       >
         {t('settings.resetAllKeybindings', '重置所有快捷键')}
       </button>
+    </>
+  );
+}
+
+// ── AI / Embedding Settings Tab ─────────────────────────────
+
+function AITab() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<EmbeddingConfig>({
+    provider: 'api',
+    api_url: '',
+    api_key: '',
+    model: 'text-embedding-3-small',
+    dimensions: 1536,
+  });
+  const [status, setStatus] = useState<EmbeddingStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+
+  // Load config + status on mount
+  useEffect(() => {
+    Promise.all([loadEmbeddingConfig(), getEmbeddingStatus()])
+      .then(([cfg, st]) => {
+        if (cfg) setConfig(cfg);
+        setStatus(st);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await saveEmbeddingConfig(config);
+      toast({ title: t('ai.saved'), variant: 'default' });
+    } catch (e) {
+      toast({ title: String(e), variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }, [config, t]);
+
+  const handleRebuild = useCallback(async () => {
+    setRebuilding(true);
+    try {
+      const result = await rebuildEmbeddings();
+      toast({
+        title: t('ai.rebuildDone'),
+        description: `${result.embedded} notes, ${result.chunks} chunks${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`,
+        variant: result.errors.length > 0 ? 'warning' : 'default',
+      });
+      // Refresh status
+      const st = await getEmbeddingStatus();
+      setStatus(st);
+    } catch (e) {
+      toast({ title: String(e), variant: 'error' });
+    } finally {
+      setRebuilding(false);
+    }
+  }, [t]);
+
+  if (loading) {
+    return <div className="text-sm text-muted-foreground p-4">{t('ai.loading')}</div>;
+  }
+
+  return (
+    <>
+      <SettingsCard title={t('ai.provider')}>
+        <SettingRow label={t('ai.apiUrl')} hint={t('ai.apiUrlHint')}>
+          <input
+            type="text"
+            value={config.api_url}
+            onChange={(e) => setConfig({ ...config, api_url: e.target.value })}
+            placeholder="https://api.openai.com/v1/embeddings"
+            className="w-[300px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        <SettingRow label={t('ai.apiKey')} hint={t('ai.apiKeyHint')}>
+          <input
+            type="password"
+            value={config.api_key}
+            onChange={(e) => setConfig({ ...config, api_key: e.target.value })}
+            placeholder="sk-..."
+            className="w-[300px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        <SettingRow label={t('ai.model')} hint={t('ai.modelHint')}>
+          <input
+            type="text"
+            value={config.model}
+            onChange={(e) => setConfig({ ...config, model: e.target.value })}
+            placeholder="text-embedding-3-small"
+            className="w-[200px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        <SettingRow label={t('ai.dimensions')} hint={t('ai.dimensionsHint')}>
+          <input
+            type="number"
+            value={config.dimensions}
+            onChange={(e) => setConfig({ ...config, dimensions: Number(e.target.value) })}
+            min={64}
+            max={4096}
+            className="w-20 px-2 py-1 text-sm text-center rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm rounded bg-theme-accent text-white hover:bg-theme-accent/90 disabled:opacity-50 transition-colors"
+          >
+            {saving ? t('ai.saving') : t('ai.save')}
+          </button>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title={t('ai.index')}>
+        {status && (
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{t('ai.embeddedNotes')}</span>
+              <span className="text-foreground">{status.embedded_notes} / {status.total_notes}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{t('ai.totalChunks')}</span>
+              <span className="text-foreground">{status.total_chunks}</span>
+            </div>
+            {status.model_name && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('ai.currentModel')}</span>
+                <span className="text-foreground font-mono text-xs">{status.model_name}</span>
+              </div>
+            )}
+            {/* Progress bar */}
+            <div className="w-full h-1.5 rounded-full bg-background border border-theme-border overflow-hidden mt-2">
+              <div
+                className="h-full bg-theme-accent transition-all duration-300"
+                style={{ width: `${status.total_notes > 0 ? (status.embedded_notes / status.total_notes) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end mt-2">
+          <button
+            onClick={handleRebuild}
+            disabled={rebuilding || !config.api_url}
+            className="px-4 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover disabled:opacity-50 transition-colors"
+          >
+            {rebuilding ? t('ai.rebuilding') : t('ai.rebuild')}
+          </button>
+        </div>
+      </SettingsCard>
     </>
   );
 }

@@ -62,7 +62,9 @@
     "title": "反向链接",
     "noNote": "没有打开的笔记",
     "loading": "加载中...",
-    "empty": "暂无反向链接"
+    "empty": "暂无反向链接",
+    "blockMode": "块级反链",
+    "blockEmpty": "暂无块级反向引用"
   },
   "settings": {
     "title": "设置",
@@ -130,7 +132,8 @@
     "addTemplate": "添加模板",
     "newTemplate": "新模板",
     "templateName": "模板名称",
-    "vaultHealth": "知识库健康检查"
+    "vaultHealth": "知识库健康检查",
+    "ai": "AI"
   },
   "search": {
     "placeholder": "搜索笔记...",
@@ -145,7 +148,9 @@
     "advancedPlaceholder": "搜索 (支持 tag:标签 path:路径 前缀)",
     "syntaxHint": "语法: tag:标签 path:路径/ 关键词",
     "filterTag": "标签",
-    "filterPath": "路径"
+    "filterPath": "路径",
+    "semanticPlaceholder": "用自然语言搜索笔记...",
+    "semanticToggle": "语义搜索"
   },
   "outline": {
     "title": "大纲",
@@ -177,6 +182,7 @@
     "noData": "暂无索引笔记",
     "close": "关闭",
     "loading": "加载中...",
+    "blocksToggle": "显示块级节点",
     "timelineToggle": "时间轴模式",
     "timelineSlider": "拖动时间轴查看知识演进",
     "timelineNotes": "篇笔记",
@@ -501,5 +507,27 @@
     "noteCard": "笔记卡片",
     "openNote": "打开笔记",
     "cardPlaceholder": "在此输入内容..."
+  },
+  "ai": {
+    "provider": "嵌入服务",
+    "apiUrl": "API 地址",
+    "apiUrlHint": "OpenAI 兼容接口或 Ollama 地址",
+    "apiKey": "API 密钥",
+    "apiKeyHint": "Ollama 本地服务可留空。密钥以明文存储在仓库内，请勿提交到公开仓库",
+    "model": "模型",
+    "modelHint": "如 text-embedding-3-small",
+    "dimensions": "向量维度",
+    "dimensionsHint": "嵌入向量的维度数",
+    "save": "保存配置",
+    "saving": "保存中...",
+    "saved": "AI 配置已保存",
+    "loading": "加载中...",
+    "index": "嵌入索引",
+    "embeddedNotes": "已嵌入笔记",
+    "totalChunks": "总分块数",
+    "currentModel": "当前模型",
+    "rebuild": "重建索引",
+    "rebuilding": "重建中...",
+    "rebuildDone": "嵌入索引已重建"
   }
 }

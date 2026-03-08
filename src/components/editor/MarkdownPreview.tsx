@@ -418,7 +418,12 @@ function escapeHtml(text: string): string {
 }
 
 function escapeAttr(text: string): string {
-  return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -612,7 +617,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     };
   }, [activeTabPath, blocks]);
 
-  // ── 异步加载嵌入笔记 ![[note]] (with cache) ────────────
+  // ── Async embed loader for ![[note]] and ![[note#^block]] (with cache) ──
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -628,32 +633,63 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
         const target = container.dataset.embedTarget;
         if (!target) continue;
         try {
+          // Parse optional #^blockId from target
+          let noteName = target;
+          let blockId: string | null = null;
+          const blockMatch = target.match(/^(.+?)#\^([a-zA-Z0-9_-]+)$/);
+          if (blockMatch) {
+            noteName = blockMatch[1];
+            blockId = blockMatch[2];
+          }
+
           // Resolve note name (cached)
-          const cachedResolve = noteResolveCache.get(target);
+          const cachedResolve = noteResolveCache.get(noteName);
           let resolvedPath = cachedResolve?.path;
-          let resolvedTitle = cachedResolve?.title || target;
+          let resolvedTitle = cachedResolve?.title || noteName;
           if (!resolvedPath) {
-            const results = await searchByFilename(target);
+            const results = await searchByFilename(noteName);
             if (cancelled) break;
             if (results.length > 0) {
               resolvedPath = results[0].path;
-              resolvedTitle = results[0].title || target;
-              noteResolveCache.set(target, { path: resolvedPath, title: resolvedTitle });
+              resolvedTitle = results[0].title || noteName;
+              noteResolveCache.set(noteName, { path: resolvedPath, title: resolvedTitle });
             }
           }
 
           if (!resolvedPath) {
-            container.textContent = `Note not found: ${target}`;
+            container.textContent = `Note not found: ${noteName}`;
             container.classList.add('note-embed-error');
             continue;
           }
 
-          // Fetch and render note content (cached raw content, rendered fresh)
+          // Block embed: fetch only the specific block content
+          if (blockId) {
+            const cacheKey = blockRefKey(resolvedPath, blockId);
+            let blockContent = blockRefCache.get(cacheKey);
+            if (!blockContent) {
+              blockContent = (await getBlockContent(resolvedPath, blockId)) ?? undefined;
+              if (cancelled) break;
+              if (blockContent) {
+                blockRefCache.set(cacheKey, blockContent);
+              }
+            }
+            if (!blockContent) {
+              container.textContent = `Block not found: ${noteName}#^${blockId}`;
+              container.classList.add('note-embed-error');
+              continue;
+            }
+            const embedHtml = marked.parse(blockContent) as string;
+            const sanitized = sanitizeMarkdownHtml(embedHtml);
+            container.innerHTML = `<div class="note-embed-title">${escapeHtml(resolvedTitle)} › ^${escapeHtml(blockId)}</div>${sanitized}`;
+            container.classList.add('note-embed-loaded');
+            continue;
+          }
+
+          // Full note embed: fetch entire note content (cached)
           let cached = noteEmbedCache.get(resolvedPath);
           if (!cached) {
             const noteContent = await readNote(resolvedPath);
             if (cancelled) break;
-            // Cache raw content + title; render fresh each time for theme consistency
             cached = { title: resolvedTitle, html: noteContent.content };
             noteEmbedCache.set(resolvedPath, cached);
           }

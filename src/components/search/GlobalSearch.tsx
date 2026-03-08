@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNoteStore } from '@/store/noteStore';
-import { searchNotes, advancedSearch, type SearchResult } from '@/lib/api';
+import { searchNotes, advancedSearch, semanticSearch, type SearchResult, type SemanticSearchResult } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
+import { Brain } from 'lucide-react';
 
 /** Sanitize FTS snippet: only allow <mark> and </mark> tags */
 function sanitizeSnippet(html: string): string {
@@ -68,6 +69,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [semanticMode, setSemanticMode] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultListRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,6 +87,14 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     }
   }, [open]);
 
+  // Cancel in-flight debounce when search mode changes to prevent stale results
+  useEffect(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, [semanticMode]);
+
   const doSearch = useCallback((value: string) => {
     setQuery(value);
     setSelectedIndex(-1);
@@ -97,25 +107,37 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     setLoading(true);
     timerRef.current = setTimeout(async () => {
       try {
-        const parsed = parseSearchQuery(value);
-        let res: SearchResult[];
-        // Use advanced search when filters are present
-        if (parsed.tagFilter || parsed.pathFilter) {
-          res = await advancedSearch(
-            parsed.ftsQuery || undefined,
-            parsed.tagFilter,
-            parsed.pathFilter,
+        if (semanticMode) {
+          // Semantic search via embedding cosine similarity
+          const semResults = await semanticSearch(value.trim());
+          // Convert SemanticSearchResult → SearchResult for unified display
+          setResults(
+            semResults.map((r) => ({
+              path: r.path,
+              title: r.title,
+              snippet: `${(r.score * 100).toFixed(0)}% — ${r.snippet}`,
+            })),
           );
         } else {
-          res = await searchNotes(parsed.ftsQuery);
+          const parsed = parseSearchQuery(value);
+          let res: SearchResult[];
+          if (parsed.tagFilter || parsed.pathFilter) {
+            res = await advancedSearch(
+              parsed.ftsQuery || undefined,
+              parsed.tagFilter,
+              parsed.pathFilter,
+            );
+          } else {
+            res = await searchNotes(parsed.ftsQuery);
+          }
+          setResults(res);
         }
-        setResults(res);
       } catch {
         setResults([]);
       }
       setLoading(false);
-    }, 300);
-  }, []);
+    }, semanticMode ? 500 : 300); // Slightly longer debounce for semantic
+  }, [semanticMode]);
 
   const handleSelect = useCallback((r: SearchResult) => {
     openNote(r.path, r.title || r.path);
@@ -185,13 +207,28 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             ref={inputRef}
             value={query}
             onChange={(e) => doSearch(e.target.value)}
-            placeholder={t('search.advancedPlaceholder')}
+            placeholder={semanticMode ? t('search.semanticPlaceholder') : t('search.advancedPlaceholder')}
             className="flex-1 text-sm bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
             onKeyDown={handleKeyDown}
           />
           {loading && (
             <span className="text-xs text-muted-foreground">{t('search.searching')}</span>
           )}
+          {/* Semantic search toggle */}
+          <button
+            onClick={() => {
+              setSemanticMode((v) => !v);
+              setResults([]);
+            }}
+            className={`p-1 rounded transition-colors shrink-0 ${
+              semanticMode
+                ? 'bg-theme-accent/20 text-theme-accent'
+                : 'hover:bg-theme-hover text-muted-foreground'
+            }`}
+            title={t('search.semanticToggle')}
+          >
+            <Brain size={16} />
+          </button>
         </div>
 
         {/* Active filter chips */}

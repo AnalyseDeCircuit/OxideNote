@@ -8,16 +8,19 @@ use crate::state::AppState;
 
 // ── 知识图谱数据结构 ────────────────────────────────────────
 
-/// 图谱节点，对应一篇笔记
+/// Graph node representing a note or block
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphNode {
     pub id: String,
     pub title: String,
     pub created_at: Option<String>,
     pub modified_at: Option<String>,
+    /// When true, this node represents a block rather than a note
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_block: Option<bool>,
 }
 
-/// 图谱连边，表示一条 WikiLink 引用关系
+/// Graph edge representing a WikiLink or block reference
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphLink {
     pub source: String,
@@ -149,13 +152,11 @@ pub async fn reindex_note(
     }
 }
 
-/// 获取知识图谱数据 — 所有笔记节点及其 WikiLink 连边
-///
-/// 从索引数据库中查询所有笔记和链接关系，
-/// 构建前端 force-graph 所需的 { nodes, links } 数据结构。
-/// 链接解析同时支持 path/stem 匹配和 frontmatter alias 匹配。
+/// Build the knowledge graph: note nodes + WikiLink edges.
+/// When `include_blocks` is true, also includes block nodes and block reference edges.
 #[tauri::command]
 pub async fn get_graph_data(
+    include_blocks: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<GraphData, SearchError> {
     let db_guard = state.read_db.lock();
@@ -166,24 +167,25 @@ pub async fn get_graph_data(
         .prepare("SELECT path, title, created_at, modified_at FROM notes ORDER BY path")
         .map_err(|e| SearchError::Internal(e.to_string()))?;
 
-    let nodes: Vec<GraphNode> = node_stmt
+    let mut nodes: Vec<GraphNode> = node_stmt
         .query_map([], |row| {
             Ok(GraphNode {
                 id: row.get(0)?,
                 title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                 created_at: row.get(2)?,
                 modified_at: row.get(3)?,
+                is_block: None,
             })
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?
         .filter_map(|r| r.ok())
         .collect();
 
-    // 构建路径集合，用于过滤有效连边
+    // Path set for filtering valid edges
     let node_ids: std::collections::HashSet<&str> =
         nodes.iter().map(|n| n.id.as_str()).collect();
 
-    // 构建 file_stem → path 映射，用于 O(1) WikiLink 解析
+    // file_stem → path map for O(1) WikiLink resolution
     let stem_to_path: std::collections::HashMap<String, &str> = nodes
         .iter()
         .filter_map(|n| {
@@ -194,11 +196,11 @@ pub async fn get_graph_data(
         })
         .collect();
 
-    // 构建 alias → path 映射，用于 alias-aware 链接解析
+    // alias → path map for alias-aware link resolution
     let alias_to_path = db::query_all_aliases(conn)
         .map_err(|e| SearchError::Internal(e.to_string()))?;
 
-    // 查询所有链接关系
+    // Query all note-level links
     let mut link_stmt = conn
         .prepare(
             "SELECT n.path, l.target_path FROM links l
@@ -206,7 +208,7 @@ pub async fn get_graph_data(
         )
         .map_err(|e| SearchError::Internal(e.to_string()))?;
 
-    let links: Vec<GraphLink> = link_stmt
+    let mut links: Vec<GraphLink> = link_stmt
         .query_map([], |row| {
             Ok(GraphLink {
                 source: row.get(0)?,
@@ -215,21 +217,18 @@ pub async fn get_graph_data(
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?
         .filter_map(|r| r.ok())
-        // 仅保留两端都存在的连边，依次尝试 path → stem → alias 解析
+        // Keep only edges where both endpoints exist (path → stem → alias)
         .filter_map(|mut link| {
             if !node_ids.contains(link.source.as_str()) {
                 return None;
             }
-            // 直接路径匹配
             if node_ids.contains(link.target.as_str()) {
                 return Some(link);
             }
-            // file_stem 匹配
             if let Some(&full_path) = stem_to_path.get(&link.target) {
                 link.target = full_path.to_string();
                 return Some(link);
             }
-            // Alias 匹配
             if let Some(resolved) = alias_to_path.get(&link.target.to_lowercase()) {
                 if node_ids.contains(resolved.as_str()) {
                     link.target = resolved.clone();
@@ -239,6 +238,93 @@ pub async fn get_graph_data(
             None
         })
         .collect();
+
+    // ── Optional: include block nodes and block reference edges ──
+    if include_blocks.unwrap_or(false) {
+        // Query all blocks as nodes (id = "note_path#^block_id")
+        let mut block_stmt = conn
+            .prepare(
+                "SELECT n.path, b.block_id, b.content, b.block_type, n.created_at
+                 FROM blocks b
+                 JOIN notes n ON n.id = b.note_id
+                 ORDER BY n.path, b.line_number",
+            )
+            .map_err(|e| SearchError::Internal(e.to_string()))?;
+
+        let block_nodes: Vec<GraphNode> = block_stmt
+            .query_map([], |row| {
+                let note_path: String = row.get(0)?;
+                let block_id: String = row.get(1)?;
+                let content: String = row.get(2)?;
+                let created_at: Option<String> = row.get(4)?;
+                // Block node id uses "path#^blockId" format
+                let id = format!("{}#^{}", note_path, block_id);
+                // Truncate content for display title (char-safe for multi-byte)
+                let truncated: String = content.chars().take(37).collect();
+                let title = if truncated.len() < content.len() {
+                    format!("^{}: {}…", block_id, truncated)
+                } else {
+                    format!("^{}: {}", block_id, content)
+                };
+                Ok(GraphNode {
+                    id,
+                    title,
+                    created_at,
+                    modified_at: None,
+                    is_block: Some(true),
+                })
+            })
+            .map_err(|e| SearchError::Internal(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Add edge from note → its block (containment)
+        for bn in &block_nodes {
+            if let Some(note_path) = bn.id.split("#^").next() {
+                if node_ids.contains(note_path) {
+                    links.push(GraphLink {
+                        source: note_path.to_string(),
+                        target: bn.id.clone(),
+                    });
+                }
+            }
+        }
+
+        // Build block node id set for reference edge filtering
+        let block_node_ids: std::collections::HashSet<&str> =
+            block_nodes.iter().map(|n| n.id.as_str()).collect();
+
+        // Query block reference edges (note → note#^block)
+        let mut blink_stmt = conn
+            .prepare(
+                "SELECT n.path, bl.target_note_path, bl.target_block_id
+                 FROM block_links bl
+                 JOIN notes n ON n.id = bl.source_id
+                 WHERE bl.target_block_id IS NOT NULL AND bl.target_block_id != ''",
+            )
+            .map_err(|e| SearchError::Internal(e.to_string()))?;
+
+        let block_ref_links: Vec<GraphLink> = blink_stmt
+            .query_map([], |row| {
+                let source: String = row.get(0)?;
+                let target_path: String = row.get(1)?;
+                let target_block: String = row.get(2)?;
+                Ok(GraphLink {
+                    source,
+                    target: format!("{}#^{}", target_path, target_block),
+                })
+            })
+            .map_err(|e| SearchError::Internal(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .filter(|link| {
+                node_ids.contains(link.source.as_str())
+                    && block_node_ids.contains(link.target.as_str())
+            })
+            .collect();
+
+        links.extend(block_ref_links);
+        nodes.extend(block_nodes);
+    }
 
     Ok(GraphData { nodes, links })
 }

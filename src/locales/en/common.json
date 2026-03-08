@@ -62,7 +62,9 @@
     "title": "Backlinks",
     "noNote": "No note open",
     "loading": "Loading...",
-    "empty": "No backlinks found"
+    "empty": "No backlinks found",
+    "blockMode": "Block backlinks",
+    "blockEmpty": "No block-level backlinks"
   },
   "settings": {
     "title": "Settings",
@@ -130,7 +132,8 @@
     "addTemplate": "Add template",
     "newTemplate": "New Template",
     "templateName": "Template name",
-    "vaultHealth": "Vault Health Check"
+    "vaultHealth": "Vault Health Check",
+    "ai": "AI"
   },
   "search": {
     "placeholder": "Search notes...",
@@ -145,7 +148,9 @@
     "advancedPlaceholder": "Search (supports tag: and path: prefixes)",
     "syntaxHint": "Syntax: tag:name path:folder/ keyword",
     "filterTag": "Tag",
-    "filterPath": "Path"
+    "filterPath": "Path",
+    "semanticPlaceholder": "Search notes with natural language...",
+    "semanticToggle": "Semantic search"
   },
   "outline": {
     "title": "Outline",
@@ -177,6 +182,7 @@
     "noData": "No notes indexed yet",
     "close": "Close",
     "loading": "Loading...",
+    "blocksToggle": "Show block nodes",
     "timelineToggle": "Timeline mode",
     "timelineSlider": "Drag to explore knowledge evolution",
     "timelineNotes": "notes",
@@ -501,5 +507,27 @@
     "noteCard": "Note card",
     "openNote": "Open note",
     "cardPlaceholder": "Type here..."
+  },
+  "ai": {
+    "provider": "Embedding Provider",
+    "apiUrl": "API URL",
+    "apiUrlHint": "OpenAI-compatible endpoint or Ollama address",
+    "apiKey": "API Key",
+    "apiKeyHint": "Leave empty for local Ollama. Key stored in plain text — do not commit to public repos",
+    "model": "Model",
+    "modelHint": "e.g. text-embedding-3-small",
+    "dimensions": "Dimensions",
+    "dimensionsHint": "Number of dimensions for embedding vectors",
+    "save": "Save Config",
+    "saving": "Saving...",
+    "saved": "AI config saved",
+    "loading": "Loading...",
+    "index": "Embedding Index",
+    "embeddedNotes": "Embedded Notes",
+    "totalChunks": "Total Chunks",
+    "currentModel": "Current Model",
+    "rebuild": "Rebuild Index",
+    "rebuilding": "Rebuilding...",
+    "rebuildDone": "Embedding index rebuilt"
   }
 }

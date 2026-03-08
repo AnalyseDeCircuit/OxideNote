@@ -99,6 +99,25 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         ",
     )?;
 
+    // Embeddings table for semantic search (vector stored as f32 little-endian blob)
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS embeddings (
+            id INTEGER PRIMARY KEY,
+            note_path TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            chunk_text TEXT NOT NULL,
+            embedding BLOB NOT NULL,
+            model_name TEXT NOT NULL,
+            dimensions INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(note_path, chunk_index)
+        );
+        CREATE INDEX IF NOT EXISTS idx_embeddings_path ON embeddings(note_path);
+        CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model_name);
+        ",
+    )?;
+
     Ok(())
 }
 
@@ -683,4 +702,181 @@ pub fn advanced_search(
     })?.collect::<Result<Vec<_>, _>>()?;
 
     Ok(results)
+}
+
+// ============================================================================
+// Embedding storage and cosine similarity search
+// ============================================================================
+
+/// Serialize f32 vector to little-endian byte blob
+pub fn vec_to_blob(vec: &[f32]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(vec.len() * 4);
+    for &v in vec {
+        buf.extend_from_slice(&v.to_le_bytes());
+    }
+    buf
+}
+
+/// Deserialize f32 vector from little-endian byte blob
+pub fn blob_to_vec(blob: &[u8]) -> Vec<f32> {
+    blob.chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
+/// Cosine similarity between two vectors (both must be same length)
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        dot / denom
+    }
+}
+
+/// Insert or update embedding for a note chunk
+pub fn upsert_embedding(
+    conn: &Connection,
+    note_path: &str,
+    chunk_index: i64,
+    chunk_text: &str,
+    embedding: &[f32],
+    model_name: &str,
+    updated_at: &str,
+) -> Result<(), rusqlite::Error> {
+    let blob = vec_to_blob(embedding);
+    let dims = embedding.len() as i64;
+    conn.execute(
+        "INSERT INTO embeddings (note_path, chunk_index, chunk_text, embedding, model_name, dimensions, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(note_path, chunk_index) DO UPDATE SET
+            chunk_text = excluded.chunk_text,
+            embedding = excluded.embedding,
+            model_name = excluded.model_name,
+            dimensions = excluded.dimensions,
+            updated_at = excluded.updated_at",
+        params![note_path, chunk_index, chunk_text, blob, model_name, dims, updated_at],
+    )?;
+    Ok(())
+}
+
+/// Remove all embeddings for a note (called when note is re-embedded or deleted)
+pub fn delete_note_embeddings(
+    conn: &Connection,
+    note_path: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM embeddings WHERE note_path = ?1",
+        params![note_path],
+    )?;
+    Ok(())
+}
+
+/// Semantic search result with similarity score
+pub struct SemanticResult {
+    pub path: String,
+    pub title: String,
+    pub snippet: String,
+    pub score: f32,
+}
+
+/// Search for notes by cosine similarity against a query embedding.
+/// Returns up to `limit` results above `min_score` threshold, sorted by descending similarity.
+pub fn search_embeddings(
+    conn: &Connection,
+    query_vec: &[f32],
+    limit: usize,
+    min_score: f32,
+) -> Result<Vec<SemanticResult>, rusqlite::Error> {
+    // Load all embeddings and compute cosine similarity in Rust.
+    // For vaults with <100k chunks this is fast enough (avoids external vector DB).
+    let mut stmt = conn.prepare(
+        "SELECT e.note_path, e.chunk_text, e.embedding, n.title
+         FROM embeddings e
+         LEFT JOIN notes n ON n.path = e.note_path
+         ORDER BY e.note_path, e.chunk_index",
+    )?;
+
+    let mut scored: Vec<SemanticResult> = stmt
+        .query_map([], |row| {
+            let path: String = row.get(0)?;
+            let chunk: String = row.get(1)?;
+            let blob: Vec<u8> = row.get(2)?;
+            let title: Option<String> = row.get(3)?;
+            Ok((path, title.unwrap_or_default(), chunk, blob))
+        })?
+        .filter_map(|r| r.ok())
+        .map(|(path, title, chunk, blob)| {
+            let emb = blob_to_vec(&blob);
+            let score = cosine_similarity(query_vec, &emb);
+            // Truncate chunk for snippet display (char-safe for multi-byte)
+            let snippet = {
+                let truncated: String = chunk.chars().take(117).collect();
+                if truncated.len() < chunk.len() {
+                    format!("{}…", truncated)
+                } else {
+                    chunk
+                }
+            };
+            SemanticResult {
+                path,
+                title,
+                snippet,
+                score,
+            }
+        })
+        .filter(|r| r.score >= min_score)
+        .collect();
+
+    // Sort by descending score
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Deduplicate by note path (keep highest scoring chunk per note)
+    let mut seen = std::collections::HashSet::new();
+    scored.retain(|r| seen.insert(r.path.clone()));
+
+    scored.truncate(limit);
+    Ok(scored)
+}
+
+/// Embedding index status for frontend display
+pub struct EmbeddingStatus {
+    pub total_notes: i64,
+    pub embedded_notes: i64,
+    pub total_chunks: i64,
+    pub model_name: Option<String>,
+}
+
+/// Get embedding index status
+pub fn get_embedding_status(conn: &Connection) -> Result<EmbeddingStatus, rusqlite::Error> {
+    let total_notes: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))?;
+    let embedded_notes: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT note_path) FROM embeddings",
+        [],
+        |r| r.get(0),
+    )?;
+    let total_chunks: i64 =
+        conn.query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get(0))?;
+    let model_name: Option<String> = conn
+        .query_row(
+            "SELECT model_name FROM embeddings LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+
+    Ok(EmbeddingStatus {
+        total_notes,
+        embedded_notes,
+        total_chunks,
+        model_name,
+    })
 }

@@ -48,7 +48,7 @@ import { getGraphData, type GraphData, type GraphNode } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { useTranslation } from 'react-i18next';
-import { X, Clock } from 'lucide-react';
+import { X, Clock, Boxes } from 'lucide-react';
 
 // ── 时间轴工具函数 ──────────────────────────────────────────
 
@@ -104,17 +104,20 @@ export function GraphView() {
   const [timelineEnabled, setTimelineEnabled] = useState(false);
   const [sliderValue, setSliderValue] = useState(100); // 0‥100 百分比
 
+  // ── 块级节点开关 ─────────────────────────────────────────
+  const [includeBlocks, setIncludeBlocks] = useState(false);
+
   // ── 加载图谱数据 ─────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
-    getGraphData()
+    getGraphData(includeBlocks)
       .then(setGraphData)
       .catch((err) => {
         console.warn('[graph] Failed to load graph data:', err);
         setGraphData({ nodes: [], links: [] });
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [includeBlocks]);
 
   // ── 计算时间范围 ─────────────────────────────────────────
   const timeRange = useMemo(() => {
@@ -213,30 +216,59 @@ export function GraphView() {
       .linkDirectionalArrowLength(4)
       .linkDirectionalArrowRelPos(1)
       .backgroundColor('transparent')
-      // 节点文字标签 + 氧化度颜色
+      // Node rendering: blocks are smaller diamonds, notes are circles with labels
       .nodeCanvasObject((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
         const label = node.title || node.id;
         const fontSize = 11 / globalScale;
         ctx.font = `${fontSize}px sans-serif`;
 
         const color = getNodeColorRef.current(node as GraphNode, accentColorRef.current);
+        const isBlock = node.is_block === true;
+        const nodeSize = isBlock ? 2.5 / globalScale : 4 / globalScale;
 
-        // 绘制节点圆点
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 4 / globalScale, 0, 2 * Math.PI);
-        ctx.fillStyle = color;
-        ctx.fill();
+        if (isBlock) {
+          // Block node: small diamond shape
+          ctx.beginPath();
+          ctx.moveTo(node.x, node.y - nodeSize);
+          ctx.lineTo(node.x + nodeSize, node.y);
+          ctx.lineTo(node.x, node.y + nodeSize);
+          ctx.lineTo(node.x - nodeSize, node.y);
+          ctx.closePath();
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.7;
+          ctx.fill();
+          ctx.globalAlpha = 1;
 
-        // 绘制标签
-        ctx.fillStyle = globalScale > 1.5 ? textColorRef.current : mutedColorRef.current;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText(label, node.x, node.y + 6 / globalScale);
+          // Block labels only visible at high zoom
+          if (globalScale > 2.5) {
+            ctx.fillStyle = mutedColorRef.current;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(label, node.x, node.y + nodeSize + 2 / globalScale);
+          }
+        } else {
+          // Note node: circle with label
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, nodeSize, 0, 2 * Math.PI);
+          ctx.fillStyle = color;
+          ctx.fill();
+
+          ctx.fillStyle = globalScale > 1.5 ? textColorRef.current : mutedColorRef.current;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText(label, node.x, node.y + 6 / globalScale);
+        }
       })
-      // 点击节点 → 打开笔记
+      // Click node → open the note (block nodes open their parent note)
       .onNodeClick((node: any) => {
-        const title = node.title || node.id;
-        useNoteStore.getState().openNote(node.id, title);
+        let notePath = node.id as string;
+        // Block node ids use "path#^blockId" format — extract the note path
+        const hashIdx = notePath.indexOf('#^');
+        if (hashIdx !== -1) {
+          notePath = notePath.substring(0, hashIdx);
+        }
+        const title = node.title || notePath;
+        useNoteStore.getState().openNote(notePath, title);
         setGraphViewOpen(false);
       });
 
@@ -346,7 +378,19 @@ export function GraphView() {
           )}
         </span>
         <div className="flex items-center gap-2">
-          {/* 时间轴开关 */}
+          {/* Block nodes toggle */}
+          <button
+            onClick={() => setIncludeBlocks((v) => !v)}
+            className={`p-1.5 rounded transition-colors ${
+              includeBlocks
+                ? 'bg-theme-accent/20 text-theme-accent'
+                : 'hover:bg-theme-hover text-muted-foreground'
+            }`}
+            title={t('graph.blocksToggle')}
+          >
+            <Boxes size={16} />
+          </button>
+          {/* Timeline toggle */}
           <button
             onClick={() => setTimelineEnabled((v) => !v)}
             className={`p-1.5 rounded transition-colors ${

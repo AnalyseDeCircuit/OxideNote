@@ -114,6 +114,8 @@ export interface GraphNode {
   title: string;
   created_at: string | null;
   modified_at: string | null;
+  /** When true, this node represents a block rather than a note */
+  is_block?: boolean;
 }
 
 export interface GraphLink {
@@ -126,9 +128,10 @@ export interface GraphData {
   links: GraphLink[];
 }
 
-/** 获取知识图谱数据（节点 + 连边） */
-export async function getGraphData(): Promise<GraphData> {
-  return invoke<GraphData>('get_graph_data');
+/** Fetch knowledge graph data (nodes + edges).
+ * When includeBlocks is true, also returns block nodes and block reference edges. */
+export async function getGraphData(includeBlocks?: boolean): Promise<GraphData> {
+  return invoke<GraphData>('get_graph_data', { includeBlocks: includeBlocks ?? false });
 }
 
 // ─── Tag commands ────────────────────────────────────────────
@@ -455,4 +458,60 @@ export async function writeCanvas(path: string, data: CanvasData): Promise<void>
 /** Create a new empty .canvas file, returns the vault-relative path */
 export async function createCanvas(parentPath: string, name: string): Promise<string> {
   return invoke<string>('create_canvas', { parentPath, name });
+}
+
+// ─── Semantic search / Embedding commands ───────────────────
+
+export interface SemanticSearchResult {
+  path: string;
+  title: string;
+  snippet: string;
+  score: number;
+}
+
+export interface EmbeddingConfig {
+  provider: 'api' | 'local';
+  api_url: string;
+  api_key: string;
+  model: string;
+  dimensions: number;
+}
+
+export interface EmbeddingStatus {
+  total_notes: number;
+  embedded_notes: number;
+  total_chunks: number;
+  model_name: string | null;
+  configured: boolean;
+}
+
+export interface RebuildResult {
+  embedded: number;
+  chunks: number;
+  errors: string[];
+}
+
+/** Semantic search by natural language query */
+export async function semanticSearch(query: string): Promise<SemanticSearchResult[]> {
+  return invoke<SemanticSearchResult[]>('semantic_search', { query });
+}
+
+/** Rebuild the entire embedding index */
+export async function rebuildEmbeddings(): Promise<RebuildResult> {
+  return invoke<RebuildResult>('rebuild_embeddings');
+}
+
+/** Get embedding index status */
+export async function getEmbeddingStatus(): Promise<EmbeddingStatus> {
+  return invoke<EmbeddingStatus>('get_embedding_status');
+}
+
+/** Save embedding provider configuration */
+export async function saveEmbeddingConfig(config: EmbeddingConfig): Promise<void> {
+  return invoke<void>('save_embedding_config', { config });
+}
+
+/** Load embedding provider configuration */
+export async function loadEmbeddingConfig(): Promise<EmbeddingConfig | null> {
+  return invoke<EmbeddingConfig | null>('load_embedding_config');
 }
