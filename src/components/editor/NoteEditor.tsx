@@ -9,6 +9,8 @@ import { setEditorView } from '@/lib/editorViewRef';
 import { MarkdownPreview } from './MarkdownPreview';
 import { EditorToolbar } from './EditorToolbar';
 import { ConflictDialog } from '@/components/editor/ConflictDialog';
+import { PDFViewer } from '@/components/pdf/PDFViewer';
+import { DatabaseView, isDatabaseNote } from '@/components/database/DatabaseView';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -189,6 +191,11 @@ export function NoteEditor() {
       contentRef.current = '';
       useNoteStore.getState().setActiveContent('');
       return;
+    }
+
+    // PDF files are handled by PDFViewer directly — skip loading into CodeMirror
+    if (activeTabPath.toLowerCase().endsWith('.pdf')) {
+      return () => {};
     }
 
     // Register a flush callback so external callers (e.g. close-tab, app exit)
@@ -409,11 +416,20 @@ export function NoteEditor() {
     e.preventDefault();
   }, []);
 
+  // PDF files get their own dedicated viewer
+  const isPdf = activeTabPath?.toLowerCase().endsWith('.pdf');
+
   return (
     <div className="h-full w-full flex flex-col relative">
-      {/* 编辑器工具栏（仅在编辑/分屏模式下显示） */}
-      {activeTabPath && showEditor && <EditorToolbar viewRef={viewRef} />}
+      {/* PDF viewer — bypass CodeMirror entirely */}
+      {isPdf && activeTabPath && (
+        <PDFViewer path={activeTabPath} />
+      )}
 
+      {/* Markdown editor + toolbar (only for non-PDF files) */}
+      {!isPdf && activeTabPath && showEditor && <EditorToolbar viewRef={viewRef} />}
+
+      {!isPdf && (
       <div className="flex-1 min-h-0 flex" onPaste={handlePaste} onDrop={handleDrop} onDragOver={handleDragOver}>
         {/* ── CodeMirror 编辑区域 ───────────────────────────── */}
         <div
@@ -424,14 +440,20 @@ export function NoteEditor() {
           style={{ height: '100%' }}
         />
 
-        {/* ── Markdown 预览区域 ─────────────────────────────── */}
+        {/* ── 预览区域：数据库视图 or Markdown 预览 ────────── */}
         {activeTabPath && showPreview && (
-          <MarkdownPreview
-            content={previewContent}
-            className={showEditor ? 'w-1/2' : 'w-full'}
-            scrollRef={previewScrollRef}
-            onScroll={handlePreviewScroll}
-          />
+          isDatabaseNote(previewContent) ? (
+            <div className={showEditor ? 'w-1/2' : 'w-full'}>
+              <DatabaseView content={previewContent} filePath={activeTabPath} />
+            </div>
+          ) : (
+            <MarkdownPreview
+              content={previewContent}
+              className={showEditor ? 'w-1/2' : 'w-full'}
+              scrollRef={previewScrollRef}
+              onScroll={handlePreviewScroll}
+            />
+          )
         )}
 
         {/* ── 空状态占位 ───────────────────────────────────── */}
@@ -444,6 +466,7 @@ export function NoteEditor() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── 文件冲突对话框 ─────────────────────────────────── */}
       {conflictState && (

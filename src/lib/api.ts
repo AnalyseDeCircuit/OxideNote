@@ -136,6 +136,16 @@ export async function moveEntry(sourcePath: string, targetDir: string): Promise<
   return invoke<string>('move_entry', { sourcePath, targetDir });
 }
 
+/** Reveal a file or folder in the system file manager */
+export async function revealInFinder(path: string): Promise<void> {
+  return invoke<void>('reveal_in_explorer', { path });
+}
+
+/** Read a binary file as base64-encoded string (for PDF etc.) */
+export async function readBinaryFile(path: string): Promise<string> {
+  return invoke<string>('read_binary_file', { path });
+}
+
 // ─── Health commands ─────────────────────────────────────────
 
 export interface BrokenLink {
@@ -160,4 +170,9 @@ export async function vaultHealthCheck(): Promise<HealthReport> {
 /** Repair the vault index (remove orphans, index missing, rebuild FTS) */
 export async function repairVault(): Promise<HealthReport> {
   return invoke<HealthReport>('repair_vault');
+}
+
+/** Open a URL in a new in-app browser window */
+export async function openBrowserWindow(url: string): Promise<void> {
+  return invoke<void>('open_browser_window', { url });
 }

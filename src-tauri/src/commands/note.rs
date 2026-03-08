@@ -383,3 +383,82 @@ pub async fn move_entry(
     tracing::info!("Moved {} -> {}", source_path, rel_path);
     Ok(rel_path)
 }
+
+/// Reveal a file or folder in the system file manager.
+///
+/// Uses platform-specific commands:
+/// - macOS: `open -R <path>` (reveals and selects in Finder)
+/// - Windows: `explorer /select,<path>`
+/// - Linux: `xdg-open` on the parent directory
+#[tauri::command]
+pub async fn reveal_in_explorer(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<(), NoteError> {
+    let vault_path = state.vault_path.read();
+    let base = vault_path.as_ref().ok_or(NoteError::NoVault)?;
+    let full_path = validate_inside_vault(base, &path)?;
+
+    if !full_path.exists() {
+        return Err(NoteError::NotFound(path));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&full_path)
+            .spawn()
+            .map_err(|e| NoteError::Io(e.to_string()))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", full_path.display()))
+            .spawn()
+            .map_err(|e| NoteError::Io(e.to_string()))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let dir = if full_path.is_dir() {
+            full_path.clone()
+        } else {
+            full_path.parent().unwrap_or(base).to_path_buf()
+        };
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| NoteError::Io(e.to_string()))?;
+    }
+
+    tracing::info!("Revealed in explorer: {}", path);
+    Ok(())
+}
+
+/// Read a binary file from the vault, returning base64-encoded content.
+///
+/// Used for PDF files and other binary assets that cannot be read as UTF-8.
+#[tauri::command]
+pub async fn read_binary_file(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<String, NoteError> {
+    let vault_path = state.vault_path.read();
+    let base = vault_path.as_ref().ok_or(NoteError::NoVault)?;
+    let full_path = validate_inside_vault(base, &path)?;
+
+    if !full_path.exists() || !full_path.is_file() {
+        return Err(NoteError::NotFound(path));
+    }
+
+    let bytes = std::fs::read(&full_path)
+        .map_err(|e| NoteError::Io(e.to_string()))?;
+
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    tracing::debug!("Read binary file: {} ({} bytes)", path, bytes.len());
+    Ok(encoded)
+}

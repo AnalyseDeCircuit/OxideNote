@@ -13,6 +13,7 @@
  */
 
 import type { MutableRefObject } from 'react';
+import { useState, useCallback } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { useTranslation } from 'react-i18next';
 import {
@@ -30,7 +31,16 @@ import {
   Image,
   Minus,
   Sigma,
+  FileDown,
+  Mic,
+  MicOff,
+  Settings2,
 } from 'lucide-react';
+import { useNoteStore } from '@/store/noteStore';
+import { exportToPdf } from '@/lib/exportPdf';
+import { isSpeechRecognitionSupported, startVoiceInput, stopVoiceInput } from '@/lib/speechRecognition';
+import { toast } from '@/hooks/useToast';
+import { TypesettingDialog } from '@/components/typesetting/TypesettingDialog';
 
 // ═══════════════════════════════════════════════════════════════
 // 工具栏组件
@@ -41,7 +51,47 @@ interface EditorToolbarProps {
 }
 
 export function EditorToolbar({ viewRef }: EditorToolbarProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [isListening, setIsListening] = useState(false);
+  const [typesettingOpen, setTypesettingOpen] = useState(false);
+
+  // ── Voice input handler ───────────────────────────────────
+  const handleVoiceToggle = useCallback(() => {
+    if (isListening) {
+      stopVoiceInput();
+      setIsListening(false);
+      return;
+    }
+
+    if (!isSpeechRecognitionSupported()) {
+      toast({ title: t('voice.notSupported'), variant: 'error' });
+      return;
+    }
+
+    const lang = i18n.language === 'zh-CN' ? 'zh-CN' : 'en-US';
+    startVoiceInput(lang, {
+      onStart: () => setIsListening(true),
+      onResult: (transcript, isFinal) => {
+        if (!isFinal) return;
+        const view = viewRef.current;
+        if (!view) return;
+        const { from } = view.state.selection.main;
+        view.dispatch({
+          changes: { from, to: from, insert: transcript },
+          selection: { anchor: from + transcript.length },
+        });
+      },
+      onError: (error) => {
+        setIsListening(false);
+        if (error === 'not_supported') {
+          toast({ title: t('voice.notSupported'), variant: 'error' });
+        } else {
+          toast({ title: t('voice.error'), description: error, variant: 'error' });
+        }
+      },
+      onEnd: () => setIsListening(false),
+    });
+  }, [isListening, viewRef, t, i18n.language]);
 
   // ── 包裹选中文本的通用操作 ────────────────────────────────
   // 如果没有选中文本，插入占位符并选中它
@@ -123,6 +173,21 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     view.focus();
   };
 
+  // ── PDF 导出操作 ──────────────────────────────────────────
+  const handleExportPdf = async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const content = view.state.doc.toString();
+    const activeTab = useNoteStore.getState().activeTabPath;
+    const title = activeTab?.replace(/\.md$/, '').split('/').pop() || 'export';
+    try {
+      await exportToPdf(content, title);
+      toast({ title: t('pdf.exportSuccess') });
+    } catch (err) {
+      toast({ title: t('pdf.exportFailed'), description: String(err), variant: 'error' });
+    }
+  };
+
   return (
     <div className="flex items-center gap-0.5 px-2 py-1 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
@@ -160,6 +225,27 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
         <ToolbarBtn icon={<Image size={14} />} title={t('toolbar.image')} onClick={() => insertBlock('![alt](image-url)')} />
         <ToolbarBtn icon={<Sigma size={14} />} title={t('toolbar.math')} onClick={() => insertBlock('\n$$\nE = mc^2\n$$\n')} />
       </ToolbarGroup>
+
+      <ToolbarDivider />
+
+      {/* ── 导出 & 语音 ─────────────────────────────────── */}
+      <ToolbarGroup>
+        <ToolbarBtn icon={<FileDown size={14} />} title={t('pdf.export')} onClick={handleExportPdf} />
+        <ToolbarBtn icon={<Settings2 size={14} />} title={t('typesetting.title')} onClick={() => setTypesettingOpen(true)} />
+        <ToolbarBtn
+          icon={isListening ? <MicOff size={14} /> : <Mic size={14} />}
+          title={isListening ? t('voice.stop') : t('voice.start')}
+          onClick={handleVoiceToggle}
+          active={isListening}
+        />
+      </ToolbarGroup>
+
+      {/* ── Typesetting dialog ──────────────────────────── */}
+      <TypesettingDialog
+        open={typesettingOpen}
+        onClose={() => setTypesettingOpen(false)}
+        content={viewRef.current?.state.doc.toString() || ''}
+      />
     </div>
   );
 }
@@ -170,14 +256,18 @@ function ToolbarBtn({
   icon,
   title,
   onClick,
+  active,
 }: {
   icon: React.ReactNode;
   title: string;
   onClick: () => void;
+  active?: boolean;
 }) {
   return (
     <button
-      className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
+      className={`p-1.5 rounded hover:bg-theme-hover transition-colors ${
+        active ? 'text-theme-accent bg-theme-accent/10' : 'text-muted-foreground hover:text-foreground'
+      }`}
       title={title}
       onClick={onClick}
       type="button"

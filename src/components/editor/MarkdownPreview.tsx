@@ -141,6 +141,29 @@ function createMarkedInstance() {
           return `<a class="wikilink" data-target="${escapeAttr(token.target)}" href="#">${escapeHtml(token.display)}</a>`;
         },
       },
+      // ── Bilibili 视频嵌入 @bilibili[BVxxx] ─────────────
+      {
+        name: 'bilibiliEmbed',
+        level: 'block',
+        start(src: string) {
+          return src.indexOf('@bilibili[');
+        },
+        tokenizer(src: string) {
+          const match = src.match(/^@bilibili\[(BV[\w]+)\]/i);
+          if (match) {
+            return {
+              type: 'bilibiliEmbed',
+              raw: match[0],
+              bvid: match[1],
+            };
+          }
+          return undefined;
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        renderer(token: any) {
+          return `<div class="bilibili-embed" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;margin:12px 0;border-radius:8px;"><iframe src="https://player.bilibili.com/player.html?bvid=${escapeAttr(token.bvid)}&autoplay=0&high_quality=1" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allow="fullscreen" sandbox="allow-scripts allow-same-origin allow-popups" title="Bilibili Video"></iframe></div>`;
+        },
+      },
     ],
   });
 

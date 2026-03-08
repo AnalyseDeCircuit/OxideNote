@@ -12,6 +12,9 @@ import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
 import { OutlinePanel } from '@/components/editor/OutlinePanel';
 import { TagPanel } from '@/components/editor/TagPanel';
 import { GraphView } from '@/components/graph/GraphView';
+import { FlashcardView } from '@/components/flashcard/FlashcardView';
+import { VideoPanel } from '@/components/video/VideoPanel';
+import { BrowserPanel } from '@/components/browser/BrowserPanel';
 import { listTree } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
 
@@ -20,6 +23,9 @@ export function AppShell() {
   const sidePanelVisible = useUIStore((s) => s.sidePanelVisible);
   const sidePanelTab = useUIStore((s) => s.sidePanelTab);
   const graphViewOpen = useUIStore((s) => s.graphViewOpen);
+  const flashcardOpen = useUIStore((s) => s.flashcardOpen);
+  const videoPanelOpen = useUIStore((s) => s.videoPanelOpen);
+  const browserPanelOpen = useUIStore((s) => s.browserPanelOpen);
 
   // Listen for file system changes from the Rust watcher
   // Watcher 事件频繁（每次自动保存都触发），对 tree 刷新做 500ms debounce
@@ -100,11 +106,42 @@ export function AppShell() {
               </Panel>
             </>
           )}
+          {videoPanelOpen && (
+            <>
+              <Separator className="w-px bg-theme-border hover:bg-theme-accent transition-colors" />
+              <Panel
+                id="video-panel"
+                defaultSize="30%"
+                minSize="20%"
+                maxSize="50%"
+                className="bg-surface"
+              >
+                <VideoPanel onClose={() => useUIStore.getState().setVideoPanelOpen(false)} />
+              </Panel>
+            </>
+          )}
+          {browserPanelOpen && !videoPanelOpen && (
+            <>
+              <Separator className="w-px bg-theme-border hover:bg-theme-accent transition-colors" />
+              <Panel
+                id="browser-panel"
+                defaultSize="25%"
+                minSize="15%"
+                maxSize="40%"
+                className="bg-surface"
+              >
+                <BrowserPanel onClose={() => useUIStore.getState().setBrowserPanelOpen(false)} />
+              </Panel>
+            </>
+          )}
         </Group>
       </div>
 
       {/* ── 知识图谱全屏覆盖层 ──────────────────────────── */}
       {graphViewOpen && <GraphView />}
+
+      {/* ── 闪卡复习全屏覆盖层 ──────────────────────────── */}
+      {flashcardOpen && <FlashcardView onClose={() => useUIStore.getState().setFlashcardOpen(false)} />}
     </div>
   );
 }
@@ -167,6 +204,9 @@ function Titlebar() {
   const setEditorMode = useUIStore((s) => s.setEditorMode);
   const setGraphViewOpen = useUIStore((s) => s.setGraphViewOpen);
   const setGlobalSearchOpen = useUIStore((s) => s.setGlobalSearchOpen);
+  const setFlashcardOpen = useUIStore((s) => s.setFlashcardOpen);
+  const setVideoPanelOpen = useUIStore((s) => s.setVideoPanelOpen);
+  const setBrowserPanelOpen = useUIStore((s) => s.setBrowserPanelOpen);
 
   // 智能切换右侧面板：点反链图标，如已显示反链则收起，否则打开并切到反链
   const handleBacklinksToggle = () => {
@@ -219,6 +259,36 @@ function Titlebar() {
         aria-label={t('actions.knowledgeGraph')}
       >
         <GraphIcon />
+      </button>
+
+      {/* ── 闪卡入口 ────────────────────────────────────── */}
+      <button
+        onClick={() => setFlashcardOpen(true)}
+        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        title={t('flashcard.title')}
+        aria-label={t('flashcard.title')}
+      >
+        <FlashcardIcon />
+      </button>
+
+      {/* ── 视频面板入口 ────────────────────────────────── */}
+      <button
+        onClick={() => setVideoPanelOpen(!useUIStore.getState().videoPanelOpen)}
+        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        title={t('video.title')}
+        aria-label={t('video.title')}
+      >
+        <VideoIcon />
+      </button>
+
+      {/* ── 浏览器面板入口 ──────────────────────────────── */}
+      <button
+        onClick={() => setBrowserPanelOpen(!useUIStore.getState().browserPanelOpen)}
+        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        title={t('browser.title')}
+        aria-label={t('browser.title')}
+      >
+        <BrowserIcon />
       </button>
 
       {/* ── 反向链接面板 ────────────────────────────────── */}
@@ -320,6 +390,35 @@ function GraphIcon() {
       <line x1="8.5" y1="7.5" x2="10.5" y2="16" />
       <line x1="15.5" y1="7.5" x2="13.5" y2="16" />
       <line x1="9" y1="6" x2="15" y2="6" />
+    </svg>
+  );
+}
+
+function FlashcardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M12 8v8" />
+      <path d="M8 12h8" />
+    </svg>
+  );
+}
+
+function VideoIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <polygon points="10,8 16,12 10,16" />
+    </svg>
+  );
+}
+
+function BrowserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
     </svg>
   );
 }

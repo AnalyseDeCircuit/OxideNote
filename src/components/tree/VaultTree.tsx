@@ -25,6 +25,7 @@ import {
   renameEntry,
   deleteEntry,
   moveEntry,
+  revealInFinder,
   searchByFilename,
   type TreeNode,
 } from '@/lib/api';
@@ -395,6 +396,14 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
         >
           {t('sidebar.rename')}
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => {
+          revealInFinder(node.path).catch((err) => {
+            toast({ title: t('sidebar.revealFailed'), description: String(err), variant: 'error' });
+          });
+        }}>
+          {t('sidebar.revealInFinder')}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onClick={handleDelete} className="text-red-400">
           {t('sidebar.delete')}
         </ContextMenuItem>

@@ -20,6 +20,12 @@ interface UIState {
   graphViewOpen: boolean;
   /** Vault health dialog */
   healthOpen: boolean;
+  /** Flashcard review overlay */
+  flashcardOpen: boolean;
+  /** Video panel visibility */
+  videoPanelOpen: boolean;
+  /** Browser panel visibility */
+  browserPanelOpen: boolean;
 
   toggleSidebar: () => void;
   toggleSidePanel: () => void;
@@ -32,6 +38,9 @@ interface UIState {
   setSidePanelTab: (tab: SidePanelTab) => void;
   setGraphViewOpen: (v: boolean) => void;
   setHealthOpen: (v: boolean) => void;
+  setFlashcardOpen: (v: boolean) => void;
+  setVideoPanelOpen: (v: boolean) => void;
+  setBrowserPanelOpen: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -44,6 +53,9 @@ export const useUIStore = create<UIState>((set) => ({
   sidePanelTab: 'backlinks',
   graphViewOpen: false,
   healthOpen: false,
+  flashcardOpen: false,
+  videoPanelOpen: false,
+  browserPanelOpen: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
@@ -56,4 +68,7 @@ export const useUIStore = create<UIState>((set) => ({
   setSidePanelTab: (tab) => set({ sidePanelTab: tab }),
   setGraphViewOpen: (v) => set({ graphViewOpen: v }),
   setHealthOpen: (v) => set({ healthOpen: v }),
+  setFlashcardOpen: (v) => set({ flashcardOpen: v }),
+  setVideoPanelOpen: (v) => set({ videoPanelOpen: v }),
+  setBrowserPanelOpen: (v) => set({ browserPanelOpen: v }),
 }));
