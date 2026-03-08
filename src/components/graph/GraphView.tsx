@@ -95,6 +95,9 @@ export function GraphView() {
   // force-graph 的 nodeCanvasObject 回调在初始化时捕获，
   // 通过 ref 使其能读取最新的颜色计算函数和 accent 颜色
   const accentColorRef = useRef('#ea580c');
+  const textColorRef = useRef('#f4f4f5');
+  const mutedColorRef = useRef('#a1a1aa');
+  const borderColorRef = useRef('#27272a');
   const getNodeColorRef = useRef<(node: GraphNode, accent: string) => string>(() => '#ea580c');
 
   // ── 时间轴状态 ────────────────────────────────────────────
@@ -189,8 +192,11 @@ export function GraphView() {
     const mutedColor = style.getPropertyValue('--theme-text-muted').trim() || '#a1a1aa';
     const borderColor = style.getPropertyValue('--theme-border').trim() || '#27272a';
 
-    // 将 accentColor 存入 ref 供 nodeCanvasObject 回调读取最新值
+    // 将主题颜色存入 ref，使 nodeCanvasObject 回调始终读取最新值
     accentColorRef.current = accentColor;
+    textColorRef.current = textColor;
+    mutedColorRef.current = mutedColor;
+    borderColorRef.current = borderColor;
 
     const graph = createForceGraph()(el)
       .width(width)
@@ -202,7 +208,7 @@ export function GraphView() {
       .nodeLabel((node: any) => node.title || node.id)
       .nodeColor(() => accentColor)
       .nodeRelSize(5)
-      .linkColor(() => borderColor)
+      .linkColor(() => borderColorRef.current)
       .linkWidth(1)
       .linkDirectionalArrowLength(4)
       .linkDirectionalArrowRelPos(1)
@@ -222,7 +228,7 @@ export function GraphView() {
         ctx.fill();
 
         // 绘制标签
-        ctx.fillStyle = globalScale > 1.5 ? textColor : mutedColor;
+        ctx.fillStyle = globalScale > 1.5 ? textColorRef.current : mutedColorRef.current;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText(label, node.x, node.y + 6 / globalScale);

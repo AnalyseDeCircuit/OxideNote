@@ -30,7 +30,8 @@
     "emptyFilename": "Filename cannot be empty",
     "reservedFilename": "This filename is reserved by the system",
     "sortByName": "Sort by Name",
-    "sortByModified": "Sort by Modified"
+    "sortByModified": "Sort by Modified",
+    "newFromTemplate": "New from Template"
   },
   "editor": {
     "untitled": "Untitled",

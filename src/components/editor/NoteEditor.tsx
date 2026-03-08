@@ -290,10 +290,13 @@ export function NoteEditor() {
     const { path, localContent } = conflictState;
     // Force-write local content, ignoring mtime check
     try {
-      await writeNote(path, localContent);
-      // Re-read to get new mtime
-      const note = await readNote(path);
-      mtimeRef.current.set(path, note.modified_at_ms);
+      const newMtime = await writeNote(path, localContent);
+      // 使用 writeNote 返回的 mtime，避免额外的 readNote IPC 调用
+      if (newMtime != null) {
+        mtimeRef.current.set(path, newMtime);
+      }
+      // 标记为自己的写入，防止 watcher 误判为外部修改
+      recentWritesRef.current.set(path, Date.now());
       useNoteStore.getState().markClean(path);
       useNoteStore.getState().clearConflict(path);
       reindexNote(path).catch(() => {});

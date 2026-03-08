@@ -104,6 +104,10 @@ pub async fn write_note(
     let full_path = base.join(&path);
     {
         let canonical_base = base.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
+        // 在任何文件系统写操作之前，先拒绝包含 .. 的路径遍历
+        if Path::new(&path).components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(NoteError::AccessDenied);
+        }
         if let Some(parent) = full_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| NoteError::Io(e.to_string()))?;
             let canonical_parent = parent.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
@@ -217,6 +221,10 @@ pub async fn create_folder(
     let full_path = base.join(&rel);
     {
         let canonical_base = base.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
+        // 在任何文件系统写操作之前，先拒绝包含 .. 的路径遍历
+        if Path::new(&rel).components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(NoteError::AccessDenied);
+        }
         let parent = full_path.parent().ok_or_else(|| NoteError::Io("Invalid path".into()))?;
         // Ensure parent exists so we can canonicalize it
         std::fs::create_dir_all(parent).map_err(|e| NoteError::Io(e.to_string()))?;

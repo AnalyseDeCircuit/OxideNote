@@ -30,7 +30,8 @@
     "emptyFilename": "文件名不能为空",
     "reservedFilename": "该文件名是系统保留名",
     "sortByName": "按名称排序",
-    "sortByModified": "按修改时间排序"
+    "sortByModified": "按修改时间排序",
+    "newFromTemplate": "从模板创建"
   },
   "editor": {
     "untitled": "无标题",
