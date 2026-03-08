@@ -152,6 +152,17 @@ pub async fn get_graph_data(
     let node_ids: std::collections::HashSet<&str> =
         nodes.iter().map(|n| n.id.as_str()).collect();
 
+    // 构建 file_stem → path 映射，用于 O(1) WikiLink 解析
+    let stem_to_path: std::collections::HashMap<String, &str> = nodes
+        .iter()
+        .filter_map(|n| {
+            let stem = std::path::Path::new(&n.id)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())?;
+            Some((stem, n.id.as_str()))
+        })
+        .collect();
+
     // 查询所有链接关系
     let mut link_stmt = conn
         .prepare(
@@ -169,20 +180,42 @@ pub async fn get_graph_data(
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?
         .filter_map(|r| r.ok())
-        // 仅保留两端都存在的连边
-        .filter(|link| {
-            node_ids.contains(link.source.as_str())
-                && (node_ids.contains(link.target.as_str())
-                    || nodes.iter().any(|n| {
-                        // WikiLink 可能引用的是 file stem 而非完整路径
-                        let stem = std::path::Path::new(&n.id)
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        stem == link.target
-                    }))
+        // 仅保留两端都存在的连边，WikiLink stem → full path 解析
+        .filter_map(|mut link| {
+            if !node_ids.contains(link.source.as_str()) {
+                return None;
+            }
+            if node_ids.contains(link.target.as_str()) {
+                Some(link)
+            } else if let Some(&full_path) = stem_to_path.get(&link.target) {
+                link.target = full_path.to_string();
+                Some(link)
+            } else {
+                None
+            }
         })
         .collect();
 
     Ok(GraphData { nodes, links })
+}
+
+/// List all tags with note counts.
+#[tauri::command]
+pub async fn list_all_tags(
+    state: State<'_, AppState>,
+) -> Result<Vec<db::TagCount>, SearchError> {
+    let db_guard = state.db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+    db::list_all_tags(conn).map_err(|e| SearchError::Internal(e.to_string()))
+}
+
+/// Search notes by tag.
+#[tauri::command]
+pub async fn search_by_tag(
+    tag: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<db::SearchResult>, SearchError> {
+    let db_guard = state.db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+    db::search_by_tag(conn, &tag).map_err(|e| SearchError::Internal(e.to_string()))
 }

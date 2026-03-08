@@ -48,6 +48,7 @@ interface NoteState {
   closeAllTabs: () => void;
   closeOtherTabs: (path: string) => void;
   closeTabsToRight: (path: string) => void;
+  moveTab: (fromIndex: number, toIndex: number) => void;
   setActiveContent: (content: string) => void;
   setCursorPosition: (line: number, col: number) => void;
 }
@@ -135,6 +136,15 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       ? activeTabPath
       : path;
     set({ openTabs: kept, activeTabPath: newActive });
+  },
+
+  moveTab: (fromIndex, toIndex) => {
+    const { openTabs } = get();
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= openTabs.length || toIndex >= openTabs.length) return;
+    const tabs = [...openTabs];
+    const [moved] = tabs.splice(fromIndex, 1);
+    tabs.splice(toIndex, 0, moved);
+    set({ openTabs: tabs });
   },
 
   setActiveContent: (content) => set({ activeContent: content }),

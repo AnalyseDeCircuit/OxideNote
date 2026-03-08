@@ -14,10 +14,29 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import ForceGraph from 'force-graph';
 
-// force-graph 的默认导出类型为类构造器，
-// 但运行时实际是工厂函数调用方式
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ForceGraphInstance = any;
+// force-graph 导出类型为类构造器，运行时为工厂函数
+interface ForceGraphInstance {
+  width(w: number): ForceGraphInstance;
+  height(h: number): ForceGraphInstance;
+  graphData(data: { nodes: object[]; links: object[] }): ForceGraphInstance;
+  nodeLabel(fn: (n: object) => string): ForceGraphInstance;
+  nodeColor(fn: (n: object) => string): ForceGraphInstance;
+  nodeRelSize(s: number): ForceGraphInstance;
+  linkColor(fn: () => string): ForceGraphInstance;
+  linkWidth(w: number): ForceGraphInstance;
+  linkDirectionalArrowLength(l: number): ForceGraphInstance;
+  linkDirectionalArrowRelPos(p: number): ForceGraphInstance;
+  onNodeClick(fn: (n: object) => void): ForceGraphInstance;
+  onNodeHover(fn: (n: object | null) => void): ForceGraphInstance;
+  backgroundColor(c: string): ForceGraphInstance;
+  nodeCanvasObject(fn: (n: object, ctx: CanvasRenderingContext2D, s: number) => void): ForceGraphInstance;
+  nodeCanvasObjectMode(fn: () => string): ForceGraphInstance;
+  d3Force(name: string, ...args: unknown[]): { strength?(v: number): void; distance?(v: number): void } | undefined;
+  zoomToFit(duration?: number, padding?: number): ForceGraphInstance;
+  _destructor?(): void;
+}
+type ForceGraphFactory = (el: HTMLElement) => ForceGraphInstance;
+const createForceGraph = ForceGraph as unknown as () => ForceGraphFactory;
 import { getGraphData, type GraphData } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
@@ -65,8 +84,7 @@ export function GraphView() {
     const mutedColor = style.getPropertyValue('--theme-text-muted').trim() || '#a1a1aa';
     const borderColor = style.getPropertyValue('--theme-border').trim() || '#27272a';
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const graph = (ForceGraph as any)()(el)
+    const graph = createForceGraph()(el)
       .width(width)
       .height(height)
       .graphData({
@@ -109,8 +127,8 @@ export function GraphView() {
     graphRef.current = graph;
 
     // 力导向参数优化：增强节点间斥力，减少重叠
-    graph.d3Force('charge')?.strength(-300);
-    graph.d3Force('link')?.distance(80);
+    graph.d3Force('charge')?.strength?.(-300);
+    graph.d3Force('link')?.distance?.(80);
 
     // 居中适配
     setTimeout(() => {

@@ -106,7 +106,12 @@
     "shortcutSidebar": "Toggle Sidebar",
     "shortcutSave": "Save",
     "aboutDescription": "A local-first Markdown knowledge vault.",
-    "aboutBuiltWith": "Built with Tauri 2 + React. Your notes always stay local."
+    "aboutBuiltWith": "Built with Tauri 2 + React. Your notes always stay local.",
+    "templates": "Note Templates",
+    "templatesHint": "Select a template when creating notes. Variables: {{title}}, {{date}}, {{datetime}}",
+    "addTemplate": "Add template",
+    "newTemplate": "New Template",
+    "templateName": "Template name"
   },
   "search": {
     "placeholder": "Search notes...",
@@ -149,6 +154,19 @@
     "today": "Today",
     "tooltip": "Open today's daily note",
     "failed": "Daily note failed"
+  },
+  "error": {
+    "boundaryTitle": "Something went wrong",
+    "boundaryFallback": "An unexpected error occurred.",
+    "reload": "Reload"
+  },
+  "wikilink": {
+    "created": "Created note: {{name}}"
+  },
+  "tags": {
+    "title": "Tags",
+    "empty": "No tags yet",
+    "backToAll": "All tags"
   },
   "actions": {
     "confirm": "Confirm",

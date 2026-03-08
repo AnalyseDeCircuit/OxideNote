@@ -11,8 +11,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info, FolderOpen, FolderSync } from 'lucide-react';
-import { useSettingsStore, type ThemeId, type Density, type Language } from '@/store/settingsStore';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2 } from 'lucide-react';
+import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTranslation } from 'react-i18next';
@@ -372,7 +372,76 @@ function EditorTab() {
           </Select>
         </SettingRow>
       </SettingsCard>
+
+      <TemplatesSection />
     </>
+  );
+}
+
+function TemplatesSection() {
+  const templates = useSettingsStore((s) => s.noteTemplates);
+  const setTemplates = useSettingsStore((s) => s.setNoteTemplates);
+  const { t } = useTranslation();
+
+  const addTemplate = () => {
+    setTemplates([...templates, {
+      name: t('settings.newTemplate', '新模板'),
+      content: '---\ntitle: {{title}}\ncreated: {{datetime}}\n---\n\n',
+    }]);
+  };
+
+  const removeTemplate = (index: number) => {
+    setTemplates(templates.filter((_, i) => i !== index));
+  };
+
+  const updateTemplate = (index: number, field: keyof NoteTemplate, value: string) => {
+    const updated = templates.map((tmpl, i) =>
+      i === index ? { ...tmpl, [field]: value } : tmpl
+    );
+    setTemplates(updated);
+  };
+
+  return (
+    <SettingsCard title={t('settings.templates', '笔记模板')}>
+      <p className="text-xs text-muted-foreground mb-3">
+        {t('settings.templatesHint', '创建笔记时可选用模板。支持变量: {{title}}, {{date}}, {{datetime}}')}
+      </p>
+      <div className="space-y-3">
+        {templates.map((tmpl, i) => (
+          <div key={i} className="border border-theme-border rounded-md p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={tmpl.name}
+                onChange={(e) => updateTemplate(i, 'name', e.target.value)}
+                className="flex-1 px-2 py-1 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+                placeholder={t('settings.templateName', '模板名称')}
+              />
+              <button
+                onClick={() => removeTemplate(i)}
+                className="p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                aria-label={t('actions.close')}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+            <textarea
+              value={tmpl.content}
+              onChange={(e) => updateTemplate(i, 'content', e.target.value)}
+              className="w-full h-24 px-2 py-1.5 text-xs font-mono rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent resize-y"
+              placeholder="---\ntitle: {{title}}\n---"
+            />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={addTemplate}
+        className="flex items-center gap-1.5 mt-2 text-xs text-theme-accent hover:text-theme-accent/80 transition-colors"
+      >
+        <Plus size={14} />
+        {t('settings.addTemplate', '添加模板')}
+      </button>
+    </SettingsCard>
   );
 }
 

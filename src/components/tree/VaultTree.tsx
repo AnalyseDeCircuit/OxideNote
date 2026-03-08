@@ -34,6 +34,9 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
 } from '@/components/ui/context-menu';
 import { toast } from '@/hooks/useToast';
 
@@ -373,6 +376,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
               <Plus size={14} className="mr-2" />
               {t('sidebar.newNote')}
             </ContextMenuItem>
+            <TemplateSubMenu parentPath={node.path} onCreated={() => { setExpanded(true); refreshTree(); }} />
             <ContextMenuItem onClick={() => {
               setExpanded(true);
               setInlineCreate('folder');
@@ -585,4 +589,40 @@ async function handleCreateDailyNote() {
   } catch (err) {
     toast({ title: i18n.t('dailyNote.failed'), description: String(err), variant: 'error' });
   }
+}
+
+// ── Template sub-menu for "New from template" ─────────────────
+function TemplateSubMenu({ parentPath, onCreated }: { parentPath: string; onCreated: () => void }) {
+  const templates = useSettingsStore((s) => s.noteTemplates);
+  const { t } = useTranslation();
+
+  if (templates.length === 0) return null;
+
+  const handleCreate = async (template: { name: string; content: string }) => {
+    const name = `${template.name}-${Date.now()}`;
+    try {
+      const path = await createNote(parentPath, name, template.content);
+      onCreated();
+      const title = name.replace(/\.md$/, '');
+      useNoteStore.getState().openNote(path, title);
+    } catch (err) {
+      toast({ title: t('sidebar.createFailed'), description: String(err), variant: 'error' });
+    }
+  };
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        <Plus size={14} className="mr-2" />
+        {t('sidebar.newFromTemplate', '从模板创建')}
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        {templates.map((tmpl, i) => (
+          <ContextMenuItem key={i} onClick={() => handleCreate(tmpl)}>
+            {tmpl.name}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
 }

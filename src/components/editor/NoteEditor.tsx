@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useNoteStore } from '@/store/noteStore';
 import { registerPendingSave, unregisterPendingSave } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
-import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment } from '@/lib/api';
+import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment, createNote } from '@/lib/api';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
@@ -32,21 +32,29 @@ export function NoteEditor() {
   const autoSaveDelay = useSettingsStore((s) => s.autoSaveDelay);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef('');
   const activePathRef = useRef(activeTabPath);
   activePathRef.current = activeTabPath;
+
+  // ── Sync-scroll refs ──────────────────────────────────────
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+  const scrollSourceRef = useRef<'editor' | 'preview' | null>(null);
 
   // 预览模式使用 state 驱动，确保内容变化时重新渲染
   const [previewContent, setPreviewContent] = useState('');
 
   const handleChange = useCallback((content: string) => {
     contentRef.current = content;
-    setPreviewContent(content);
     useNoteStore.getState().setActiveContent(content);
     const path = activePathRef.current;
     if (!path) return;
 
     useNoteStore.getState().markDirty(path);
+
+    // Debounce preview update to avoid re-parsing on every keystroke
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = setTimeout(() => setPreviewContent(content), 300);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -72,11 +80,16 @@ export function NoteEditor() {
       const results = await searchByFilename(target);
       if (results.length > 0) {
         useNoteStore.getState().openNote(results[0].path, results[0].title || results[0].path);
+      } else {
+        // WikiLink target doesn't exist — create and open
+        const newPath = await createNote('', target);
+        useNoteStore.getState().openNote(newPath, target);
+        toast({ title: t('wikilink.created', { name: target }), variant: 'success' });
       }
     } catch {
-      // WikiLink 目标不存在 — 静默忽略
+      // WikiLink navigation/creation failed
     }
-  }, []);
+  }, [t]);
 
   // ── 图片粘贴/拖拽处理 ────────────────────────────────────
   // 从剪贴板或拖拽事件中捕获图片文件，
@@ -120,6 +133,10 @@ export function NoteEditor() {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
+    }
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
     }
 
     if (!activeTabPath) {
@@ -183,6 +200,42 @@ export function NoteEditor() {
   const showEditor = editorMode === 'edit' || editorMode === 'split';
   const showPreview = editorMode === 'preview' || editorMode === 'split';
 
+  // ── Sync scroll: editor → preview ────────────────────────
+  useEffect(() => {
+    if (editorMode !== 'split') return;
+    const view = viewRef.current;
+    if (!view) return;
+    const scrollDOM = view.scrollDOM;
+
+    const onEditorScroll = () => {
+      if (scrollSourceRef.current === 'preview') return;
+      scrollSourceRef.current = 'editor';
+      const el = previewScrollRef.current;
+      if (!el) return;
+      const maxEditor = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+      if (maxEditor <= 0) return;
+      const fraction = scrollDOM.scrollTop / maxEditor;
+      const maxPreview = el.scrollHeight - el.clientHeight;
+      el.scrollTop = fraction * maxPreview;
+      requestAnimationFrame(() => { scrollSourceRef.current = null; });
+    };
+
+    scrollDOM.addEventListener('scroll', onEditorScroll, { passive: true });
+    return () => scrollDOM.removeEventListener('scroll', onEditorScroll);
+  }, [editorMode, viewRef]);
+
+  // ── Sync scroll: preview → editor ────────────────────────
+  const handlePreviewScroll = useCallback((fraction: number) => {
+    if (scrollSourceRef.current === 'editor') return;
+    scrollSourceRef.current = 'preview';
+    const view = viewRef.current;
+    if (!view) return;
+    const scrollDOM = view.scrollDOM;
+    const maxEditor = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+    scrollDOM.scrollTop = fraction * maxEditor;
+    requestAnimationFrame(() => { scrollSourceRef.current = null; });
+  }, [viewRef]);
+
   // ── 粘贴事件：检测剪贴板中的图片 ─────────────────────────
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
@@ -238,6 +291,8 @@ export function NoteEditor() {
           <MarkdownPreview
             content={previewContent}
             className={showEditor ? 'w-1/2' : 'w-full'}
+            scrollRef={previewScrollRef}
+            onScroll={handlePreviewScroll}
           />
         )}
 

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::state::AppState;
 
@@ -45,12 +45,25 @@ pub async fn open_vault(
     // Initialize index database
     match crate::indexing::db::open_db(&vault_path) {
         Ok(conn) => {
-            // Scan vault to build/update index
-            if let Err(e) = crate::indexing::scanner::scan_vault(&vault_path, &conn) {
-                tracing::warn!("Vault scan failed: {}", e);
-            }
             *state.db.lock() = Some(conn);
             tracing::info!("Index database initialized");
+
+            // Scan vault in background to avoid blocking the UI
+            let db_arc = state.db.clone();
+            let vault_clone = vault_path.clone();
+            let handle = app_handle.clone();
+            tokio::task::spawn_blocking(move || {
+                let db_guard = db_arc.lock();
+                if let Some(conn) = db_guard.as_ref() {
+                    if let Err(e) = crate::indexing::scanner::scan_vault(&vault_clone, conn) {
+                        tracing::warn!("Vault scan failed: {}", e);
+                    } else {
+                        tracing::info!("Vault scan completed");
+                    }
+                }
+                drop(db_guard);
+                let _ = handle.emit("vault:index-ready", ());
+            });
         }
         Err(e) => {
             tracing::error!("Failed to open index database: {}", e);

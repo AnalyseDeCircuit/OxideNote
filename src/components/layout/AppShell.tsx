@@ -10,6 +10,7 @@ import { NoteEditor } from '@/components/editor/NoteEditor';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
 import { OutlinePanel } from '@/components/editor/OutlinePanel';
+import { TagPanel } from '@/components/editor/TagPanel';
 import { GraphView } from '@/components/graph/GraphView';
 import { listTree } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +35,19 @@ export function AppShell() {
     return () => {
       unlisten.then((fn) => fn());
     };
+  }, []);
+
+  // Listen for index-ready event (after background vault scan completes)
+  useEffect(() => {
+    const unlisten = listen('vault:index-ready', async () => {
+      try {
+        const tree = await listTree('', useSettingsStore.getState().sortMode);
+        useWorkspaceStore.getState().setTree(tree);
+      } catch {
+        // ignore
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   return (
@@ -107,9 +121,16 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
           onClick={() => setSidePanelTab('outline')}
           label={t('outline.title')}
         />
+        <TabButton
+          active={activeTab === 'tags'}
+          onClick={() => setSidePanelTab('tags')}
+          label={t('tags.title', '标签')}
+        />
       </div>
       <div className="flex-1 min-h-0">
-        {activeTab === 'backlinks' ? <BacklinksPanel /> : <OutlinePanel />}
+        {activeTab === 'backlinks' && <BacklinksPanel />}
+        {activeTab === 'outline' && <OutlinePanel />}
+        {activeTab === 'tags' && <TagPanel />}
       </div>
     </div>
   );

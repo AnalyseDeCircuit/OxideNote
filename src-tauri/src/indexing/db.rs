@@ -233,3 +233,41 @@ pub struct SearchResult {
     pub title: String,
     pub snippet: String,
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TagCount {
+    pub tag: String,
+    pub count: i64,
+}
+
+/// List all tags with their note counts.
+pub fn list_all_tags(conn: &Connection) -> Result<Vec<TagCount>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT tag, COUNT(*) as cnt FROM tags GROUP BY tag ORDER BY cnt DESC, tag ASC"
+    )?;
+    let results = stmt.query_map([], |row| {
+        Ok(TagCount {
+            tag: row.get(0)?,
+            count: row.get(1)?,
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
+/// Search notes by tag.
+pub fn search_by_tag(conn: &Connection, tag: &str) -> Result<Vec<SearchResult>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT n.path, n.title FROM tags t
+         JOIN notes n ON n.id = t.note_id
+         WHERE t.tag = ?1
+         ORDER BY n.title"
+    )?;
+    let results = stmt.query_map(params![tag], |row| {
+        Ok(SearchResult {
+            path: row.get(0)?,
+            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            snippet: String::new(),
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(results)
+}

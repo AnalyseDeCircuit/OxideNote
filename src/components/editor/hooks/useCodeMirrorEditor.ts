@@ -43,6 +43,7 @@ const fontFamilyCompartment = new Compartment();
 const lineHeightCompartment = new Compartment();
 const tabSizeCompartment = new Compartment();
 const wordWrapCompartment = new Compartment();
+const themeCompartment = new Compartment();
 
 function makeFontSizeTheme(size: number) {
   return EditorView.theme({
@@ -64,8 +65,18 @@ function makeLineHeightTheme(lh: number) {
   });
 }
 
+// Light themes list — shared with MarkdownPreview
+const LIGHT_THEMES = ['paper-oxide', 'github-light', 'catppuccin-latte', 'solarized-light', 'gruvbox-light', 'rose-pine-dawn', 'hot-pink', 'spring-green'];
+
+function isDarkTheme(): boolean {
+  if (typeof document === 'undefined') return true;
+  const theme = document.documentElement.getAttribute('data-theme') || '';
+  return !LIGHT_THEMES.includes(theme);
+}
+
 // Oxide theme: read colors from CSS variables
-const oxideTheme = EditorView.theme(
+function makeOxideTheme(dark: boolean) {
+  return EditorView.theme(
   {
     '&': {
       backgroundColor: 'var(--bg-background)',
@@ -118,13 +129,9 @@ const oxideTheme = EditorView.theme(
       backgroundColor: 'rgba(255,200,0,0.3)',
     },
   },
-  { dark: (() => {
-    if (typeof document === 'undefined') return true;
-    const theme = document.documentElement.getAttribute('data-theme') || '';
-    const lightThemes = ['paper-oxide', 'github-light', 'catppuccin-latte', 'solarized-light', 'gruvbox-light', 'rose-pine-dawn', 'hot-pink', 'spring-green'];
-    return !lightThemes.includes(theme);
-  })() }
+  { dark }
 );
+}
 
 export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -186,7 +193,7 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         wikilinkExtension((target) => onNavigateRef.current?.(target)),
 
         // Theme
-        oxideTheme,
+        themeCompartment.of(makeOxideTheme(isDarkTheme())),
 
         // Keymaps
         saveKeymap,
@@ -228,7 +235,21 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
 
     viewRef.current = view;
 
+    // Watch for theme changes (data-theme attribute on <html>)
+    const observer = new MutationObserver(() => {
+      if (viewRef.current) {
+        viewRef.current.dispatch({
+          effects: themeCompartment.reconfigure(makeOxideTheme(isDarkTheme())),
+        });
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
     return () => {
+      observer.disconnect();
       view.destroy();
       viewRef.current = null;
     };

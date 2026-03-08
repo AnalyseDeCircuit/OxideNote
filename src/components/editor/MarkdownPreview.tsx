@@ -20,14 +20,22 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
 import { useNoteStore } from '@/store/noteStore';
-import { searchByFilename } from '@/lib/api';
+import { searchByFilename, createNote } from '@/lib/api';
 import 'katex/dist/katex.min.css';
 
 // ── Mermaid 初始化 ──────────────────────────────────────────
-// 使用 dark 主题以匹配 OxideNote 默认深色界面
+// 动态检测主题明暗，匹配 OxideNote 当前界面
+const LIGHT_THEMES = ['paper-oxide', 'github-light', 'catppuccin-latte', 'solarized-light', 'gruvbox-light', 'rose-pine-dawn', 'hot-pink', 'spring-green'];
+
+function getMermaidTheme(): 'dark' | 'default' {
+  if (typeof document === 'undefined') return 'dark';
+  const theme = document.documentElement.getAttribute('data-theme') || '';
+  return LIGHT_THEMES.includes(theme) ? 'default' : 'dark';
+}
+
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'dark',
+  theme: getMermaidTheme(),
   securityLevel: 'strict',
 });
 
@@ -181,10 +189,13 @@ function escapeAttr(text: string): string {
 interface MarkdownPreviewProps {
   content: string;
   className?: string;
+  onScroll?: (scrollFraction: number) => void;
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function MarkdownPreview({ content, className = '', onScroll, scrollRef }: MarkdownPreviewProps) {
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = scrollRef ?? internalRef;
   const marked = useMemo(() => createMarkedInstance(), []);
 
   // ── 解析 Markdown → HTML（DOMPurify 净化）─────────────────
@@ -212,6 +223,13 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
     let cancelled = false;
 
     (async () => {
+      // Re-initialize Mermaid theme in case user switched themes
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: getMermaidTheme(),
+        securityLevel: 'strict',
+      });
+
       for (const container of mermaidContainers) {
         if (cancelled) break;
         const id = container.dataset.mermaidId;
@@ -248,11 +266,23 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
       const results = await searchByFilename(linkTarget);
       if (results.length > 0) {
         useNoteStore.getState().openNote(results[0].path, results[0].title || results[0].path);
+      } else {
+        const newPath = await createNote('', linkTarget);
+        useNoteStore.getState().openNote(newPath, linkTarget);
       }
     } catch {
-      // 链接目标不存在 — 静默忽略
+      // WikiLink navigation/creation failed
     }
   }, []);
+
+  const handleScroll = useCallback(() => {
+    if (!onScroll) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) return;
+    onScroll(el.scrollTop / maxScroll);
+  }, [onScroll, containerRef]);
 
   return (
     <div
@@ -261,6 +291,7 @@ export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProp
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
       onClick={handleClick}
+      onScroll={handleScroll}
     />
   );
 }

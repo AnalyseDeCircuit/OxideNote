@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 export function TabBar() {
   const openTabs = useNoteStore((s) => s.openTabs);
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   if (openTabs.length === 0) return null;
 
@@ -22,12 +23,18 @@ export function TabBar() {
       role="tablist"
       aria-label="Open tabs"
       className="flex items-center border-b border-theme-border bg-surface overflow-x-auto shrink-0"
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={() => setDragOverIndex(null)}
+      onDrop={() => setDragOverIndex(null)}
     >
-      {openTabs.map((tab) => (
+      {openTabs.map((tab, index) => (
         <TabItem
           key={tab.path}
           tab={tab}
+          index={index}
           isActive={tab.path === activeTabPath}
+          dragOverIndex={dragOverIndex}
+          setDragOverIndex={setDragOverIndex}
         />
       ))}
     </div>
@@ -41,15 +48,42 @@ interface CtxMenu {
   path: string;
 }
 
-const TabItem = memo(function TabItem({ tab, isActive }: { tab: Tab; isActive: boolean }) {
+const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, setDragOverIndex }: {
+  tab: Tab;
+  index: number;
+  isActive: boolean;
+  dragOverIndex: number | null;
+  setDragOverIndex: (i: number | null) => void;
+}) {
   const setActiveTab = useNoteStore((s) => s.setActiveTab);
   const closeTab = useNoteStore((s) => s.closeTab);
   const closeAllTabs = useNoteStore((s) => s.closeAllTabs);
   const closeOtherTabs = useNoteStore((s) => s.closeOtherTabs);
   const closeTabsToRight = useNoteStore((s) => s.closeTabsToRight);
+  const moveTab = useNoteStore((s) => s.moveTab);
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  }, [index]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, [index, setDragOverIndex]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const fromIndex = Number(e.dataTransfer.getData('text/plain'));
+    if (!Number.isNaN(fromIndex)) {
+      moveTab(fromIndex, index);
+    }
+    setDragOverIndex(null);
+  }, [index, moveTab, setDragOverIndex]);
 
   // Dismiss the context menu on outside click or scroll
   useEffect(() => {
@@ -68,11 +102,15 @@ const TabItem = memo(function TabItem({ tab, isActive }: { tab: Tab; isActive: b
       <div
         role="tab"
         aria-selected={isActive}
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         className={`group flex items-center gap-1.5 px-3 py-1.5 text-[13px] cursor-pointer select-none border-r border-theme-border transition-colors ${
           isActive
             ? 'bg-background text-foreground'
             : 'text-muted-foreground hover:bg-theme-hover hover:text-foreground'
-        }`}
+        }${dragOverIndex === index ? ' ring-1 ring-theme-accent' : ''}`}
         onClick={() => setActiveTab(tab.path)}
         // Middle-click (button === 1) to close
         onMouseDown={(e) => {

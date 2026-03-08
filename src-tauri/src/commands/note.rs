@@ -110,6 +110,7 @@ pub async fn write_note(
 pub async fn create_note(
     parent_path: String,
     name: String,
+    template: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, NoteError> {
     let vault_path = state.vault_path.read();
@@ -138,10 +139,16 @@ pub async fn create_note(
             .map_err(|e| NoteError::Io(e.to_string()))?;
     }
 
-    let default_content = format!("---\ntitle: {}\ncreated: {}\n---\n\n", 
-        name.trim_end_matches(".md"),
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-    );
+    let default_content = if let Some(tmpl) = template {
+        tmpl.replace("{{title}}", name.trim_end_matches(".md"))
+            .replace("{{date}}", &chrono::Local::now().format("%Y-%m-%d").to_string())
+            .replace("{{datetime}}", &chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
+    } else {
+        format!("---\ntitle: {}\ncreated: {}\n---\n\n", 
+            name.trim_end_matches(".md"),
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+        )
+    };
     std::fs::write(&full_path, &default_content)
         .map_err(|e| NoteError::Io(e.to_string()))?;
 

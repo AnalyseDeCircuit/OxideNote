@@ -34,8 +34,8 @@ export async function writeNote(path: string, content: string): Promise<void> {
   return invoke<void>('write_note', { path, content });
 }
 
-export async function createNote(parentPath: string, name: string): Promise<string> {
-  return invoke<string>('create_note', { parentPath, name });
+export async function createNote(parentPath: string, name: string, template?: string): Promise<string> {
+  return invoke<string>('create_note', { parentPath, name, template: template ?? null });
 }
 
 export async function createFolder(parentPath: string, name: string): Promise<string> {
@@ -106,6 +106,23 @@ export interface GraphData {
 /** 获取知识图谱数据（节点 + 连边） */
 export async function getGraphData(): Promise<GraphData> {
   return invoke<GraphData>('get_graph_data');
+}
+
+// ─── Tag commands ────────────────────────────────────────────
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+/** 获取所有标签及其笔记计数 */
+export async function listAllTags(): Promise<TagCount[]> {
+  return invoke<TagCount[]>('list_all_tags');
+}
+
+/** 按标签搜索笔记 */
+export async function searchByTag(tag: string): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('search_by_tag', { tag });
 }
 
 // ─── File management commands ────────────────────────────────

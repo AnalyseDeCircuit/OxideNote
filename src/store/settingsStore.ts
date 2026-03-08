@@ -47,6 +47,7 @@ export type Language = 'zh-CN' | 'en';
 export type SortMode = 'name' | 'modified';
 
 interface TabSnapshot { path: string; title: string; }
+export interface NoteTemplate { name: string; content: string; }
 
 interface SettingsState {
   // Appearance
@@ -68,6 +69,8 @@ interface SettingsState {
   lastActiveTabPath: string | null;
   // Sidebar
   sortMode: SortMode;
+  // Templates
+  noteTemplates: NoteTemplate[];
 
   // Actions
   setTheme: (theme: ThemeId) => void;
@@ -82,6 +85,7 @@ interface SettingsState {
   setLastVaultPath: (path: string | null) => void;
   addRecentVault: (path: string) => void;
   setSortMode: (mode: SortMode) => void;
+  setNoteTemplates: (templates: NoteTemplate[]) => void;
 }
 
 const STORAGE_KEY = 'oxidenote-settings';
@@ -112,6 +116,7 @@ function persistSettings(state: SettingsState) {
     lastOpenTabs: state.lastOpenTabs,
     lastActiveTabPath: state.lastActiveTabPath,
     sortMode: state.sortMode,
+    noteTemplates: state.noteTemplates,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -131,12 +136,14 @@ export const useSettingsStore = create<SettingsState>()(
   autoSaveDelay: persisted.autoSaveDelay ?? 1500,
   lastVaultPath: persisted.lastVaultPath ?? null,
   recentVaults: persisted.recentVaults ?? [],
-  lastOpenTabs: (persisted as any).lastOpenTabs ?? [],
-  lastActiveTabPath: (persisted as any).lastActiveTabPath ?? null,
-  sortMode: ((persisted as any).sortMode as SortMode) ?? 'name',
+  lastOpenTabs: persisted.lastOpenTabs ?? [],
+  lastActiveTabPath: persisted.lastActiveTabPath ?? null,
+  sortMode: (persisted.sortMode as SortMode) ?? 'name',
+  noteTemplates: persisted.noteTemplates ?? [],
 
   setTheme: (theme) => set({ theme }),
   setSortMode: (mode) => set({ sortMode: mode }),
+  setNoteTemplates: (templates) => set({ noteTemplates: templates }),
   setDensity: (density) => set({ density }),
   setLanguage: (lang) => set({ language: lang }),
   setEditorFontSize: (size) => set({ editorFontSize: size }),
