@@ -132,8 +132,11 @@ pub async fn write_note(
     let tmp_path = full_path.with_extension("md.tmp");
     std::fs::write(&tmp_path, &content)
         .map_err(|e| NoteError::Io(e.to_string()))?;
-    std::fs::rename(&tmp_path, &full_path)
-        .map_err(|e| NoteError::Io(e.to_string()))?;
+    if let Err(e) = std::fs::rename(&tmp_path, &full_path) {
+        // rename 失败时清理临时文件，防止 .tmp 文件累积
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(NoteError::Io(e.to_string()));
+    }
 
     // 返回写入后的 mtime，让前端直接使用而无需额外 readNote 调用
     let new_mtime = get_mtime_ms(&full_path);

@@ -58,10 +58,11 @@ pub async fn save_attachment(
         .and_then(|e| e.to_str())
         .unwrap_or("png");
 
-    // 使用 SHA-256 哈希前 16 字符作为文件名，保证唯一性
+    // 使用 SHA-256 哈希前 32 字符（128 位）作为文件名，
+    // 64 位时 ~2^32 个附件就有 50% 碰撞概率，128 位足够安全
     use sha2::{Digest, Sha256};
     let hash = Sha256::digest(&bytes);
-    let hash_hex: String = hash.iter().take(8).map(|b| format!("{:02x}", b)).collect();
+    let hash_hex: String = hash.iter().take(16).map(|b| format!("{:02x}", b)).collect();
     let safe_name = format!("{}.{}", hash_hex, ext);
 
     // 确保 .attachments 目录存在

@@ -44,59 +44,58 @@ pub async fn open_vault(
     // 切换 vault 前先停掉旧 watcher，防止旧 watcher 持有新 DB 连接导致跨 vault 幽灵索引
     *state.watcher.lock() = None;
 
-    *state.vault_path.write() = Some(vault_path.clone());
-
     // Initialize index database (write connection)
-    match crate::indexing::db::open_db(&vault_path) {
-        Ok(conn) => {
-            *state.db.lock() = Some(conn);
+    // 先打开所有 DB 连接再更新 vault_path，保证状态原子性：
+    // 若 DB 打开失败，vault_path 不会被更新为指向无 DB 的路径
+    let conn = crate::indexing::db::open_db(&vault_path)
+        .map_err(|e| {
+            tracing::error!("Failed to open index database: {}", e);
+            VaultError::IndexError(format!("Failed to open index: {}", e))
+        })?;
 
-            // Open a second connection for read-only queries (avoids blocking writes)
+    // Open a second connection for read-only queries (avoids blocking writes)
+    let read_conn = match crate::indexing::db::open_db(&vault_path) {
+        Ok(rc) => Some(rc),
+        Err(e) => {
+            // 读连接打开失败时，尝试再次打开；若仍失败则 read_db 保持 None，
+            // 后续读命令（搜索/反链/图谱）会返回 NoIndex 错误，不会崩溃
+            tracing::warn!("Failed to open read connection, attempting fallback: {}", e);
             match crate::indexing::db::open_db(&vault_path) {
-                Ok(read_conn) => {
-                    *state.read_db.lock() = Some(read_conn);
-                }
-                Err(e) => {
-                    // 读连接打开失败时，尝试第三次打开；若仍失败则 read_db 保持 None，
-                    // 后续读命令（搜索/反链/图谱）会返回 NoIndex 错误，不会崩溃
-                    tracing::warn!("Failed to open read connection, attempting fallback: {}", e);
-                    match crate::indexing::db::open_db(&vault_path) {
-                        Ok(fallback_conn) => {
-                            *state.read_db.lock() = Some(fallback_conn);
-                        }
-                        Err(e2) => {
-                            tracing::error!("Fallback read connection also failed: {}. Search/backlinks will be unavailable.", e2);
-                            // read_db 保持 None，不会崩溃
-                        }
-                    }
+                Ok(fallback_conn) => Some(fallback_conn),
+                Err(e2) => {
+                    tracing::error!("Fallback read connection also failed: {}. Search/backlinks will be unavailable.", e2);
+                    None
                 }
             }
+        }
+    };
 
-            tracing::info!("Index database initialized (read+write connections)");
+    // DB 连接全部就绪后，再原子地更新 state
+    *state.vault_path.write() = Some(vault_path.clone());
+    *state.db.lock() = Some(conn);
+    *state.read_db.lock() = read_conn;
 
-            // 后台扫描：从 Mutex 中取出连接直接传递给后台任务，
-            // 避免整个扫描期间持锁阻塞 watcher 增量索引
-            let scan_conn = state.db.lock().take();
-            let db_arc = state.db.clone();
-            let vault_clone = vault_path.clone();
-            let handle = app_handle.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Some(conn) = scan_conn {
-                    if let Err(e) = crate::indexing::scanner::scan_vault(&vault_clone, &conn) {
-                        tracing::warn!("Vault scan failed: {}", e);
-                    } else {
-                        tracing::info!("Vault scan completed");
-                    }
-                    // 扫描完毕，将连接放回 Mutex 供后续写操作使用
-                    *db_arc.lock() = Some(conn);
+    tracing::info!("Index database initialized (read+write connections)");
+
+    // 后台扫描：从 Mutex 中取出连接直接传递给后台任务，
+    // 避免整个扫描期间持锁阻塞 watcher 增量索引
+    {
+        let scan_conn = state.db.lock().take();
+        let db_arc = state.db.clone();
+        let vault_clone = vault_path.clone();
+        let handle = app_handle.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Some(conn) = scan_conn {
+                if let Err(e) = crate::indexing::scanner::scan_vault(&vault_clone, &conn) {
+                    tracing::warn!("Vault scan failed: {}", e);
+                } else {
+                    tracing::info!("Vault scan completed");
                 }
-                let _ = handle.emit("vault:index-ready", ());
-            });
-        }
-        Err(e) => {
-            tracing::error!("Failed to open index database: {}", e);
-            return Err(VaultError::IndexError(format!("Failed to open index: {}", e)));
-        }
+                // 扫描完毕，将连接放回 Mutex 供后续写操作使用
+                *db_arc.lock() = Some(conn);
+            }
+            let _ = handle.emit("vault:index-ready", ());
+        });
     }
 
     // Start file system watcher (with incremental indexing)

@@ -14,8 +14,8 @@ export function TagPanel() {
     try {
       const result = await listAllTags();
       setTags(result);
-    } catch {
-      // Index not ready yet
+    } catch (err) {
+      console.warn('[tags] Failed to load tags:', err);
     }
   }, []);
 

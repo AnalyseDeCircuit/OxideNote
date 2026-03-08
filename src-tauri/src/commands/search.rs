@@ -90,11 +90,15 @@ pub async fn get_backlinks(
     let mut results = db::get_backlinks(conn, &path)
         .map_err(|e| SearchError::Internal(e.to_string()))?;
 
+    // 使用 HashSet 实现 O(1) 去重，避免 O(n²) 的 .any() 线性扫描
+    let mut seen: std::collections::HashSet<String> =
+        results.iter().map(|r| r.path.clone()).collect();
+
     if file_stem != path {
         let by_stem = db::get_backlinks(conn, &file_stem)
             .map_err(|e| SearchError::Internal(e.to_string()))?;
         for r in by_stem {
-            if !results.iter().any(|existing| existing.path == r.path) {
+            if seen.insert(r.path.clone()) {
                 results.push(r);
             }
         }
@@ -112,7 +116,7 @@ pub async fn get_backlinks(
         let by_alias = db::get_backlinks(conn, alias)
             .map_err(|e| SearchError::Internal(e.to_string()))?;
         for r in by_alias {
-            if !results.iter().any(|existing| existing.path == r.path) {
+            if seen.insert(r.path.clone()) {
                 results.push(r);
             }
         }

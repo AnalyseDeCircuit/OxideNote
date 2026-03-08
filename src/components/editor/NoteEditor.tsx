@@ -82,7 +82,11 @@ export function NoteEditor() {
     }
 
     saveTimerRef.current = setTimeout(() => {
-      saveNoteWithConflictCheck(path, contentRef.current);
+      // 再次确认当前活动路径与发起保存时一致，
+      // 防止 debounce 期间切换标签页导致内容写入错误文件
+      if (activePathRef.current === path) {
+        saveNoteWithConflictCheck(path, contentRef.current);
+      }
     }, autoSaveDelay);
   }, [autoSaveDelay]);
 

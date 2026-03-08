@@ -263,12 +263,16 @@ export function GraphView() {
 
     return () => {
       resizeObserver.disconnect();
-      // 停止 force-graph 内部的 RAF 循环和 D3 力仿真，避免内存/CPU 泄漏
-      if (graphRef.current?._destructor) {
-        graphRef.current._destructor();
+      try {
+        // 停止 force-graph 内部的 RAF 循环和 D3 力仿真，避免内存/CPU 泄漏
+        if (graphRef.current?._destructor) {
+          graphRef.current._destructor();
+        }
+      } finally {
+        // 即使 _destructor 抛出异常也确保 DOM 清理
+        el.innerHTML = '';
+        graphRef.current = null;
       }
-      el.innerHTML = '';
-      graphRef.current = null;
     };
     // 只在图谱数据首次加载或组件关闭回调变化时重建
     // eslint-disable-next-line react-hooks/exhaustive-deps
