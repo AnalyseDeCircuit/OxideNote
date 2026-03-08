@@ -82,6 +82,9 @@ pub fn run() {
             commands::bookmark::reorder_bookmarks,
             commands::bookmark::is_bookmarked,
             commands::clip::clip_webpage,
+            commands::canvas::read_canvas,
+            commands::canvas::write_canvas,
+            commands::canvas::create_canvas,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

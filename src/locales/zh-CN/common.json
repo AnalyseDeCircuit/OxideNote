@@ -150,7 +150,8 @@
   "outline": {
     "title": "大纲",
     "noNote": "没有打开的笔记",
-    "empty": "暂无标题"
+    "empty": "暂无标题",
+    "blocks": "块引用"
   },
   "toolbar": {
     "heading1": "一级标题",
@@ -481,6 +482,10 @@
   },
   "canvas": {
     "title": "白板画布",
+    "loading": "加载中...",
+    "untitled": "未命名白板",
+    "newCanvas": "新建白板",
+    "createFailed": "创建白板失败",
     "eraser": "橡皮擦",
     "undo": "撤销",
     "redo": "重做",

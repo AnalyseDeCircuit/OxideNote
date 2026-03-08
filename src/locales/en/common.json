@@ -150,7 +150,8 @@
   "outline": {
     "title": "Outline",
     "noNote": "No note open",
-    "empty": "No headings found"
+    "empty": "No headings found",
+    "blocks": "Blocks"
   },
   "toolbar": {
     "heading1": "Heading 1",
@@ -481,6 +482,10 @@
   },
   "canvas": {
     "title": "Whiteboard Canvas",
+    "loading": "Loading...",
+    "untitled": "Untitled Canvas",
+    "newCanvas": "New Canvas",
+    "createFailed": "Failed to create canvas",
     "eraser": "Eraser",
     "undo": "Undo",
     "redo": "Redo",

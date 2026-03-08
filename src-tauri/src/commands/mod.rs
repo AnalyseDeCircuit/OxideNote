@@ -1,6 +1,7 @@
 pub mod attachment;
 pub mod bookmark;
 pub mod browser;
+pub mod canvas;
 pub mod clip;
 pub mod crypto;
 pub mod export;

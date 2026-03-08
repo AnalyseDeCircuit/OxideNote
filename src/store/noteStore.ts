@@ -54,6 +54,10 @@ interface NoteState {
   cursorLine: number;
   cursorCol: number;
 
+  /** Pending scroll target (e.g. after opening a note from canvas block card) */
+  pendingScrollTarget: { blockId: string } | null;
+  setPendingScrollTarget: (target: { blockId: string } | null) => void;
+
   openNote: (path: string, title: string) => void;
   closeTab: (path: string) => void;
   setActiveTab: (path: string) => void;
@@ -82,6 +86,8 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   cursorLine: 1,
   cursorCol: 1,
   recentNotes: [],
+  pendingScrollTarget: null,
+  setPendingScrollTarget: (target) => set({ pendingScrollTarget: target }),
 
   openNote: (path, title) => {
     const { openTabs, recentNotes } = get();

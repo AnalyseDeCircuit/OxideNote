@@ -7,7 +7,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { X, Pin } from 'lucide-react';
+import { X, Pin, Layout } from 'lucide-react';
 import { useNoteStore, flushPendingSave, type SaveOutcome, type Tab } from '@/store/noteStore';
 import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
@@ -168,6 +168,10 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
         {/* Dirty indicator */}
         {tab.isDirty && (
           <span className="w-2 h-2 rounded-full bg-theme-accent shrink-0" />
+        )}
+        {/* Canvas file icon */}
+        {tab.path.endsWith('.canvas') && (
+          <Layout size={12} className="shrink-0 text-muted-foreground" />
         )}
         <span className="truncate max-w-[150px]">{tab.title}</span>
         {!tab.isPinned && (

@@ -14,6 +14,8 @@ import {
   ArrowUpDown,
   Star,
   Trash2,
+  Layout,
+  PenTool,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -32,6 +34,7 @@ import {
   addBookmark,
   removeBookmark,
   isBookmarked,
+  createCanvas,
   type TreeNode,
 } from '@/lib/api';
 import {
@@ -75,6 +78,18 @@ export function VaultTree() {
     setInlineCreate({ type: 'folder', parentPath: '' });
   }, []);
 
+  // Create a new canvas file at vault root
+  const handleNewCanvas = useCallback(async () => {
+    try {
+      const canvasPath = await createCanvas('', t('canvas.untitled'));
+      await refreshTree();
+      const title = t('canvas.untitled');
+      useNoteStore.getState().openNote(canvasPath, title);
+    } catch (err) {
+      toast({ title: t('canvas.createFailed'), description: String(err), variant: 'error' });
+    }
+  }, [t, refreshTree]);
+
   const handleInlineSubmit = useCallback(async (name: string) => {
     if (!inlineCreate || !name.trim()) {
       setInlineCreate(null);
@@ -114,6 +129,7 @@ export function VaultTree() {
         <div className="flex items-center gap-0.5">
           <ToolbarButton icon={<CalendarDays size={15} />} title={t('dailyNote.tooltip')} onClick={handleCreateDailyNote} />
           <ToolbarButton icon={<Plus size={15} />} title={t('sidebar.newNote')} onClick={handleNewNote} />
+          <ToolbarButton icon={<PenTool size={15} />} title={t('canvas.newCanvas')} onClick={handleNewCanvas} />
           <ToolbarButton icon={<FolderPlus size={15} />} title={t('sidebar.newFolder')} onClick={handleNewFolder} />
           <ToolbarButton icon={<RefreshCw size={15} />} title={t('sidebar.refresh')} onClick={handleRefresh} />
           <ToolbarButton
@@ -177,6 +193,10 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
   const handleClick = useCallback(() => {
     if (node.is_dir) {
       setExpanded((prev) => !prev);
+    } else if (node.name.endsWith('.canvas')) {
+      // Open canvas files with the canvas title (strip extension)
+      const title = node.name.replace(/\.canvas$/, '');
+      useNoteStore.getState().openNote(node.path, title);
     } else {
       const title = node.name.replace(/\.md$/, '');
       useNoteStore.getState().openNote(node.path, title);
@@ -321,6 +341,8 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
             <span className="shrink-0 text-muted-foreground">
               {node.is_dir ? (
                 expanded ? <FolderOpen size={14} /> : <Folder size={14} />
+              ) : node.name.endsWith('.canvas') ? (
+                <Layout size={14} />
               ) : (
                 <File size={14} />
               )}
@@ -400,6 +422,20 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
             }}>
               <FolderPlus size={14} className="mr-2" />
               {t('sidebar.newFolder')}
+            </ContextMenuItem>
+            <ContextMenuItem onClick={async () => {
+              setExpanded(true);
+              try {
+                const canvasPath = await createCanvas(node.path, t('canvas.untitled'));
+                await refreshTree();
+                const title = t('canvas.untitled');
+                useNoteStore.getState().openNote(canvasPath, title);
+              } catch (err) {
+                toast({ title: t('canvas.createFailed'), description: String(err), variant: 'error' });
+              }
+            }}>
+              <PenTool size={14} className="mr-2" />
+              {t('canvas.newCanvas')}
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>

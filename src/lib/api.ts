@@ -402,3 +402,57 @@ export async function savePdfAnnotations(pdfPath: string, annotationsJson: strin
 export async function loadPdfAnnotations(pdfPath: string): Promise<string> {
   return invoke<string>('load_pdf_annotations', { pdfPath });
 }
+
+// ─── Canvas commands ────────────────────────────────────────
+
+/** Canvas file data model */
+export interface CanvasPoint {
+  x: number;
+  y: number;
+}
+
+export interface CanvasStroke {
+  points: CanvasPoint[];
+  color: string;
+  width: number;
+}
+
+export interface CanvasCard {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string;
+  linked_note?: string;
+  linked_block?: { note_path: string; block_id: string };
+}
+
+export interface CanvasViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export interface CanvasData {
+  version: number;
+  strokes: CanvasStroke[];
+  cards: CanvasCard[];
+  viewport: CanvasViewport;
+}
+
+/** Read a canvas file from the vault. Returns empty canvas if file is new. */
+export async function readCanvas(path: string): Promise<CanvasData> {
+  return invoke<CanvasData>('read_canvas', { path });
+}
+
+/** Write canvas data to disk as JSON */
+export async function writeCanvas(path: string, data: CanvasData): Promise<void> {
+  return invoke<void>('write_canvas', { path, data });
+}
+
+/** Create a new empty .canvas file, returns the vault-relative path */
+export async function createCanvas(parentPath: string, name: string): Promise<string> {
+  return invoke<string>('create_canvas', { parentPath, name });
+}

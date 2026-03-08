@@ -6,13 +6,15 @@ import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment, cre
 import { useSettingsStore } from '@/store/settingsStore';
 import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
 import { clearBlockRefCache } from './extensions/blockRef';
-import { setEditorView } from '@/lib/editorViewRef';
+import { setEditorView, getEditorView } from '@/lib/editorViewRef';
+import { EditorView } from '@codemirror/view';
 import { MarkdownPreview } from './MarkdownPreview';
 import { getPreviewScrollTopForSourceLine } from '@/components/editor/scrollSync';
 import { EditorToolbar } from './EditorToolbar';
 import { ConflictDialog } from '@/components/editor/ConflictDialog';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { DatabaseView, isDatabaseNote } from '@/components/database/DatabaseView';
+import { CanvasEditor } from '@/components/canvas/CanvasEditor';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -196,8 +198,8 @@ export function NoteEditor() {
       return;
     }
 
-    // PDF files are handled by PDFViewer directly — skip loading into CodeMirror
-    if (activeTabPath.toLowerCase().endsWith('.pdf')) {
+    // PDF and canvas files are handled by dedicated viewers — skip CodeMirror
+    if (activeTabPath.toLowerCase().endsWith('.pdf') || activeTabPath.toLowerCase().endsWith('.canvas')) {
       return () => {};
     }
 
@@ -227,6 +229,18 @@ export function NoteEditor() {
           useNoteStore.getState().setActiveContent(note.content);
           // Store the mtime so we can detect conflicts on save
           mtimeRef.current.set(activeTabPath, note.modified_at_ms);
+
+          // Handle pending scroll target (e.g. from canvas block card jump)
+          const scrollTarget = useNoteStore.getState().pendingScrollTarget;
+          if (scrollTarget) {
+            useNoteStore.getState().setPendingScrollTarget(null);
+            // Double-rAF: wait for CodeMirror to fully render the new content
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                scrollToBlockId(note.content, scrollTarget.blockId);
+              });
+            });
+          }
         }
       })
       .catch((err) => {
@@ -416,8 +430,10 @@ export function NoteEditor() {
     e.preventDefault();
   }, []);
 
-  // PDF files get their own dedicated viewer
+  // Dedicated viewers for non-Markdown file types
   const isPdf = activeTabPath?.toLowerCase().endsWith('.pdf');
+  const isCanvas = activeTabPath?.toLowerCase().endsWith('.canvas');
+  const isSpecialFile = isPdf || isCanvas;
 
   return (
     <div className="h-full w-full flex flex-col relative">
@@ -426,10 +442,15 @@ export function NoteEditor() {
         <PDFViewer path={activeTabPath} />
       )}
 
-      {/* Markdown editor + toolbar (only for non-PDF files) */}
-      {!isPdf && activeTabPath && showEditor && <EditorToolbar viewRef={viewRef} />}
+      {/* Canvas editor — persistent whiteboard for .canvas files */}
+      {isCanvas && activeTabPath && (
+        <CanvasEditor canvasPath={activeTabPath} />
+      )}
 
-      {!isPdf && (
+      {/* Markdown editor + toolbar (only for plain text files) */}
+      {!isSpecialFile && activeTabPath && showEditor && <EditorToolbar viewRef={viewRef} />}
+
+      {!isSpecialFile && (
       <div className="flex-1 min-h-0 flex" onPaste={handlePaste} onDrop={handleDrop} onDragOver={handleDragOver}>
         {/* ── CodeMirror 编辑区域 ───────────────────────────── */}
         <div
@@ -531,4 +552,30 @@ function setEditorScrollTopForLine(view: NonNullable<ReturnType<typeof useCodeMi
   const nextBlock = view.lineBlockAt(view.state.doc.line(nextLineNumber).from);
   const blockHeight = Math.max(nextBlock.top - baseBlock.top, 1);
   view.scrollDOM.scrollTop = baseBlock.top + fraction * blockHeight;
+}
+
+/**
+ * Scroll CodeMirror editor to the line containing a ^blockId marker.
+ * Searches content for the block ID pattern and scrolls if found.
+ */
+function scrollToBlockId(content: string, blockId: string) {
+  const view = getEditorView();
+  if (!view) return;
+
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes(`^${blockId}`)) {
+      // CodeMirror lines are 1-based
+      const lineNumber = i + 1;
+      if (lineNumber > view.state.doc.lines) return;
+
+      const docLine = view.state.doc.line(lineNumber);
+      view.dispatch({
+        effects: EditorView.scrollIntoView(docLine.from, { y: 'center' }),
+        selection: { anchor: docLine.from },
+      });
+      view.focus();
+      return;
+    }
+  }
 }

@@ -36,6 +36,14 @@ pub struct NoteContent {
 
 /// Validate that a resolved path is within the vault root.
 /// Returns the canonical full path if valid.
+///
+/// Public variant used by other command modules (e.g. canvas).
+pub fn validate_inside_vault_public(base: &Path, rel_path: &str) -> Result<PathBuf, NoteError> {
+    validate_inside_vault(base, rel_path)
+}
+
+/// Validate that a resolved path is within the vault root.
+/// Returns the canonical full path if valid.
 fn validate_inside_vault(base: &Path, rel_path: &str) -> Result<PathBuf, NoteError> {
     let full_path = base.join(rel_path);
     let canonical_base = base.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
