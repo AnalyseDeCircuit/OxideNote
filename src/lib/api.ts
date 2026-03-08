@@ -176,3 +176,57 @@ export async function repairVault(): Promise<HealthReport> {
 export async function openBrowserWindow(url: string): Promise<void> {
   return invoke<void>('open_browser_window', { url });
 }
+
+// ─── Task commands ───────────────────────────────────────────
+
+export interface TaskItem {
+  path: string;
+  line: number;
+  text: string;
+  done: boolean;
+}
+
+/** List all task items (- [ ] / - [x]) across the vault */
+export async function listTasks(): Promise<TaskItem[]> {
+  return invoke<TaskItem[]>('list_tasks');
+}
+
+/** Pick a random note from the vault index */
+export async function getRandomNote(): Promise<SearchResult | null> {
+  return invoke<SearchResult | null>('get_random_note');
+}
+
+/** Export a note and its attachments as a zip bundle */
+export async function exportNoteBundle(path: string, savePath: string): Promise<void> {
+  return invoke<void>('export_note_bundle', { path, savePath });
+}
+
+/** Bulk import external .md files into the vault */
+export interface ImportResult {
+  imported: number;
+  skipped: string[];
+}
+
+export async function bulkImportNotes(sourcePaths: string[], targetFolder: string): Promise<ImportResult> {
+  return invoke<ImportResult>('bulk_import_notes', { sourcePaths, targetFolder });
+}
+
+/** Check if a note is encrypted */
+export async function isNoteEncrypted(path: string): Promise<boolean> {
+  return invoke<boolean>('is_note_encrypted', { path });
+}
+
+/** Encrypt a note file in-place with a password */
+export async function encryptNote(path: string, password: string): Promise<void> {
+  return invoke<void>('encrypt_note', { path, password });
+}
+
+/** Decrypt a note and return plaintext (does NOT write to disk) */
+export async function decryptNote(path: string, password: string): Promise<string> {
+  return invoke<string>('decrypt_note', { path, password });
+}
+
+/** Decrypt a note and write plaintext back to disk (permanent unlock) */
+export async function decryptNoteToDisk(path: string, password: string): Promise<void> {
+  return invoke<void>('decrypt_note_to_disk', { path, password });
+}

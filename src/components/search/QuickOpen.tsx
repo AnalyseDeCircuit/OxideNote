@@ -4,11 +4,13 @@ import { useUIStore } from '@/store/uiStore';
 import { useNoteStore } from '@/store/noteStore';
 import { searchByFilename, type SearchResult } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
+import { Clock } from 'lucide-react';
 
 export function QuickOpen() {
   const open = useUIStore((s) => s.quickOpenOpen);
   const setOpen = useUIStore((s) => s.setQuickOpenOpen);
   const openNote = useNoteStore((s) => s.openNote);
+  const recentNotes = useNoteStore((s) => s.recentNotes);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -69,6 +71,25 @@ export function QuickOpen() {
             }}
           />
           <Command.List className="max-h-[300px] overflow-y-auto p-1">
+            {/* Show recent notes when query is empty */}
+            {!query && recentNotes.length > 0 && (
+              <Command.Group heading={t('search.recent')}>
+                {recentNotes.map((r) => (
+                  <Command.Item
+                    key={r.path}
+                    value={r.path}
+                    onSelect={() => handleSelect(r.path, r.title)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm rounded cursor-pointer text-foreground data-[selected=true]:bg-theme-hover"
+                  >
+                    <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-medium">{r.title || r.path}</div>
+                      <div className="truncate text-xs text-muted-foreground">{r.path}</div>
+                    </div>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
             {query && results.length === 0 && (
               <Command.Empty className="px-4 py-6 text-sm text-muted-foreground text-center">
                 {t('search.noResults')}

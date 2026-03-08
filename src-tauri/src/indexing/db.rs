@@ -267,7 +267,7 @@ pub fn search_fts(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, r
     Ok(results)
 }
 
-/// Search by filename/path.
+/// Search by filename/path, also matching aliases.
 pub fn search_by_filename(conn: &Connection, query: &str) -> Result<Vec<SearchResult>, rusqlite::Error> {
     // Escape LIKE special characters
     let escaped = query
@@ -275,9 +275,17 @@ pub fn search_by_filename(conn: &Connection, query: &str) -> Result<Vec<SearchRe
         .replace('%', "\\%")
         .replace('_', "\\_");
     let pattern = format!("%{}%", escaped);
+
+    // UNION: match path/title OR alias, deduplicate by path
     let mut stmt = conn.prepare(
-        "SELECT path, title FROM notes
-         WHERE path LIKE ?1 ESCAPE '\\' OR title LIKE ?1 ESCAPE '\\'
+        "SELECT path, title FROM (
+            SELECT path, title FROM notes
+            WHERE path LIKE ?1 ESCAPE '\\' OR title LIKE ?1 ESCAPE '\\'
+            UNION
+            SELECT n.path, n.title FROM aliases a
+            JOIN notes n ON n.id = a.note_id
+            WHERE a.alias LIKE ?1 ESCAPE '\\'
+         )
          ORDER BY title
          LIMIT 50"
     )?;
@@ -360,4 +368,21 @@ pub fn query_all_aliases(conn: &Connection) -> Result<HashMap<String, String>, r
         .filter_map(|r| r.ok())
         .collect();
     Ok(map)
+}
+
+/// Pick a random note from the vault.
+pub fn get_random_note(conn: &Connection) -> Result<Option<SearchResult>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT path, title FROM notes ORDER BY RANDOM() LIMIT 1"
+    )?;
+    let mut rows = stmt.query([])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(SearchResult {
+            path: row.get(0)?,
+            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            snippet: String::new(),
+        }))
+    } else {
+        Ok(None)
+    }
 }

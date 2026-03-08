@@ -7,7 +7,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { X, Pin } from 'lucide-react';
 import { useNoteStore, flushPendingSave, type SaveOutcome, type Tab } from '@/store/noteStore';
 import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
@@ -60,6 +60,7 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
   const setActiveTab = useNoteStore((s) => s.setActiveTab);
   const closeTab = useNoteStore((s) => s.closeTab);
   const moveTab = useNoteStore((s) => s.moveTab);
+  const togglePinTab = useNoteStore((s) => s.togglePinTab);
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
@@ -160,21 +161,27 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
           setCtx({ x: e.clientX, y: e.clientY, path: tab.path });
         }}
       >
+        {/* Pinned indicator */}
+        {tab.isPinned && (
+          <Pin size={10} className="shrink-0 text-theme-accent rotate-45" />
+        )}
         {/* Dirty indicator */}
         {tab.isDirty && (
           <span className="w-2 h-2 rounded-full bg-theme-accent shrink-0" />
         )}
         <span className="truncate max-w-[150px]">{tab.title}</span>
-        <button
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-theme-hover transition-opacity"
-          aria-label={t('actions.closeTab', 'Close tab')}
-          onClick={(e) => {
-            e.stopPropagation();
-            void tryCloseTab(tab.path);
-          }}
-        >
-          <X size={12} />
-        </button>
+        {!tab.isPinned && (
+          <button
+            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-theme-hover transition-opacity"
+            aria-label={t('actions.closeTab', 'Close tab')}
+            onClick={(e) => {
+              e.stopPropagation();
+              void tryCloseTab(tab.path);
+            }}
+          >
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       {/* ── Tab context menu ─────────────────────────────────────────────── */}
@@ -188,6 +195,10 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
           <CtxMenuItem
             label={t('tabs.close', '关闭')}
             onClick={() => { void tryCloseTab(ctx.path); setCtx(null); }}
+          />
+          <CtxMenuItem
+            label={tab.isPinned ? t('tabs.unpin') : t('tabs.pin')}
+            onClick={() => { togglePinTab(ctx.path); setCtx(null); }}
           />
           <CtxMenuItem
             label={t('tabs.closeOthers', '关闭其他')}

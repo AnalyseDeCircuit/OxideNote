@@ -1,6 +1,10 @@
 pub mod attachment;
 pub mod browser;
+pub mod crypto;
+pub mod export;
 pub mod health;
+pub mod import;
 pub mod note;
 pub mod search;
+pub mod util;
 pub mod vault;

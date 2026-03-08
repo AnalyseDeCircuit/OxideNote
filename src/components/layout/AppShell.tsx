@@ -11,6 +11,8 @@ import { StatusBar } from '@/components/editor/StatusBar';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
 import { OutlinePanel } from '@/components/editor/OutlinePanel';
 import { TagPanel } from '@/components/editor/TagPanel';
+import { TaskPanel } from '@/components/editor/TaskPanel';
+import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
 import { GraphView } from '@/components/graph/GraphView';
 import { FlashcardView } from '@/components/flashcard/FlashcardView';
 import { VideoPanel } from '@/components/video/VideoPanel';
@@ -26,6 +28,7 @@ export function AppShell() {
   const flashcardOpen = useUIStore((s) => s.flashcardOpen);
   const videoPanelOpen = useUIStore((s) => s.videoPanelOpen);
   const browserPanelOpen = useUIStore((s) => s.browserPanelOpen);
+  const focusMode = useUIStore((s) => s.focusMode);
 
   // Listen for file system changes from the Rust watcher
   // Watcher 事件频繁（每次自动保存都触发），对 tree 刷新做 500ms debounce
@@ -63,6 +66,30 @@ export function AppShell() {
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
+
+  // Exit focus mode with Escape
+  useEffect(() => {
+    if (!focusMode) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        useUIStore.getState().setFocusMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [focusMode]);
+
+  // Focus mode: only show the editor, no chrome
+  if (focusMode) {
+    return (
+      <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
+        <div className="flex-1 min-h-0">
+          <NoteEditor />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -171,11 +198,23 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
           onClick={() => setSidePanelTab('tags')}
           label={t('tags.title', '标签')}
         />
+        <TabButton
+          active={activeTab === 'tasks'}
+          onClick={() => setSidePanelTab('tasks')}
+          label={t('tasks.title')}
+        />
+        <TabButton
+          active={activeTab === 'properties'}
+          onClick={() => setSidePanelTab('properties')}
+          label={t('properties.title')}
+        />
       </div>
       <div className="flex-1 min-h-0">
         {activeTab === 'backlinks' && <BacklinksPanel />}
         {activeTab === 'outline' && <OutlinePanel />}
         {activeTab === 'tags' && <TagPanel />}
+        {activeTab === 'tasks' && <TaskPanel onClose={() => useUIStore.getState().toggleSidePanel()} />}
+        {activeTab === 'properties' && <PropertiesPanel />}
       </div>
     </div>
   );

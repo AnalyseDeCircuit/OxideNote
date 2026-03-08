@@ -54,6 +54,8 @@
     "closeAll": "关闭所有",
     "closeRight": "关闭右侧",
     "closeTabConfirm": "\"{{name}}\" 有未保存的更改，确定要关闭吗？",
+    "pin": "固定标签",
+    "unpin": "取消固定",
     "fileNotFound": "文件已不存在: {{name}}"
   },
   "backlinks": {
@@ -101,6 +103,8 @@
     "classicThemes": "经典深色",
     "layoutSection": "布局",
     "densityHint": "调整界面间距密度",
+    "customCSS": "自定义 CSS",
+    "customCSSPlaceholder": "输入自定义 CSS 代码片段...",
     "techStack": "技术栈",
     "shortcuts": "快捷键",
     "shortcutQuickOpen": "快速打开",
@@ -126,7 +130,8 @@
     "searchContent": "搜索笔记内容...",
     "searching": "搜索中...",
     "noResults": "未找到匹配的结果",
-    "noContentResults": "未找到匹配内容"
+    "noContentResults": "未找到匹配内容",
+    "recent": "最近打开"
   },
   "outline": {
     "title": "大纲",
@@ -147,7 +152,8 @@
     "link": "链接",
     "image": "图片",
     "horizontalRule": "水平分割线",
-    "math": "数学公式"
+    "math": "数学公式",
+    "table": "插入表格"
   },
   "graph": {
     "title": "知识图谱",
@@ -209,6 +215,17 @@
     "empty": "暂无标签",
     "backToAll": "所有标签"
   },
+  "tasks": {
+    "title": "任务",
+    "pending": "待办",
+    "done": "已完成",
+    "showCompleted": "显示已完成",
+    "empty": "暂无任务"
+  },
+  "properties": {
+    "title": "属性",
+    "empty": "暂无 Frontmatter"
+  },
   "actions": {
     "confirm": "确认",
     "cancel": "取消",
@@ -248,6 +265,22 @@
     "noAnnotations": "暂无标注",
     "annotationExported": "标注已导出为笔记",
     "searchInPdf": "在 PDF 中搜索..."
+  },
+  "export": {
+    "htmlExport": "导出 HTML",
+    "htmlExportSuccess": "HTML 导出成功",
+    "htmlExportFailed": "HTML 导出失败",
+    "bundleExport": "打包导出 (Markdown + 附件)"
+  },
+  "import": {
+    "bulkImport": "批量导入 Markdown 文件"
+  },
+  "crypto": {
+    "encrypt": "加密当前笔记",
+    "decrypt": "解密当前笔记",
+    "enterPassword": "请输入加密密码",
+    "confirmPassword": "请再次输入密码以确认",
+    "passwordMismatch": "两次密码不一致"
   },
   "flashcard": {
     "title": "闪卡复习",
@@ -317,6 +350,17 @@
     "listening": "正在聆听...",
     "notSupported": "当前平台不支持语音输入",
     "error": "语音识别出错"
+  },
+  "commandPalette": {
+    "title": "命令面板",
+    "placeholder": "输入命令...",
+    "layout": "布局",
+    "navigation": "导航",
+    "editing": "编辑",
+    "panels": "面板",
+    "focusMode": "专注模式",
+    "randomNote": "随机笔记",
+    "switchVault": "切换仓库"
   },
   "typesetting": {
     "title": "排版设置",

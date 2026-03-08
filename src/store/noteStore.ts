@@ -4,6 +4,7 @@ export interface Tab {
   path: string;
   title: string;
   isDirty: boolean;
+  isPinned: boolean;
 }
 
 export interface ConflictRecord {
@@ -68,6 +69,9 @@ interface NoteState {
   clearAllConflicts: () => void;
   setActiveContent: (content: string) => void;
   setCursorPosition: (line: number, col: number) => void;
+  togglePinTab: (path: string) => void;
+  /** Recently opened notes (most recent first, max 20) */
+  recentNotes: { path: string; title: string }[];
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
@@ -77,16 +81,20 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   activeContent: '',
   cursorLine: 1,
   cursorCol: 1,
+  recentNotes: [],
 
   openNote: (path, title) => {
-    const { openTabs } = get();
+    const { openTabs, recentNotes } = get();
     const existing = openTabs.find((t) => t.path === path);
+    // Track in recent notes list (most recent first, max 20)
+    const updatedRecent = [{ path, title }, ...recentNotes.filter((r) => r.path !== path)].slice(0, 20);
     if (existing) {
-      set({ activeTabPath: path });
+      set({ activeTabPath: path, recentNotes: updatedRecent });
     } else {
       set({
-        openTabs: [...openTabs, { path, title, isDirty: false }],
+        openTabs: [...openTabs, { path, title, isDirty: false, isPinned: false }],
         activeTabPath: path,
+        recentNotes: updatedRecent,
       });
     }
   },
@@ -138,21 +146,30 @@ export const useNoteStore = create<NoteState>((set, get) => ({
         state.activeTabPath === oldPath ? newPath : state.activeTabPath,
     })),
 
-  closeAllTabs: () => set({ openTabs: [], activeTabPath: null, activeContent: '', conflicts: {} }),
+  closeAllTabs: () => {
+    const { openTabs } = get();
+    const pinned = openTabs.filter((t) => t.isPinned);
+    set({
+      openTabs: pinned,
+      activeTabPath: pinned.length > 0 ? pinned[0].path : null,
+      activeContent: pinned.length > 0 ? get().activeContent : '',
+      conflicts: {},
+    });
+  },
 
-  // Close every tab except the specified one, then activate it.
+  // Close every tab except the specified one and pinned ones, then activate it.
   closeOtherTabs: (path) => {
     const { openTabs } = get();
-    const kept = openTabs.filter((t) => t.path === path);
+    const kept = openTabs.filter((t) => t.path === path || t.isPinned);
     set({ openTabs: kept, activeTabPath: kept.length > 0 ? path : null });
   },
 
-  // Close every tab to the right of the specified one.
+  // Close every tab to the right of the specified one (skip pinned).
   closeTabsToRight: (path) => {
     const { openTabs, activeTabPath } = get();
     const idx = openTabs.findIndex((t) => t.path === path);
     if (idx < 0) return;
-    const kept = openTabs.slice(0, idx + 1);
+    const kept = openTabs.filter((t, i) => i <= idx || t.isPinned);
     const newActive = kept.find((t) => t.path === activeTabPath)
       ? activeTabPath
       : path;
@@ -192,4 +209,14 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   setActiveContent: (content) => set({ activeContent: content }),
 
   setCursorPosition: (line, col) => set({ cursorLine: line, cursorCol: col }),
+
+  togglePinTab: (path) =>
+    set((state) => {
+      const tabs = state.openTabs.map((t) =>
+        t.path === path ? { ...t, isPinned: !t.isPinned } : t
+      );
+      // Keep pinned tabs at the front
+      tabs.sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
+      return { openTabs: tabs };
+    }),
 }));

@@ -71,6 +71,8 @@ interface SettingsState {
   sortMode: SortMode;
   // Templates
   noteTemplates: NoteTemplate[];
+  // Custom CSS snippet injected at runtime
+  customCSS: string;
 
   // Actions
   setTheme: (theme: ThemeId) => void;
@@ -86,6 +88,7 @@ interface SettingsState {
   addRecentVault: (path: string) => void;
   setSortMode: (mode: SortMode) => void;
   setNoteTemplates: (templates: NoteTemplate[]) => void;
+  setCustomCSS: (css: string) => void;
 }
 
 const STORAGE_KEY = 'oxidenote-settings';
@@ -117,6 +120,7 @@ function persistSettings(state: SettingsState) {
     lastActiveTabPath: state.lastActiveTabPath,
     sortMode: state.sortMode,
     noteTemplates: state.noteTemplates,
+    customCSS: state.customCSS,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -140,6 +144,7 @@ export const useSettingsStore = create<SettingsState>()(
   lastActiveTabPath: persisted.lastActiveTabPath ?? null,
   sortMode: (persisted.sortMode as SortMode) ?? 'name',
   noteTemplates: persisted.noteTemplates ?? [],
+  customCSS: persisted.customCSS ?? '',
 
   setTheme: (theme) => set({ theme }),
   setSortMode: (mode) => set({ sortMode: mode }),
@@ -158,6 +163,7 @@ export const useSettingsStore = create<SettingsState>()(
       const filtered = state.recentVaults.filter((v) => v !== path);
       return { recentVaults: [path, ...filtered].slice(0, 10) };
     }),
+  setCustomCSS: (css) => set({ customCSS: css }),
 })));
 
 // ─── Side-effect subscriptions ─────────────────────────────
@@ -193,6 +199,22 @@ useSettingsStore.subscribe(
 useSettingsStore.subscribe(() => {
   persistSettings(useSettingsStore.getState());
 });
+
+// Custom CSS → inject <style> element
+useSettingsStore.subscribe(
+  (state) => state.customCSS,
+  (css) => {
+    const id = 'oxidenote-custom-css';
+    let el = document.getElementById(id) as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement('style');
+      el.id = id;
+      document.head.appendChild(el);
+    }
+    el.textContent = css;
+  },
+  { fireImmediately: true },
+);
 
 // ─── Sync tab state from noteStore → settingsStore for persistence ──
 // Import lazily to avoid circular dependency

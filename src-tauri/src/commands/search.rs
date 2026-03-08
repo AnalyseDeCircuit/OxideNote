@@ -261,3 +261,80 @@ pub async fn search_by_tag(
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
     db::search_by_tag(conn, &tag).map_err(|e| SearchError::Internal(e.to_string()))
 }
+
+/// Return a random note from the vault index.
+#[tauri::command]
+pub async fn get_random_note(
+    state: State<'_, AppState>,
+) -> Result<Option<db::SearchResult>, SearchError> {
+    let db_guard = state.read_db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+    db::get_random_note(conn).map_err(|e| SearchError::Internal(e.to_string()))
+}
+
+/// A single task item extracted from vault notes.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskItem {
+    pub path: String,
+    pub line: usize,
+    pub text: String,
+    pub done: bool,
+}
+
+/// Scan all vault .md files for task checkbox items (- [ ] / - [x]).
+#[tauri::command]
+pub async fn list_tasks(
+    state: State<'_, AppState>,
+) -> Result<Vec<TaskItem>, SearchError> {
+    let vault_path = state.vault_path.read().clone();
+    let vault = vault_path.as_ref().ok_or(SearchError::NoVault)?;
+
+    let mut tasks = Vec::new();
+    collect_tasks(vault, vault, &mut tasks)?;
+    Ok(tasks)
+}
+
+/// Recursively walk a directory and extract task items from .md files.
+fn collect_tasks(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    tasks: &mut Vec<TaskItem>,
+) -> Result<(), SearchError> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| SearchError::Internal(e.to_string()))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Skip hidden directories like .oxidenote
+        if path.file_name().map_or(false, |n| n.to_string_lossy().starts_with('.')) {
+            continue;
+        }
+        if path.is_dir() {
+            collect_tasks(root, &path, tasks)?;
+        } else if path.extension().map_or(false, |ext| ext == "md") {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let rel_path = path.strip_prefix(root).unwrap_or(&path);
+                let rel_str = rel_path.to_string_lossy().to_string();
+                for (i, line) in content.lines().enumerate() {
+                    let trimmed = line.trim();
+                    if let Some(text) = trimmed.strip_prefix("- [ ] ") {
+                        tasks.push(TaskItem {
+                            path: rel_str.clone(),
+                            line: i + 1,
+                            text: text.to_string(),
+                            done: false,
+                        });
+                    } else if let Some(text) = trimmed.strip_prefix("- [x] ").or_else(|| trimmed.strip_prefix("- [X] ")) {
+                        tasks.push(TaskItem {
+                            path: rel_str.clone(),
+                            line: i + 1,
+                            text: text.to_string(),
+                            done: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}

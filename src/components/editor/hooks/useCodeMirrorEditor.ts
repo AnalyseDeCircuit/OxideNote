@@ -24,6 +24,9 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { wikilinkExtension } from '../extensions/wikilink';
+import { wikilinkCompletionSource } from '../extensions/wikilinkCompletion';
+import { tagCompletionSource } from '../extensions/tagCompletion';
+import { slashCommandSource } from '../extensions/slashCommands';
 
 export interface UseCodeMirrorOptions {
   initialContent?: string;
@@ -192,7 +195,10 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         indentOnInput(),
         bracketMatching(),
         closeBrackets(),
-        autocompletion(),
+        autocompletion({
+          override: [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
+        }),
+        EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
         highlightSelectionMatches(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),

@@ -4,7 +4,7 @@ import { create } from 'zustand';
 export type EditorMode = 'edit' | 'preview' | 'split';
 
 // ── 右侧面板标签 ────────────────────────────────────────────
-export type SidePanelTab = 'backlinks' | 'outline' | 'tags';
+export type SidePanelTab = 'backlinks' | 'outline' | 'tags' | 'tasks' | 'properties';
 
 interface UIState {
   sidebarVisible: boolean;
@@ -26,6 +26,10 @@ interface UIState {
   videoPanelOpen: boolean;
   /** Browser panel visibility */
   browserPanelOpen: boolean;
+  /** Command palette visibility */
+  commandPaletteOpen: boolean;
+  /** Zen/focus mode — hides all chrome */
+  focusMode: boolean;
 
   toggleSidebar: () => void;
   toggleSidePanel: () => void;
@@ -41,6 +45,9 @@ interface UIState {
   setFlashcardOpen: (v: boolean) => void;
   setVideoPanelOpen: (v: boolean) => void;
   setBrowserPanelOpen: (v: boolean) => void;
+  setCommandPaletteOpen: (v: boolean) => void;
+  setFocusMode: (v: boolean) => void;
+  toggleFocusMode: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -56,6 +63,8 @@ export const useUIStore = create<UIState>((set) => ({
   flashcardOpen: false,
   videoPanelOpen: false,
   browserPanelOpen: false,
+  commandPaletteOpen: false,
+  focusMode: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
@@ -71,4 +80,7 @@ export const useUIStore = create<UIState>((set) => ({
   setFlashcardOpen: (v) => set({ flashcardOpen: v }),
   setVideoPanelOpen: (v) => set({ videoPanelOpen: v }),
   setBrowserPanelOpen: (v) => set({ browserPanelOpen: v }),
+  setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+  setFocusMode: (v) => set({ focusMode: v }),
+  toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode })),
 }));

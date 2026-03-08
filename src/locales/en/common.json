@@ -54,6 +54,8 @@
     "closeAll": "Close All",
     "closeRight": "Close to the Right",
     "closeTabConfirm": "\"{{name}}\" has unsaved changes. Close anyway?",
+    "pin": "Pin Tab",
+    "unpin": "Unpin Tab",
     "fileNotFound": "File no longer exists: {{name}}"
   },
   "backlinks": {
@@ -101,6 +103,8 @@
     "classicThemes": "Classic Dark",
     "layoutSection": "Layout",
     "densityHint": "Adjust interface spacing density",
+    "customCSS": "Custom CSS",
+    "customCSSPlaceholder": "Enter custom CSS snippets...",
     "techStack": "Tech Stack",
     "shortcuts": "Shortcuts",
     "shortcutQuickOpen": "Quick Open",
@@ -126,7 +130,8 @@
     "searchContent": "Search note content...",
     "searching": "Searching...",
     "noResults": "No matching results found",
-    "noContentResults": "No matching content found"
+    "noContentResults": "No matching content found",
+    "recent": "Recent"
   },
   "outline": {
     "title": "Outline",
@@ -147,7 +152,8 @@
     "link": "Link",
     "image": "Image",
     "horizontalRule": "Horizontal Rule",
-    "math": "Math Formula"
+    "math": "Math Formula",
+    "table": "Insert Table"
   },
   "graph": {
     "title": "Knowledge Graph",
@@ -209,6 +215,17 @@
     "empty": "No tags yet",
     "backToAll": "All tags"
   },
+  "tasks": {
+    "title": "Tasks",
+    "pending": "Pending",
+    "done": "Done",
+    "showCompleted": "Show completed",
+    "empty": "No tasks found"
+  },
+  "properties": {
+    "title": "Properties",
+    "empty": "No frontmatter found"
+  },
   "actions": {
     "confirm": "Confirm",
     "cancel": "Cancel",
@@ -248,6 +265,22 @@
     "noAnnotations": "No annotations",
     "annotationExported": "Annotations exported as note",
     "searchInPdf": "Search in PDF..."
+  },
+  "export": {
+    "htmlExport": "Export HTML",
+    "htmlExportSuccess": "HTML exported successfully",
+    "htmlExportFailed": "HTML export failed",
+    "bundleExport": "Bundle Export (Markdown + Attachments)"
+  },
+  "import": {
+    "bulkImport": "Bulk Import Markdown Files"
+  },
+  "crypto": {
+    "encrypt": "Encrypt Current Note",
+    "decrypt": "Decrypt Current Note",
+    "enterPassword": "Enter encryption password",
+    "confirmPassword": "Confirm password",
+    "passwordMismatch": "Passwords do not match"
   },
   "flashcard": {
     "title": "Flashcard Review",
@@ -317,6 +350,17 @@
     "listening": "Listening...",
     "notSupported": "Voice input is not supported on this platform",
     "error": "Voice recognition error"
+  },
+  "commandPalette": {
+    "title": "Command Palette",
+    "placeholder": "Type a command...",
+    "layout": "Layout",
+    "navigation": "Navigation",
+    "editing": "Editing",
+    "panels": "Panels",
+    "focusMode": "Focus Mode",
+    "randomNote": "Random Note",
+    "switchVault": "Switch Vault"
   },
   "typesetting": {
     "title": "Typesetting",

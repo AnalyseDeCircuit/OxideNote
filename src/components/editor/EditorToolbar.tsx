@@ -31,13 +31,16 @@ import {
   Image,
   Minus,
   Sigma,
+  Table2,
   FileDown,
+  FileCode,
   Mic,
   MicOff,
   Settings2,
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import { exportToPdf } from '@/lib/exportPdf';
+import { exportToHtml } from '@/lib/exportHtml';
 import { isSpeechRecognitionSupported, startVoiceInput, stopVoiceInput } from '@/lib/speechRecognition';
 import { toast } from '@/hooks/useToast';
 import { TypesettingDialog } from '@/components/typesetting/TypesettingDialog';
@@ -188,6 +191,21 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   };
 
+  // ── HTML 导出操作 ─────────────────────────────────────────
+  const handleExportHtml = async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const content = view.state.doc.toString();
+    const activeTab = useNoteStore.getState().activeTabPath;
+    const title = activeTab?.replace(/\.md$/, '').split('/').pop() || 'export';
+    try {
+      await exportToHtml(content, title);
+      toast({ title: t('export.htmlExportSuccess') });
+    } catch (err) {
+      toast({ title: t('export.htmlExportFailed'), description: String(err), variant: 'error' });
+    }
+  };
+
   return (
     <div className="flex items-center gap-0.5 px-2 py-1 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
@@ -214,6 +232,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
         <ToolbarBtn icon={<Quote size={14} />} title={t('toolbar.quote')} onClick={() => insertLinePrefix('> ')} />
         <ToolbarBtn icon={<List size={14} />} title={t('toolbar.unorderedList')} onClick={() => insertLinePrefix('- ')} />
         <ToolbarBtn icon={<ListOrdered size={14} />} title={t('toolbar.orderedList')} onClick={() => insertLinePrefix('1. ')} />
+        <ToolbarBtn icon={<Table2 size={14} />} title={t('toolbar.table')} onClick={() => insertBlock('\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n|          |          |          |\n')} />
         <ToolbarBtn icon={<Minus size={14} />} title={t('toolbar.horizontalRule')} onClick={() => insertBlock('\n---\n')} />
       </ToolbarGroup>
 
@@ -231,6 +250,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       {/* ── 导出 & 语音 ─────────────────────────────────── */}
       <ToolbarGroup>
         <ToolbarBtn icon={<FileDown size={14} />} title={t('pdf.export')} onClick={handleExportPdf} />
+        <ToolbarBtn icon={<FileCode size={14} />} title={t('export.htmlExport')} onClick={handleExportHtml} />
         <ToolbarBtn icon={<Settings2 size={14} />} title={t('typesetting.title')} onClick={() => setTypesettingOpen(true)} />
         <ToolbarBtn
           icon={isListening ? <MicOff size={14} /> : <Mic size={14} />}

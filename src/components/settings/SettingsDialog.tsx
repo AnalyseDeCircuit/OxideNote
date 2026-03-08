@@ -480,6 +480,8 @@ function AppearanceTab() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const density = useSettingsStore((s) => s.density);
   const setDensity = useSettingsStore((s) => s.setDensity);
+  const customCSS = useSettingsStore((s) => s.customCSS);
+  const setCustomCSS = useSettingsStore((s) => s.setCustomCSS);
   const { t } = useTranslation();
 
   const oxideThemes = THEMES.filter((t) => t.group === 'oxide');
@@ -534,6 +536,16 @@ function AppearanceTab() {
             </SelectContent>
           </Select>
         </SettingRow>
+      </SettingsCard>
+
+      <SettingsCard title={t('settings.customCSS')}>
+        <textarea
+          value={customCSS}
+          onChange={(e) => setCustomCSS(e.target.value)}
+          placeholder={t('settings.customCSSPlaceholder')}
+          className="w-full h-32 px-3 py-2 text-xs font-mono bg-theme-input text-foreground border border-theme-border rounded-md resize-y outline-none focus:ring-1 focus:ring-theme-accent placeholder:text-muted-foreground"
+          spellCheck={false}
+        />
       </SettingsCard>
     </>
   );

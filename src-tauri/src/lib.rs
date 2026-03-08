@@ -45,12 +45,20 @@ pub fn run() {
             commands::search::get_graph_data,
             commands::search::list_all_tags,
             commands::search::search_by_tag,
+            commands::search::list_tasks,
+            commands::search::get_random_note,
             commands::note::reveal_in_explorer,
             commands::note::read_binary_file,
             commands::attachment::save_attachment,
             commands::health::vault_health_check,
             commands::health::repair_vault,
             commands::browser::open_browser_window,
+            commands::export::export_note_bundle,
+            commands::import::bulk_import_notes,
+            commands::crypto::is_note_encrypted,
+            commands::crypto::encrypt_note,
+            commands::crypto::decrypt_note,
+            commands::crypto::decrypt_note_to_disk,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

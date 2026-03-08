@@ -7,9 +7,11 @@ import { AppShell } from '@/components/layout/AppShell';
 import { WelcomeScreen } from '@/components/layout/WelcomeScreen';
 import { QuickOpen } from '@/components/search/QuickOpen';
 import { GlobalSearch } from '@/components/search/GlobalSearch';
+import { CommandPalette } from '@/components/search/CommandPalette';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { VaultHealthDialog } from '@/components/settings/VaultHealthDialog';
 import { Toaster } from '@/components/ui/toaster';
+import { PasswordDialog } from '@/components/ui/PasswordDialog';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { openVault, listTree, createNote, readNote } from '@/lib/api';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -108,6 +110,12 @@ function App() {
         useUIStore.getState().setQuickOpenOpen(true);
       }
 
+      // Cmd+K → Command Palette
+      if (mod && e.key === 'k' && !e.shiftKey) {
+        e.preventDefault();
+        useUIStore.getState().setCommandPaletteOpen(true);
+      }
+
       // Cmd+Shift+F → Global Search
       if (mod && e.shiftKey && e.key === 'f') {
         e.preventDefault();
@@ -199,9 +207,11 @@ function App() {
         <WelcomeScreen />
       )}
       <QuickOpen />
+      <CommandPalette />
       <GlobalSearch open={globalSearchOpen} onClose={() => useUIStore.getState().setGlobalSearchOpen(false)} />
       <SettingsDialog />
       <VaultHealthDialog />
+      <PasswordDialog />
       <Toaster />
     </>
   );
