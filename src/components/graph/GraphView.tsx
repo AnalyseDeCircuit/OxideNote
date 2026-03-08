@@ -91,6 +91,12 @@ export function GraphView() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ── Refs for stable callbacks in force-graph ──────────────
+  // force-graph 的 nodeCanvasObject 回调在初始化时捕获，
+  // 通过 ref 使其能读取最新的颜色计算函数和 accent 颜色
+  const accentColorRef = useRef('#ea580c');
+  const getNodeColorRef = useRef<(node: GraphNode, accent: string) => string>(() => '#ea580c');
+
   // ── 时间轴状态 ────────────────────────────────────────────
   const [timelineEnabled, setTimelineEnabled] = useState(false);
   const [sliderValue, setSliderValue] = useState(100); // 0‥100 百分比
@@ -164,7 +170,11 @@ export function GraphView() {
     [timelineEnabled, timeRange]
   );
 
-  // ── 初始化 / 更新 force-graph 实例 ──────────────────────
+  // 同步最新的颜色计算函数到 ref，供 force-graph 回调闭包读取
+  getNodeColorRef.current = getNodeColor;
+
+  // ── 初始化 force-graph 实例（仅在图谱数据首次可用时创建）──
+  // 将创建与数据注入分离，避免时间轴滑动时销毁/重建整个图谱实例
   useEffect(() => {
     if (!containerRef.current || !graphData) return;
 
@@ -178,6 +188,9 @@ export function GraphView() {
     const textColor = style.getPropertyValue('--theme-text').trim() || '#f4f4f5';
     const mutedColor = style.getPropertyValue('--theme-text-muted').trim() || '#a1a1aa';
     const borderColor = style.getPropertyValue('--theme-border').trim() || '#27272a';
+
+    // 将 accentColor 存入 ref 供 nodeCanvasObject 回调读取最新值
+    accentColorRef.current = accentColor;
 
     const graph = createForceGraph()(el)
       .width(width)
@@ -200,7 +213,7 @@ export function GraphView() {
         const fontSize = 11 / globalScale;
         ctx.font = `${fontSize}px sans-serif`;
 
-        const color = getNodeColor(node as GraphNode, accentColor);
+        const color = getNodeColorRef.current(node as GraphNode, accentColorRef.current);
 
         // 绘制节点圆点
         ctx.beginPath();
@@ -251,7 +264,18 @@ export function GraphView() {
       el.innerHTML = '';
       graphRef.current = null;
     };
-  }, [filteredData, setGraphViewOpen, getNodeColor]);
+    // 只在图谱数据首次加载或组件关闭回调变化时重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphData, setGraphViewOpen]);
+
+  // ── 时间轴滑动时增量更新图谱数据（不销毁/重建实例）──────
+  useEffect(() => {
+    if (!graphRef.current) return;
+    graphRef.current.graphData({
+      nodes: filteredData.nodes.map((n) => ({ ...n })),
+      links: filteredData.links.map((l) => ({ ...l })),
+    });
+  }, [filteredData]);
 
   // ── 键盘事件：Esc 关闭 ───────────────────────────────────
   useEffect(() => {

@@ -50,7 +50,8 @@
     "closeOthers": "关闭其他",
     "closeAll": "关闭所有",
     "closeRight": "关闭右侧",
-    "closeTabConfirm": "\"{{name}}\" 有未保存的更改，确定要关闭吗？"
+    "closeTabConfirm": "\"{{name}}\" 有未保存的更改，确定要关闭吗？",
+    "fileNotFound": "文件已不存在: {{name}}"
   },
   "backlinks": {
     "title": "反向链接",

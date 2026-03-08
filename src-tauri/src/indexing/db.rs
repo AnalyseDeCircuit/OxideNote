@@ -213,9 +213,10 @@ fn extract_backlink_snippet(content: &str, target: &str) -> String {
         let stem_lower = stem.to_lowercase();
         if lower.contains(&format!("[[{}", target_lower)) || lower.contains(&format!("[[{}", stem_lower)) {
             let trimmed = line.trim();
-            // Cap snippet length
-            if trimmed.len() > 200 {
-                return format!("{}...", &trimmed[..200]);
+            // 按字符边界安全截断，避免在多字节 UTF-8 字符中间切断导致 panic
+            if trimmed.chars().count() > 200 {
+                let end: String = trimmed.chars().take(200).collect();
+                return format!("{}...", end);
             }
             return trimmed.to_string();
         }

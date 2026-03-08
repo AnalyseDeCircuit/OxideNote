@@ -31,8 +31,8 @@ export async function readNote(path: string): Promise<NoteContent> {
   return invoke<NoteContent>('read_note', { path });
 }
 
-export async function writeNote(path: string, content: string, expectedModifiedAtMs?: number | null): Promise<void> {
-  return invoke<void>('write_note', { path, content, expectedModifiedAtMs: expectedModifiedAtMs ?? null });
+export async function writeNote(path: string, content: string, expectedModifiedAtMs?: number | null): Promise<number | null> {
+  return invoke<number | null>('write_note', { path, content, expectedModifiedAtMs: expectedModifiedAtMs ?? null });
 }
 
 export async function createNote(parentPath: string, name: string, template?: string): Promise<string> {

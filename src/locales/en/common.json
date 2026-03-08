@@ -50,7 +50,8 @@
     "closeOthers": "Close Others",
     "closeAll": "Close All",
     "closeRight": "Close to the Right",
-    "closeTabConfirm": "\"{{name}}\" has unsaved changes. Close anyway?"
+    "closeTabConfirm": "\"{{name}}\" has unsaved changes. Close anyway?",
+    "fileNotFound": "File no longer exists: {{name}}"
   },
   "backlinks": {
     "title": "Backlinks",

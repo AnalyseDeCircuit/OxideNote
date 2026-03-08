@@ -11,7 +11,7 @@ import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { VaultHealthDialog } from '@/components/settings/VaultHealthDialog';
 import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { openVault, listTree, createNote } from '@/lib/api';
+import { openVault, listTree, createNote, readNote } from '@/lib/api';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from '@/hooks/useToast';
@@ -39,6 +39,17 @@ function App() {
             }
             if (lastActiveTabPath) {
               useNoteStore.getState().setActiveTab(lastActiveTabPath);
+            }
+            // 验证恢复的标签页对应的文件是否仍存在
+            // 对读取失败的标签自动关闭并提示
+            for (const tab of lastOpenTabs) {
+              readNote(tab.path).catch(() => {
+                useNoteStore.getState().closeTab(tab.path);
+                toast({
+                  title: i18n.t('tabs.fileNotFound', { name: tab.title }),
+                  variant: 'warning',
+                });
+              });
             }
           }
         })

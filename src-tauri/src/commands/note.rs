@@ -97,7 +97,7 @@ pub async fn write_note(
     content: String,
     expected_modified_at_ms: Option<i64>,
     state: State<'_, AppState>,
-) -> Result<(), NoteError> {
+) -> Result<Option<i64>, NoteError> {
     let vault_path = state.vault_path.read();
     let base = vault_path.as_ref().ok_or(NoteError::NoVault)?;
     // For write, the file may not exist yet. Validate parent is inside vault.
@@ -131,8 +131,10 @@ pub async fn write_note(
     std::fs::rename(&tmp_path, &full_path)
         .map_err(|e| NoteError::Io(e.to_string()))?;
 
-    tracing::debug!("Saved note: {}", path);
-    Ok(())
+    // 返回写入后的 mtime，让前端直接使用而无需额外 readNote 调用
+    let new_mtime = get_mtime_ms(&full_path);
+    tracing::debug!("Saved note: {} (mtime={:?})", path, new_mtime);
+    Ok(new_mtime)
 }
 
 /// Create a new note with optional default content.

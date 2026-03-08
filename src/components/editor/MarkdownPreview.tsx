@@ -238,7 +238,8 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
         try {
           const { svg } = await mermaid.render(id, code);
           if (!cancelled) {
-            container.innerHTML = svg;
+            // 对 Mermaid 生成的 SVG 进行 DOMPurify 净化，防止 SVG 内嵌脚本
+            container.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } });
             container.classList.add('mermaid-rendered');
           }
         } catch {
@@ -265,7 +266,14 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     try {
       const results = await searchByFilename(linkTarget);
       if (results.length > 0) {
-        useNoteStore.getState().openNote(results[0].path, results[0].title || results[0].path);
+        // 精确匹配优先：先查找 stem 完全一致的结果
+        const targetLower = linkTarget.toLowerCase();
+        const exact = results.find((r) => {
+          const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+          return stem === targetLower || r.path.toLowerCase() === targetLower;
+        });
+        const best = exact ?? results[0];
+        useNoteStore.getState().openNote(best.path, best.title || best.path);
       } else {
         const newPath = await createNote('', linkTarget);
         useNoteStore.getState().openNote(newPath, linkTarget);

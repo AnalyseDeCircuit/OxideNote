@@ -103,7 +103,14 @@ export function NoteEditor() {
     try {
       const results = await searchByFilename(target);
       if (results.length > 0) {
-        useNoteStore.getState().openNote(results[0].path, results[0].title || results[0].path);
+        // 精确匹配优先：先查找 stem 完全一致的结果，避免模糊匹配打开错误笔记
+        const targetLower = target.toLowerCase();
+        const exact = results.find((r) => {
+          const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+          return stem === targetLower || r.path.toLowerCase() === targetLower;
+        });
+        const best = exact ?? results[0];
+        useNoteStore.getState().openNote(best.path, best.title || best.path);
       } else {
         // WikiLink target doesn't exist — create and open
         const newPath = await createNote('', target);
@@ -438,17 +445,13 @@ export function NoteEditor() {
   async function saveNoteWithConflictCheck(path: string, content: string): Promise<SaveOutcome> {
     const expectedMtime = mtimeRef.current.get(path) ?? undefined;
     try {
-      await writeNote(path, content, expectedMtime);
+      const newMtime = await writeNote(path, content, expectedMtime);
       // 标记为自己的写入，避免 watcher 事件误判为外部修改
       recentWritesRef.current.set(path, Date.now());
       useNoteStore.getState().markClean(path);
       useNoteStore.getState().clearConflict(path);
-      // Re-read to update mtime after successful save
-      readNote(path)
-        .then((note) => {
-          mtimeRef.current.set(path, note.modified_at_ms);
-        })
-        .catch(() => {});
+      // 直接使用返回的 mtime，无需额外 readNote 调用
+      mtimeRef.current.set(path, newMtime);
       reindexNote(path).catch((err) => {
         console.warn('[reindex] failed for', path, err);
       });

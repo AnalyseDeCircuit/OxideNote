@@ -57,16 +57,18 @@ pub async fn open_vault(
                     *state.read_db.lock() = Some(read_conn);
                 }
                 Err(e) => {
-                    // 读连接打开失败时，回退共享写连接，确保搜索/反链/图谱仍可用
-                    tracing::warn!("Failed to open read connection, falling back to write conn: {}", e);
-                    *state.read_db.lock() = Some(
-                        crate::indexing::db::open_db(&vault_path)
-                            .unwrap_or_else(|_| {
-                                // 极端情况：连第三次打开都失败，则无法 fallback
-                                // read_db 保持 None，后续读命令会返回 NoIndex
-                                panic!("Cannot open any DB connection for vault");
-                            })
-                    );
+                    // 读连接打开失败时，尝试第三次打开；若仍失败则 read_db 保持 None，
+                    // 后续读命令（搜索/反链/图谱）会返回 NoIndex 错误，不会崩溃
+                    tracing::warn!("Failed to open read connection, attempting fallback: {}", e);
+                    match crate::indexing::db::open_db(&vault_path) {
+                        Ok(fallback_conn) => {
+                            *state.read_db.lock() = Some(fallback_conn);
+                        }
+                        Err(e2) => {
+                            tracing::error!("Fallback read connection also failed: {}. Search/backlinks will be unavailable.", e2);
+                            // read_db 保持 None，不会崩溃
+                        }
+                    }
                 }
             }
 
