@@ -148,7 +148,12 @@
     "title": "知识图谱",
     "noData": "暂无索引笔记",
     "close": "关闭",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "timelineToggle": "时间轴模式",
+    "timelineSlider": "拖动时间轴查看知识演进",
+    "timelineNotes": "篇笔记",
+    "timelineOld": "陈年旧账",
+    "timelineNew": "最近热点"
   },
   "dailyNote": {
     "today": "今天",

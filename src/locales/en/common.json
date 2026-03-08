@@ -148,7 +148,12 @@
     "title": "Knowledge Graph",
     "noData": "No notes indexed yet",
     "close": "Close",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "timelineToggle": "Timeline mode",
+    "timelineSlider": "Drag to explore knowledge evolution",
+    "timelineNotes": "notes",
+    "timelineOld": "Aged",
+    "timelineNew": "Recent"
   },
   "dailyNote": {
     "today": "Today",

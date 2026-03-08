@@ -11,6 +11,8 @@ use crate::state::AppState;
 pub struct GraphNode {
     pub id: String,
     pub title: String,
+    pub created_at: Option<String>,
+    pub modified_at: Option<String>,
 }
 
 /// 图谱连边，表示一条 WikiLink 引用关系
@@ -132,9 +134,9 @@ pub async fn get_graph_data(
     let db_guard = state.db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
 
-    // 查询所有笔记节点
+    // 查询所有笔记节点（含时间戳）
     let mut node_stmt = conn
-        .prepare("SELECT path, title FROM notes ORDER BY path")
+        .prepare("SELECT path, title, created_at, modified_at FROM notes ORDER BY path")
         .map_err(|e| SearchError::Internal(e.to_string()))?;
 
     let nodes: Vec<GraphNode> = node_stmt
@@ -142,6 +144,8 @@ pub async fn get_graph_data(
             Ok(GraphNode {
                 id: row.get(0)?,
                 title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                created_at: row.get(2)?,
+                modified_at: row.get(3)?,
             })
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?

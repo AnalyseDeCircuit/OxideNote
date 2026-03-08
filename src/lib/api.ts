@@ -91,6 +91,8 @@ export async function saveAttachment(data: string, filename: string): Promise<st
 export interface GraphNode {
   id: string;
   title: string;
+  created_at: string | null;
+  modified_at: string | null;
 }
 
 export interface GraphLink {
