@@ -37,6 +37,8 @@ trash = "5"
 sha2 = "0.10"
 base64 = "0.22"
 url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+htmd = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 argon2 = "0.5"

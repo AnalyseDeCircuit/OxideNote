@@ -342,3 +342,10 @@ export async function reorderBookmarks(paths: string[]): Promise<void> {
 export async function isBookmarked(path: string): Promise<boolean> {
   return invoke<boolean>('is_bookmarked', { path });
 }
+
+// ─── Web Clipper ────────────────────────────────────────────
+
+/** Clip a web page: fetch HTML, convert to Markdown, save as a note */
+export async function clipWebpage(url: string, folder: string = ''): Promise<string> {
+  return invoke<string>('clip_webpage', { url, folder });
+}

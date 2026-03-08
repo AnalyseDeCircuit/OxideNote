@@ -38,6 +38,7 @@ import {
   MicOff,
   Settings2,
   Printer,
+  PenTool,
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import { exportToPdf } from '@/lib/exportPdf';
@@ -45,6 +46,8 @@ import { exportToHtml } from '@/lib/exportHtml';
 import { isSpeechRecognitionSupported, startVoiceInput, stopVoiceInput } from '@/lib/speechRecognition';
 import { toast } from '@/hooks/useToast';
 import { TypesettingDialog } from '@/components/typesetting/TypesettingDialog';
+import { AudioRecorder } from '@/components/editor/AudioRecorder';
+import { CanvasEditor } from '@/components/canvas/CanvasEditor';
 
 // ═══════════════════════════════════════════════════════════════
 // 工具栏组件
@@ -58,6 +61,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   const { t, i18n } = useTranslation();
   const [isListening, setIsListening] = useState(false);
   const [typesettingOpen, setTypesettingOpen] = useState(false);
+  const [canvasOpen, setCanvasOpen] = useState(false);
 
   // ── Voice input handler ───────────────────────────────────
   const handleVoiceToggle = useCallback(() => {
@@ -260,6 +264,26 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
           onClick={handleVoiceToggle}
           active={isListening}
         />
+        <AudioRecorder
+          onSaved={(relPath) => {
+            const view = viewRef.current;
+            if (!view) return;
+            // Insert audio embed as Markdown image syntax (rendered as <audio> by preview)
+            const embed = `![${relPath.split('/').pop() || 'audio'}](${relPath})`;
+            const { from } = view.state.selection.main;
+            view.dispatch({
+              changes: { from, to: from, insert: `\n${embed}\n` },
+              selection: { anchor: from + embed.length + 2 },
+            });
+          }}
+        />
+      </ToolbarGroup>
+
+      <ToolbarDivider />
+
+      {/* ── Canvas ─────────────────────────────────────── */}
+      <ToolbarGroup>
+        <ToolbarBtn icon={<PenTool size={14} />} title={t('canvas.title')} onClick={() => setCanvasOpen(true)} />
       </ToolbarGroup>
 
       {/* ── Typesetting dialog ──────────────────────────── */}
@@ -268,6 +292,24 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
         onClose={() => setTypesettingOpen(false)}
         content={viewRef.current?.state.doc.toString() || ''}
       />
+
+      {/* ── Canvas editor overlay ──────────────────────── */}
+      {canvasOpen && (
+        <CanvasEditor
+          onSaved={(relPath) => {
+            const view = viewRef.current;
+            if (!view) return;
+            const embed = `![canvas](${relPath})`;
+            const { from } = view.state.selection.main;
+            view.dispatch({
+              changes: { from, to: from, insert: `\n${embed}\n` },
+              selection: { anchor: from + embed.length + 2 },
+            });
+            setCanvasOpen(false);
+          }}
+          onClose={() => setCanvasOpen(false)}
+        />
+      )}
     </div>
   );
 }

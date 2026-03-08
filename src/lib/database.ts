@@ -2,7 +2,8 @@
  * Database Data Model & Utilities
  *
  * Manages structured data stored in Markdown frontmatter under the
- * `oxide-db` YAML key. Supports table, kanban, and calendar views.
+ * `oxide-db` YAML key. Supports table, kanban, calendar, gallery,
+ * and timeline views. Column types include relation for cross-note linking.
  *
  * Data schema is embedded directly in the note's frontmatter:
  *   ---
@@ -15,8 +16,8 @@
 
 // ─── Types ───────────────────────────────────────────────────
 
-export type ColumnType = 'text' | 'number' | 'select' | 'multi-select' | 'date' | 'checkbox' | 'url';
-export type ViewType = 'table' | 'kanban' | 'calendar';
+export type ColumnType = 'text' | 'number' | 'select' | 'multi-select' | 'date' | 'checkbox' | 'url' | 'relation';
+export type ViewType = 'table' | 'kanban' | 'calendar' | 'gallery' | 'timeline';
 
 export interface Column {
   id: string;
@@ -37,6 +38,9 @@ export interface DatabaseSchema {
   view: ViewType;
   kanbanColumn?: string;
   calendarColumn?: string;
+  timelineColumn?: string;     // date column used for timeline view
+  galleryTitleColumn?: string;  // text column used as card title in gallery
+  galleryCoverColumn?: string;  // url column used as card cover image in gallery
   sortBy?: { column: string; direction: 'asc' | 'desc' };
   filters?: Filter[];
 }

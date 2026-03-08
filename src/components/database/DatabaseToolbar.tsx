@@ -30,6 +30,8 @@ export function DatabaseToolbar({ view, onViewChange, onAddRow, schema, onSchema
     { key: 'table', label: t('database.tableView') },
     { key: 'kanban', label: t('database.kanbanView') },
     { key: 'calendar', label: t('database.calendarView') },
+    { key: 'gallery', label: t('database.galleryView') },
+    { key: 'timeline', label: t('database.timelineView') },
   ];
 
   // Handle adding a new column
@@ -55,6 +57,7 @@ export function DatabaseToolbar({ view, onViewChange, onAddRow, schema, onSchema
     { value: 'date', label: t('database.date') },
     { value: 'checkbox', label: t('database.checkbox') },
     { value: 'url', label: t('database.url') },
+    { value: 'relation', label: t('database.relation') },
   ];
 
   return (

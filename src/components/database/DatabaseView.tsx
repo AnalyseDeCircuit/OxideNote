@@ -22,6 +22,8 @@ import { DatabaseToolbar } from './DatabaseToolbar';
 import { TableView } from './TableView';
 import { KanbanView } from './KanbanView';
 import { CalendarView } from './CalendarView';
+import { GalleryView } from './GalleryView';
+import { TimelineView } from './TimelineView';
 
 interface DatabaseViewProps {
   content: string;
@@ -104,6 +106,12 @@ export function DatabaseView({ content, filePath }: DatabaseViewProps) {
       )}
       {schema.view === 'calendar' && (
         <CalendarView schema={schema} onSchemaChange={handleSchemaChange} />
+      )}
+      {schema.view === 'gallery' && (
+        <GalleryView schema={schema} onSchemaChange={handleSchemaChange} />
+      )}
+      {schema.view === 'timeline' && (
+        <TimelineView schema={schema} onSchemaChange={handleSchemaChange} />
       )}
     </div>
   );

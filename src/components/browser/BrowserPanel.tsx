@@ -1,13 +1,14 @@
 /**
- * BrowserPanel — Simple URL input panel for in-app browsing
+ * BrowserPanel — URL input panel for in-app browsing & web clipping
  *
  * Opens URLs in a new Tauri webview window or the system's default browser.
  * Maintains a session history of visited URLs.
+ * Includes a "Clip" button to save a web page as a Markdown note.
  */
 
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { openBrowserWindow } from '@/lib/api';
+import { openBrowserWindow, clipWebpage } from '@/lib/api';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { toast } from '@/hooks/useToast';
 
@@ -19,6 +20,7 @@ export function BrowserPanel({ onClose }: BrowserPanelProps) {
   const { t } = useTranslation();
   const [url, setUrl] = useState('');
   const [history, setHistory] = useState<string[]>([]);
+  const [clipping, setClipping] = useState(false);
 
   // Normalize URL — add https:// if no scheme
   const normalizeUrl = useCallback((input: string): string => {
@@ -53,6 +55,23 @@ export function BrowserPanel({ onClose }: BrowserPanelProps) {
       setUrl('');
     } catch (err) {
       toast({ title: t('browser.invalidUrl'), description: String(err), variant: 'error' });
+    }
+  }, [url, normalizeUrl, t]);
+
+  // Clip web page as Markdown note
+  const handleClip = useCallback(async () => {
+    const normalized = normalizeUrl(url);
+    if (!normalized) return;
+    setClipping(true);
+    try {
+      const notePath = await clipWebpage(normalized);
+      toast({ title: t('browser.clipped'), description: notePath });
+      setHistory((prev) => [normalized, ...prev.filter((u) => u !== normalized)].slice(0, 20));
+      setUrl('');
+    } catch (err) {
+      toast({ title: t('browser.clipFailed'), description: String(err), variant: 'error' });
+    } finally {
+      setClipping(false);
     }
   }, [url, normalizeUrl, t]);
 
@@ -94,6 +113,14 @@ export function BrowserPanel({ onClose }: BrowserPanelProps) {
           title={t('browser.openExternal')}
         >
           ↗
+        </button>
+        <button
+          onClick={handleClip}
+          disabled={clipping || !url.trim()}
+          className="px-2 py-1 text-xs rounded border border-theme-border hover:bg-theme-hover text-muted-foreground disabled:opacity-40"
+          title={t('browser.clip')}
+        >
+          {clipping ? '⏳' : '📋'}
         </button>
       </div>
 

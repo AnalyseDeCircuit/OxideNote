@@ -253,6 +253,24 @@ function createMarkedInstance(getTokenLine: (token: object) => number | undefine
     ],
   });
 
+  // ── Audio file rendering ──────────────────────────────────
+  // Override image renderer to detect audio file extensions and
+  // render <audio> elements instead of <img> tags.
+  const audioExtensions = /\.(webm|mp3|wav|ogg|m4a|aac|flac)$/i;
+  marked.use({
+    renderer: {
+      image({ href, title }: { href: string; title?: string | null; text?: string }) {
+        if (audioExtensions.test(href)) {
+          const safeHref = escapeAttr(href);
+          const label = title ? escapeHtml(title) : escapeHtml(href.split('/').pop() || 'Audio');
+          return `<div class="audio-player"><span class="audio-label">🎵 ${label}</span><audio controls preload="metadata" src="${safeHref}"></audio></div>`;
+        }
+        // Fall through by returning false to use default rendering
+        return false as unknown as string;
+      },
+    },
+  });
+
   // ── 代码块渲染器：highlight.js + Mermaid 占位 ───────────
   marked.use({
     renderer: {

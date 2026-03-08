@@ -884,6 +884,26 @@ html {
 }
 .oxide-markdown-preview .mermaid-error { color: var(--theme-text-muted); font-family: var(--font-mono); font-size: 0.85em; }
 
+/* ── Audio player ──────────────────────────────────────────── */
+.oxide-markdown-preview .audio-player {
+  margin: 0.75em 0;
+  padding: 0.5em 0.75em;
+  background: var(--theme-bg-panel);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.oxide-markdown-preview .audio-label {
+  font-size: 0.8em;
+  color: var(--theme-text-muted);
+}
+.oxide-markdown-preview .audio-player audio {
+  width: 100%;
+  height: 32px;
+}
+
 /* ── 任务列表 ──────────────────────────────────────────────── */
 .oxide-markdown-preview input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--theme-accent); }
 

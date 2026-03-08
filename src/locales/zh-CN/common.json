@@ -324,6 +324,8 @@
     "tableView": "表格视图",
     "kanbanView": "看板视图",
     "calendarView": "日历视图",
+    "galleryView": "画廊视图",
+    "timelineView": "时间线视图",
     "addRow": "添加行",
     "addColumn": "添加列",
     "deleteRow": "删除行",
@@ -337,13 +339,16 @@
     "date": "日期",
     "checkbox": "复选框",
     "url": "链接",
+    "relation": "关联",
+    "relationSearch": "搜索笔记以关联...",
     "filter": "筛选",
     "sort": "排序",
     "ascending": "升序",
     "descending": "降序",
     "noData": "暂无数据",
     "createDatabase": "创建数据库",
-    "kanbanUngrouped": "未分组"
+    "kanbanUngrouped": "未分组",
+    "timelineNoDate": "未设置日期列"
   },
   "browser": {
     "title": "浏览器",
@@ -353,7 +358,10 @@
     "forward": "前进",
     "refresh": "刷新",
     "openExternal": "在外部浏览器中打开",
-    "invalidUrl": "无效的网址"
+    "invalidUrl": "无效的网址",
+    "clip": "剪藏网页",
+    "clipped": "网页已剪藏",
+    "clipFailed": "剪藏失败"
   },
   "voice": {
     "start": "开始语音输入",
@@ -446,5 +454,27 @@
     "title": "发布为静态站点",
     "success": "成功发布 {{count}} 个页面",
     "failed": "发布失败"
+  },
+  "audio": {
+    "record": "录音",
+    "startRecording": "开始录音",
+    "stopRecording": "停止录音",
+    "stop": "停止",
+    "processing": "处理中...",
+    "saved": "录音已保存",
+    "saveFailed": "保存录音失败",
+    "micError": "无法访问麦克风"
+  },
+  "canvas": {
+    "title": "白板画布",
+    "eraser": "橡皮擦",
+    "undo": "撤销",
+    "redo": "重做",
+    "clear": "清除",
+    "save": "保存",
+    "saving": "保存中...",
+    "saved": "画布已保存",
+    "saveFailed": "保存画布失败",
+    "close": "关闭"
   }
 }

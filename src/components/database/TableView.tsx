@@ -5,13 +5,15 @@
  *   · Editable cells (double-click to edit)
  *   · Column header sorting
  *   · Row deletion
- *   · Type-aware cell rendering (text, number, select, date, checkbox, url)
+ *   · Type-aware cell rendering (text, number, select, date, checkbox, url, relation)
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DatabaseSchema, Column, Row } from '@/lib/database';
 import { updateCell, deleteRow, deleteColumn, sortRows, filterRows } from '@/lib/database';
+import { searchByFilename } from '@/lib/api';
+import { useNoteStore } from '@/store/noteStore';
 
 interface TableViewProps {
   schema: DatabaseSchema;
@@ -165,6 +167,19 @@ interface CellRendererProps {
 }
 
 function CellRenderer({ column, value, editing, onStartEdit, onEndEdit, onChange }: CellRendererProps) {
+  // Relation: uses a dedicated picker component
+  if (column.type === 'relation') {
+    return (
+      <RelationCell
+        value={value}
+        editing={editing}
+        onStartEdit={onStartEdit}
+        onEndEdit={onEndEdit}
+        onChange={onChange}
+      />
+    );
+  }
+
   // Checkbox: always interactive
   if (column.type === 'checkbox') {
     return (
@@ -305,6 +320,164 @@ function CellRenderer({ column, value, editing, onStartEdit, onEndEdit, onChange
       onDoubleClick={onStartEdit}
     >
       {displayValue}
+    </div>
+  );
+}
+
+// ─── Relation Cell ──────────────────────────────────────────
+// Displays linked note paths as clickable badges; opens a search
+// picker when editing to add/remove note references.
+
+interface RelationCellProps {
+  value: unknown;
+  editing: boolean;
+  onStartEdit: () => void;
+  onEndEdit: () => void;
+  onChange: (value: unknown) => void;
+}
+
+function RelationCell({ value, editing, onStartEdit, onEndEdit, onChange }: RelationCellProps) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<{ path: string; title: string }[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Parse stored relation value — comma-separated note paths (memoize for stable ref)
+  const paths = useMemo(() => {
+    return typeof value === 'string' && value
+      ? value.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+  }, [value]);
+
+  // Debounced search for notes by filename
+  useEffect(() => {
+    if (!editing || !query.trim()) {
+      setResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchByFilename(query.trim());
+        // Exclude already-linked paths
+        setResults(res.filter((r) => !paths.includes(r.path)).slice(0, 8));
+      } catch {
+        setResults([]);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [query, editing, paths]);
+
+  // Close picker on outside click
+  useEffect(() => {
+    if (!editing) return;
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onEndEdit();
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [editing, onEndEdit]);
+
+  // Navigate to a linked note
+  const handleNavigate = useCallback((path: string) => {
+    const name = path.split('/').pop()?.replace(/\.md$/i, '') || path;
+    useNoteStore.getState().openNote(path, name);
+  }, []);
+
+  // Add a note path to the relation
+  const handleAdd = useCallback((path: string) => {
+    const updated = [...paths, path].join(',');
+    onChange(updated);
+    setQuery('');
+    setResults([]);
+  }, [paths, onChange]);
+
+  // Remove a note path from the relation
+  const handleRemove = useCallback((path: string) => {
+    const updated = paths.filter((p) => p !== path).join(',');
+    onChange(updated);
+  }, [paths, onChange]);
+
+  // Extract display name from a note path (filename without extension)
+  const displayName = (p: string) => {
+    const parts = p.split('/');
+    const file = parts[parts.length - 1];
+    return file.replace(/\.md$/i, '');
+  };
+
+  // View mode: show linked notes as badges
+  if (!editing) {
+    return (
+      <div
+        className="px-2 py-1 border-l border-theme-border text-xs cursor-pointer flex flex-wrap gap-0.5 min-h-[28px]"
+        onDoubleClick={onStartEdit}
+      >
+        {paths.length > 0 ? (
+          paths.map((p) => (
+            <span
+              key={p}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 text-[10px] cursor-pointer hover:bg-blue-500/25"
+              onClick={(e) => { e.stopPropagation(); handleNavigate(p); }}
+              title={p}
+            >
+              🔗 {displayName(p)}
+            </span>
+          ))
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </div>
+    );
+  }
+
+  // Edit mode: show badges + search input + dropdown results
+  return (
+    <div ref={containerRef} className="px-2 py-1 border-l border-theme-border relative">
+      <div className="flex flex-wrap gap-0.5 mb-1">
+        {paths.map((p) => (
+          <span
+            key={p}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 text-[10px]"
+          >
+            {displayName(p)}
+            <button
+              onClick={() => handleRemove(p)}
+              className="text-blue-400/60 hover:text-red-400 ml-0.5"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t('database.relationSearch')}
+        className="w-full px-1 py-0.5 text-xs bg-background text-foreground border border-theme-accent rounded outline-none"
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onEndEdit();
+        }}
+      />
+      {/* Search results dropdown */}
+      {results.length > 0 && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-surface border border-theme-border rounded-lg shadow-lg overflow-hidden max-h-[160px] overflow-y-auto">
+          {results.map((r) => (
+            <button
+              key={r.path}
+              onClick={() => handleAdd(r.path)}
+              className="w-full px-2 py-1.5 text-xs text-left hover:bg-theme-hover text-foreground flex items-center gap-1"
+            >
+              <span className="text-muted-foreground">📄</span>
+              <span className="truncate">{r.title || displayName(r.path)}</span>
+              <span className="text-[10px] text-muted-foreground ml-auto truncate max-w-[100px]">{r.path}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
