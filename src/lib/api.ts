@@ -65,6 +65,13 @@ export interface BacklinkResult {
   snippet: string;
 }
 
+export interface BlockResult {
+  block_id: string;
+  line_number: number;
+  content: string;
+  block_type: string;
+}
+
 export async function searchNotes(query: string): Promise<SearchResult[]> {
   return invoke<SearchResult[]>('search_notes', { query });
 }
@@ -75,6 +82,18 @@ export async function searchByFilename(query: string): Promise<SearchResult[]> {
 
 export async function getBacklinks(path: string): Promise<BacklinkResult[]> {
   return invoke<BacklinkResult[]>('get_backlinks', { path });
+}
+
+export async function getNoteBlocks(path: string): Promise<BlockResult[]> {
+  return invoke<BlockResult[]>('get_note_blocks', { path });
+}
+
+export async function getBlockContent(notePath: string, blockId: string): Promise<string | null> {
+  return invoke<string | null>('get_block_content', { notePath, blockId });
+}
+
+export async function getBlockBacklinks(notePath: string, blockId: string): Promise<BacklinkResult[]> {
+  return invoke<BacklinkResult[]>('get_block_backlinks', { notePath, blockId });
 }
 
 export async function reindexNote(path: string): Promise<void> {

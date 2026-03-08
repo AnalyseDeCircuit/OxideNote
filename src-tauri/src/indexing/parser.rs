@@ -168,3 +168,111 @@ fn parse_frontmatter(yaml_str: &str, result: &mut ParsedNote) {
         }
     }
 }
+
+// ============================================================================
+// Block-level parsing
+// ============================================================================
+
+static BLOCK_ID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\^([\w-]+)\s*$").unwrap());
+
+static BLOCK_REF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[\[([^\]|#]+)?#\^([\w-]+)(?:\|[^\]]+)?\]\]").unwrap());
+
+#[derive(Debug, Clone)]
+pub struct BlockInfo {
+    pub block_id: String,
+    pub line_number: usize,
+    pub content: String,
+    pub block_type: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockRefInfo {
+    pub target_note: Option<String>,
+    pub block_id: String,
+    pub line_number: usize,
+}
+
+/// Parse blocks and block references from markdown content.
+/// Returns (blocks, block_refs).
+pub fn parse_blocks(content: &str) -> (Vec<BlockInfo>, Vec<BlockRefInfo>) {
+    let mut blocks = Vec::new();
+    let mut block_refs = Vec::new();
+
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_code_block = false;
+    let mut code_block_start = 0;
+    let mut code_block_content = String::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        // Code block boundary detection
+        if line.trim_start().starts_with("```") {
+            if in_code_block {
+                // Code block end, check for block ID
+                if let Some(cap) = BLOCK_ID_RE.captures(line) {
+                    let block_id = cap.get(1).unwrap().as_str().to_string();
+                    blocks.push(BlockInfo {
+                        block_id,
+                        line_number: code_block_start,
+                        content: code_block_content.clone(),
+                        block_type: "code_block".to_string(),
+                    });
+                }
+                in_code_block = false;
+                code_block_content.clear();
+            } else {
+                in_code_block = true;
+                code_block_start = i;
+            }
+            continue;
+        }
+
+        if in_code_block {
+            code_block_content.push_str(line);
+            code_block_content.push('\n');
+            continue;
+        }
+
+        // Extract block references [[note#^block-id]]
+        for cap in BLOCK_REF_RE.captures_iter(line) {
+            let target_note = cap.get(1).map(|m| m.as_str().trim().to_string());
+            let block_id = cap.get(2).unwrap().as_str().to_string();
+            block_refs.push(BlockRefInfo {
+                target_note,
+                block_id,
+                line_number: i,
+            });
+        }
+
+        // Extract block ID at line end
+        if let Some(cap) = BLOCK_ID_RE.captures(line) {
+            let block_id = cap.get(1).unwrap().as_str().to_string();
+            let content = line[..cap.get(0).unwrap().start()].trim().to_string();
+
+            let block_type = if line.trim_start().starts_with("- ")
+                || line.trim_start().starts_with("* ")
+                || line.trim_start().starts_with("+ ")
+                || line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit())
+                    && line.trim_start().contains(". ")
+            {
+                "list_item"
+            } else if line.trim_start().starts_with('#') {
+                "heading"
+            } else if line.contains('|') && line.matches('|').count() >= 2 {
+                "table"
+            } else {
+                "paragraph"
+            };
+
+            blocks.push(BlockInfo {
+                block_id,
+                line_number: i,
+                content,
+                block_type: block_type.to_string(),
+            });
+        }
+    }
+
+    (blocks, block_refs)
+}

@@ -21,6 +21,7 @@ import { VideoPanel } from '@/components/video/VideoPanel';
 import { BrowserPanel } from '@/components/browser/BrowserPanel';
 import { PresentationView } from '@/components/presentation/PresentationView';
 import { listTree } from '@/lib/api';
+import { initPreviewCacheInvalidation } from '@/lib/previewCache';
 import { useTranslation } from 'react-i18next';
 
 export function AppShell() {
@@ -56,6 +57,13 @@ export function AppShell() {
       if (treeRefreshTimerRef.current) clearTimeout(treeRefreshTimerRef.current);
       unlisten.then((fn) => fn());
     };
+  }, []);
+
+  // Initialize preview cache invalidation listener
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    initPreviewCacheInvalidation().then((fn) => { cleanup = fn; });
+    return () => { cleanup?.(); };
   }, []);
 
   // Listen for index-ready event (after background vault scan completes)

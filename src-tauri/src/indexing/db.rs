@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -60,6 +60,31 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             sort_order INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_bookmarks_order ON bookmarks(sort_order);
+
+        CREATE TABLE IF NOT EXISTS blocks (
+            id INTEGER PRIMARY KEY,
+            note_id INTEGER NOT NULL,
+            block_id TEXT NOT NULL,
+            line_number INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            block_type TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+            UNIQUE(note_id, block_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_blocks_note ON blocks(note_id);
+        CREATE INDEX IF NOT EXISTS idx_blocks_id ON blocks(block_id);
+
+        CREATE TABLE IF NOT EXISTS block_links (
+            id INTEGER PRIMARY KEY,
+            source_id INTEGER NOT NULL,
+            target_note_path TEXT NOT NULL,
+            target_block_id TEXT,
+            source_line INTEGER NOT NULL,
+            FOREIGN KEY (source_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_block_links_source ON block_links(source_id);
+        CREATE INDEX IF NOT EXISTS idx_block_links_target ON block_links(target_note_path, target_block_id);
         ",
     )?;
 
@@ -393,4 +418,128 @@ pub fn get_random_note(conn: &Connection) -> Result<Option<SearchResult>, rusqli
     } else {
         Ok(None)
     }
+}
+
+// ============================================================================
+// Block-level reference functions
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct BlockResult {
+    pub block_id: String,
+    pub line_number: i64,
+    pub content: String,
+    pub block_type: String,
+}
+
+/// Insert or update blocks for a note.
+/// Deletes existing blocks and inserts new ones.
+pub fn upsert_blocks_raw(
+    conn: &Connection,
+    note_id: i64,
+    blocks: &[(String, usize, String, String)], // (block_id, line_number, content, block_type)
+) -> Result<(), rusqlite::Error> {
+    // Delete old blocks
+    conn.execute("DELETE FROM blocks WHERE note_id = ?1", params![note_id])?;
+
+    // Insert new blocks
+    for (block_id, line_number, content, block_type) in blocks {
+        conn.execute(
+            "INSERT INTO blocks (note_id, block_id, line_number, content, block_type, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
+            params![note_id, block_id, *line_number as i64, content, block_type],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Insert or update block links for a note.
+pub fn upsert_block_links_raw(
+    conn: &Connection,
+    source_id: i64,
+    block_refs: &[(Option<String>, String, usize)], // (target_note, block_id, line_number)
+) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM block_links WHERE source_id = ?1", params![source_id])?;
+
+    for (target_note, block_id, line_number) in block_refs {
+        conn.execute(
+            "INSERT INTO block_links (source_id, target_note_path, target_block_id, source_line)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                source_id,
+                target_note.as_deref().unwrap_or(""),
+                block_id,
+                *line_number as i64
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Get all blocks for a note.
+pub fn get_note_blocks(
+    conn: &Connection,
+    note_path: &str,
+) -> Result<Vec<BlockResult>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT b.block_id, b.line_number, b.content, b.block_type
+         FROM blocks b
+         JOIN notes n ON n.id = b.note_id
+         WHERE n.path = ?1
+         ORDER BY b.line_number",
+    )?;
+
+    let rows = stmt.query_map(params![note_path], |row| {
+        Ok(BlockResult {
+            block_id: row.get(0)?,
+            line_number: row.get(1)?,
+            content: row.get(2)?,
+            block_type: row.get(3)?,
+        })
+    })?;
+
+    rows.collect()
+}
+
+/// Get content of a specific block.
+pub fn get_block_content(
+    conn: &Connection,
+    note_path: &str,
+    block_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT b.content FROM blocks b
+         JOIN notes n ON n.id = b.note_id
+         WHERE n.path = ?1 AND b.block_id = ?2",
+        params![note_path, block_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Get backlinks to a specific block.
+pub fn get_block_backlinks(
+    conn: &Connection,
+    note_path: &str,
+    block_id: &str,
+) -> Result<Vec<SearchResult>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT n.path, n.title, bl.source_line
+         FROM block_links bl
+         JOIN notes n ON n.id = bl.source_id
+         WHERE bl.target_note_path = ?1 AND bl.target_block_id = ?2
+         ORDER BY n.title",
+    )?;
+
+    let rows = stmt.query_map(params![note_path, block_id], |row| {
+        Ok(SearchResult {
+            path: row.get(0)?,
+            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            snippet: format!("Line {}", row.get::<_, i64>(2)?),
+        })
+    })?;
+
+    rows.collect()
 }

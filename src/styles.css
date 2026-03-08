@@ -677,6 +677,48 @@ html {
 }
 .oxide-markdown-preview a.wikilink:hover { opacity: 0.8; }
 
+/* ── Block references ───────────────────────────────────────── */
+.oxide-markdown-preview .block-ref {
+  display: inline-block;
+  margin: 0.15rem 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-panel);
+  color: var(--theme-text-muted);
+  font-size: 0.92em;
+}
+
+.oxide-markdown-preview .block-ref-loaded {
+  color: var(--theme-text);
+}
+
+.oxide-markdown-preview .block-ref-error {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.cm-block-embed {
+  margin: 0.5rem 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--theme-border);
+  background: var(--bg-surface);
+  color: var(--text-foreground);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.cm-block-embed-loading {
+  color: var(--text-muted-foreground);
+  font-style: italic;
+}
+
+.cm-block-embed-error {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
 /* ── 代码 ──────────────────────────────────────────────────── */
 .oxide-markdown-preview code {
   font-family: var(--font-mono);
@@ -826,6 +868,48 @@ html {
 }
 
 /* ── Note embed ![[note]] ──────────────────────────────────── */
+.oxide-markdown-preview .block-ref {
+  display: block;
+  margin: 1em 0;
+  padding: 0.875em 1em;
+  background: var(--theme-bg-panel);
+  border: 1px solid var(--theme-border);
+  border-left: 3px solid var(--theme-accent);
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+.oxide-markdown-preview .block-ref-loading {
+  color: var(--theme-text-muted);
+  font-style: italic;
+}
+.oxide-markdown-preview .block-ref-loaded {
+  color: var(--theme-text);
+}
+.oxide-markdown-preview .block-ref-error {
+  color: #ef4444;
+}
+
+.cm-block-embed {
+  display: block;
+  margin: 0.75em 0;
+  padding: 0.875em 1em;
+  background: var(--bg-surface);
+  border: 1px solid var(--theme-border);
+  border-left: 3px solid var(--theme-accent);
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+.cm-block-embed-loading {
+  color: var(--text-muted-foreground);
+  font-style: italic;
+}
+.cm-block-embed-loaded {
+  color: var(--text-foreground);
+}
+.cm-block-embed-error {
+  color: #ef4444;
+}
+
 .oxide-markdown-preview .note-embed {
   border: 1px solid var(--theme-border);
   border-radius: 6px;

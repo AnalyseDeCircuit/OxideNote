@@ -338,3 +338,66 @@ fn collect_tasks(
     }
     Ok(())
 }
+
+// ============================================================================
+// Block-level reference commands
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockResult {
+    pub block_id: String,
+    pub line_number: i64,
+    pub content: String,
+    pub block_type: String,
+}
+
+/// Get all blocks for a note (used for autocomplete).
+#[tauri::command]
+pub async fn get_note_blocks(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<BlockResult>, SearchError> {
+    let db_guard = state.read_db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+
+    let blocks = db::get_note_blocks(conn, &path)
+        .map_err(|e| SearchError::Internal(e.to_string()))?;
+
+    Ok(blocks
+        .into_iter()
+        .map(|b| BlockResult {
+            block_id: b.block_id,
+            line_number: b.line_number,
+            content: b.content,
+            block_type: b.block_type,
+        })
+        .collect())
+}
+
+/// Get content of a specific block (used for embedding).
+#[tauri::command]
+pub async fn get_block_content(
+    note_path: String,
+    block_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, SearchError> {
+    let db_guard = state.read_db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+
+    db::get_block_content(conn, &note_path, &block_id)
+        .map_err(|e| SearchError::Internal(e.to_string()))
+}
+
+/// Get backlinks to a specific block.
+#[tauri::command]
+pub async fn get_block_backlinks(
+    note_path: String,
+    block_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<db::SearchResult>, SearchError> {
+    let db_guard = state.read_db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+
+    db::get_block_backlinks(conn, &note_path, &block_id)
+        .map_err(|e| SearchError::Internal(e.to_string()))
+}

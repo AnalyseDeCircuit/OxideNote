@@ -20,7 +20,8 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
 import { useNoteStore } from '@/store/noteStore';
-import { searchByFilename, createNote, readNote } from '@/lib/api';
+import { searchByFilename, createNote, readNote, getBlockContent } from '@/lib/api';
+import { blockRefCache, noteResolveCache, noteEmbedCache, blockRefKey } from '@/lib/previewCache';
 import { ImageLightbox } from '@/components/editor/ImageLightbox';
 import { getSourceLineForPreviewOffset } from '@/components/editor/scrollSync';
 import 'katex/dist/katex.min.css';
@@ -142,6 +143,33 @@ function createMarkedInstance(getTokenLine: (token: object) => number | undefine
           } catch {
             return `<code class="math-error">${escapeHtml(token.text)}</code>`;
           }
+        },
+      },
+      {
+        name: 'blockRef',
+        level: 'inline',
+        start(src: string) {
+          return src.indexOf('[[');
+        },
+        tokenizer(src: string) {
+          const match = src.match(/^\[\[([^\]|#]+)?#\^([\w-]+)(?:\|([^\]]+))?\]\]/);
+          if (match) {
+            return {
+              type: 'blockRef',
+              raw: match[0],
+              targetNote: match[1]?.trim() || '',
+              blockId: match[2],
+              display: match[3]?.trim() || '',
+            };
+          }
+          return undefined;
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        renderer(token: any) {
+          const note = escapeAttr(token.targetNote || '');
+          const blockId = escapeAttr(token.blockId);
+          const fallback = token.display ? escapeHtml(token.display) : `Loading block ^${escapeHtml(token.blockId)}...`;
+          return `<span class="block-ref block-ref-loading" data-note="${note}" data-block="${blockId}">${fallback}</span>`;
         },
       },
       // ── WikiLink 扩展 [[target|display]] ────────────────
@@ -385,6 +413,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
   const containerRef = scrollRef ?? internalRef;
   const tokenLineMapRef = useRef<WeakMap<object, number>>(new WeakMap());
   const marked = useMemo(() => createMarkedInstance((token) => tokenLineMapRef.current.get(token)), []);
+  const activeTabPath = useNoteStore((state) => state.activeTabPath);
 
   // ── Image lightbox state ──────────────────────────────────
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -476,7 +505,84 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
     };
   }, [blocks]);
 
-  // ── 异步加载嵌入笔记 ![[note]] ────────────────────────────
+  // ── 异步加载块引用 [[note#^block]] (with cache) ─────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const blockRefs = el.querySelectorAll<HTMLSpanElement>('.block-ref[data-block]');
+    if (blockRefs.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      for (const span of blockRefs) {
+        if (cancelled) break;
+        const noteTarget = span.dataset.note || '';
+        const blockId = span.dataset.block;
+        if (!blockId) continue;
+
+        // Resolve note target to a vault path (cached)
+        let resolvedPath: string | undefined;
+        try {
+          if (noteTarget) {
+            const cached = noteResolveCache.get(noteTarget);
+            resolvedPath = cached?.path;
+            if (!resolvedPath) {
+              const results = await searchByFilename(noteTarget);
+              if (cancelled) break;
+              if (results.length > 0) {
+                const targetLower = noteTarget.toLowerCase();
+                const exact = results.find((r) => {
+                  const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+                  return stem === targetLower || r.path.toLowerCase() === targetLower;
+                });
+                const best = exact ?? results[0];
+                resolvedPath = best.path;
+                noteResolveCache.set(noteTarget, { path: best.path, title: best.title || noteTarget });
+              }
+            }
+          } else {
+            resolvedPath = activeTabPath || undefined;
+          }
+
+          if (!resolvedPath) {
+            span.textContent = `Block not found: ^${blockId}`;
+            span.classList.remove('block-ref-loading');
+            span.classList.add('block-ref-error');
+            continue;
+          }
+
+          // Fetch block content (cached)
+          const cacheKey = blockRefKey(resolvedPath, blockId);
+          let content = blockRefCache.get(cacheKey);
+          if (content === undefined) {
+            content = await getBlockContent(resolvedPath, blockId);
+            if (cancelled) break;
+            blockRefCache.set(cacheKey, content);
+          }
+
+          span.classList.remove('block-ref-loading');
+          if (content) {
+            span.textContent = content;
+            span.classList.add('block-ref-loaded');
+          } else {
+            span.textContent = `Block not found: ^${blockId}`;
+            span.classList.add('block-ref-error');
+          }
+        } catch {
+          span.classList.remove('block-ref-loading');
+          span.classList.add('block-ref-error');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTabPath, blocks]);
+
+  // ── 异步加载嵌入笔记 ![[note]] (with cache) ────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -492,22 +598,40 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
         const target = container.dataset.embedTarget;
         if (!target) continue;
         try {
-          const results = await searchByFilename(target);
-          if (cancelled) break;
-          if (results.length > 0) {
-            const best = results[0];
-            const noteContent = await readNote(best.path);
+          // Resolve note name (cached)
+          const cachedResolve = noteResolveCache.get(target);
+          let resolvedPath = cachedResolve?.path;
+          let resolvedTitle = cachedResolve?.title || target;
+          if (!resolvedPath) {
+            const results = await searchByFilename(target);
             if (cancelled) break;
-            const embedHtml = marked.parse(noteContent.content) as string;
-            const sanitized = sanitizeMarkdownHtml(embedHtml);
-            // Add title header + rendered content
-            const titleLabel = best.title || target;
-            container.innerHTML = `<div class="note-embed-title">${escapeHtml(titleLabel)}</div>${sanitized}`;
-            container.classList.add('note-embed-loaded');
-          } else {
+            if (results.length > 0) {
+              resolvedPath = results[0].path;
+              resolvedTitle = results[0].title || target;
+              noteResolveCache.set(target, { path: resolvedPath, title: resolvedTitle });
+            }
+          }
+
+          if (!resolvedPath) {
             container.textContent = `Note not found: ${target}`;
             container.classList.add('note-embed-error');
+            continue;
           }
+
+          // Fetch and render note content (cached raw content, rendered fresh)
+          let cached = noteEmbedCache.get(resolvedPath);
+          if (!cached) {
+            const noteContent = await readNote(resolvedPath);
+            if (cancelled) break;
+            // Cache raw content + title; render fresh each time for theme consistency
+            cached = { title: resolvedTitle, html: noteContent.content };
+            noteEmbedCache.set(resolvedPath, cached);
+          }
+
+          const embedHtml = marked.parse(cached.html) as string;
+          const sanitized = sanitizeMarkdownHtml(embedHtml);
+          container.innerHTML = `<div class="note-embed-title">${escapeHtml(cached.title)}</div>${sanitized}`;
+          container.classList.add('note-embed-loaded');
         } catch {
           container.classList.add('note-embed-error');
         }
@@ -597,7 +721,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
 function sanitizeMarkdownHtml(raw: string): string {
   return DOMPurify.sanitize(raw, {
     ADD_TAGS: ['math-block', 'details', 'summary'],
-    ADD_ATTR: ['data-target', 'data-mermaid-id', 'data-callout', 'data-embed-target', 'data-line', 'open'],
+    ADD_ATTR: ['data-target', 'data-mermaid-id', 'data-callout', 'data-embed-target', 'data-note', 'data-block', 'data-line', 'open'],
   });
 }
 

@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use walkdir::WalkDir;
 
-use super::parser::parse_note;
+use super::parser::{parse_note, parse_blocks};
 use super::db;
 
 /// Inner scan logic without transaction management — caller provides tx.
@@ -72,6 +72,7 @@ pub fn index_single_file_raw(
         .unwrap_or_default();
 
     let parsed = parse_note(&content, &file_name);
+    let (blocks, block_refs) = parse_blocks(&content);
 
     let modified_at = std::fs::metadata(file_path)
         .ok()
@@ -93,7 +94,39 @@ pub fn index_single_file_raw(
         &parsed.links,
         &parsed.aliases,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    // Get note_id for block indexing
+    let note_id: i64 = conn
+        .query_row(
+            "SELECT id FROM notes WHERE path = ?1",
+            params![rel_path],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    // Index blocks
+    let block_tuples: Vec<_> = blocks
+        .iter()
+        .map(|b| {
+            (
+                b.block_id.clone(),
+                b.line_number,
+                b.content.clone(),
+                b.block_type.clone(),
+            )
+        })
+        .collect();
+    db::upsert_blocks_raw(conn, note_id, &block_tuples).map_err(|e| e.to_string())?;
+
+    // Index block references
+    let block_ref_tuples: Vec<_> = block_refs
+        .iter()
+        .map(|r| (r.target_note.clone(), r.block_id.clone(), r.line_number))
+        .collect();
+    db::upsert_block_links_raw(conn, note_id, &block_ref_tuples).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 /// Index a single file with its own transaction.

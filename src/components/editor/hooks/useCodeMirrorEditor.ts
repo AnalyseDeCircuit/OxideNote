@@ -24,6 +24,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { wikilinkExtension } from '../extensions/wikilink';
+import { blockRefExtension, refreshBlockRefEffect } from '../extensions/blockRef';
 import { wikilinkCompletionSource } from '../extensions/wikilinkCompletion';
 import { tagCompletionSource } from '../extensions/tagCompletion';
 import { slashCommandSource } from '../extensions/slashCommands';
@@ -142,9 +143,17 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
   const onChangeRef = useRef(options.onChange);
   const onSaveRef = useRef(options.onSave);
   const onNavigateRef = useRef(options.onNavigate);
+  const currentNotePathRef = useRef('');
+
+  const activeTabPath = useNoteStore((state) => state.activeTabPath);
   onChangeRef.current = options.onChange;
   onSaveRef.current = options.onSave;
   onNavigateRef.current = options.onNavigate;
+
+  useEffect(() => {
+    const activePath = activeTabPath ?? '';
+    currentNotePathRef.current = activePath;
+  }, [activeTabPath]);
 
   // Create editor on mount
   useEffect(() => {
@@ -208,6 +217,7 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
 
         // WikiLink decoration + Cmd/Ctrl+click navigation
         wikilinkExtension((target) => onNavigateRef.current?.(target)),
+        blockRefExtension(() => currentNotePathRef.current),
 
         // Theme
         themeCompartment.of(makeOxideTheme(isDarkTheme())),
@@ -344,5 +354,11 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
     }
   }, []);
 
-  return { containerRef, viewRef, setContent };
+  const refreshBlockRefs = useCallback(() => {
+    if (viewRef.current) {
+      viewRef.current.dispatch({ effects: refreshBlockRefEffect.of(undefined) });
+    }
+  }, []);
+
+  return { containerRef, viewRef, setContent, refreshBlockRefs };
 }

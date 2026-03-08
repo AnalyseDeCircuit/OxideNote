@@ -11,7 +11,8 @@ import {
   type CompletionResult,
   type Completion,
 } from '@codemirror/autocomplete';
-import { searchByFilename, readNote } from '@/lib/api';
+import { searchByFilename, readNote, getNoteBlocks } from '@/lib/api';
+import { useNoteStore } from '@/store/noteStore';
 
 // Debounce tracking for API calls
 let lastQuery = '';
@@ -61,25 +62,79 @@ export async function wikilinkCompletionSource(
   const hashIndex = fullQuery.indexOf('#');
 
   if (hashIndex >= 0) {
-    // Heading sub-completion: [[noteName#heading
+    // Block sub-completion: [[noteName#^block-id or [[#^block-id (same note)
+    if (fullQuery.slice(hashIndex + 1).startsWith('^')) {
+      const noteName = fullQuery.slice(0, hashIndex);
+      const blockQuery = fullQuery.slice(hashIndex + 2).toLowerCase();
+
+      try {
+        let targetPath: string | null = null;
+
+        if (noteName) {
+          // Cross-note block ref: resolve note name to path
+          const results = await searchByFilename(noteName);
+          if (results.length === 0) return null;
+
+          const targetLower = noteName.toLowerCase();
+          const exact = results.find((r) => {
+            const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+            return stem === targetLower || r.path.toLowerCase() === targetLower;
+          });
+          targetPath = (exact ?? results[0]).path;
+        } else {
+          // Same-note block ref [[#^...]]: use currently active file
+          targetPath = useNoteStore.getState().activeTabPath;
+        }
+
+        if (!targetPath) return null;
+
+        const blocks = await getNoteBlocks(targetPath);
+        const options: Completion[] = blocks
+          .filter((block) => block.block_id.toLowerCase().includes(blockQuery))
+          .map((block) => ({
+            label: `${noteName}#^${block.block_id}`,
+            detail: `§ ${block.block_type} (line ${block.line_number})`,
+            info: block.content.slice(0, 100),
+            apply: `${noteName}#^${block.block_id}]]`,
+          }));
+
+        return {
+          from,
+          options,
+          filter: false,
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    // Heading sub-completion: [[noteName#heading or [[#heading (same note)
     const noteName = fullQuery.slice(0, hashIndex);
     const headingQuery = fullQuery.slice(hashIndex + 1).toLowerCase();
 
     try {
-      // Find the note file
-      const results = await searchByFilename(noteName);
-      if (results.length === 0) return null;
+      let targetPath: string | null = null;
 
-      // Pick exact match or first result
-      const targetLower = noteName.toLowerCase();
-      const exact = results.find((r) => {
-        const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
-        return stem === targetLower || r.path.toLowerCase() === targetLower;
-      });
-      const best = exact ?? results[0];
+      if (noteName) {
+        // Cross-note heading ref: resolve note name to path
+        const results = await searchByFilename(noteName);
+        if (results.length === 0) return null;
+
+        const targetLower = noteName.toLowerCase();
+        const exact = results.find((r) => {
+          const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+          return stem === targetLower || r.path.toLowerCase() === targetLower;
+        });
+        targetPath = (exact ?? results[0]).path;
+      } else {
+        // Same-note heading ref [[#...]]: use currently active file
+        targetPath = useNoteStore.getState().activeTabPath;
+      }
+
+      if (!targetPath) return null;
 
       // Read note content and extract headings
-      const noteContent = await readNote(best.path);
+      const noteContent = await readNote(targetPath);
       const headings = extractHeadings(noteContent.content);
 
       const options: Completion[] = headings

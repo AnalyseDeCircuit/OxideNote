@@ -5,6 +5,7 @@ import { useUIStore } from '@/store/uiStore';
 import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment, createNote } from '@/lib/api';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
+import { clearBlockRefCache } from './extensions/blockRef';
 import { setEditorView } from '@/lib/editorViewRef';
 import { MarkdownPreview } from './MarkdownPreview';
 import { getPreviewScrollTopForSourceLine } from '@/components/editor/scrollSync';
@@ -158,7 +159,7 @@ export function NoteEditor() {
     }
   }, []);
 
-  const { containerRef, viewRef, setContent } = useCodeMirrorEditor({
+  const { containerRef, viewRef, setContent, refreshBlockRefs } = useCodeMirrorEditor({
     onChange: handleChange,
     onSave: handleSave,
     onNavigate: handleNavigate,
@@ -260,6 +261,8 @@ export function NoteEditor() {
   useEffect(() => {
     const unlisten = listen<{ kind: string; path: string }>('vault:file-changed', (event) => {
       const { kind, path: changedPath } = event.payload;
+      clearBlockRefCache(changedPath);
+      refreshBlockRefs();
       if (kind !== 'modify') return;
       const currentPath = activePathRef.current;
       if (!currentPath || changedPath !== currentPath) return;
@@ -299,7 +302,7 @@ export function NoteEditor() {
     });
 
     return () => { unlisten.then((fn) => fn()); };
-  }, [setContent]);
+  }, [setContent, refreshBlockRefs]);
 
   // ── Conflict resolution handlers ─────────────────────────
   const handleConflictKeepMine = useCallback(async () => {
