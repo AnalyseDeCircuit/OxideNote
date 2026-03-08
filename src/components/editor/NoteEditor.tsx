@@ -5,6 +5,7 @@ import { useUIStore } from '@/store/uiStore';
 import { readNote, writeNote, reindexNote, searchByFilename, saveAttachment, createNote } from '@/lib/api';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useCodeMirrorEditor } from './hooks/useCodeMirrorEditor';
+import { setEditorView } from '@/lib/editorViewRef';
 import { MarkdownPreview } from './MarkdownPreview';
 import { EditorToolbar } from './EditorToolbar';
 import { useTranslation } from 'react-i18next';
@@ -125,6 +126,12 @@ export function NoteEditor() {
     tabSize,
     wordWrap,
   });
+
+  // Expose EditorView to global ref for OutlinePanel etc.
+  useEffect(() => {
+    setEditorView(viewRef.current);
+    return () => setEditorView(null);
+  }, [viewRef]);
 
   // ── 加载笔记内容 ─────────────────────────────────────────
   useEffect(() => {

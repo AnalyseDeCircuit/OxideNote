@@ -61,6 +61,7 @@ export interface SearchResult {
 export interface BacklinkResult {
   path: string;
   title: string;
+  snippet: string;
 }
 
 export async function searchNotes(query: string): Promise<SearchResult[]> {

@@ -135,21 +135,48 @@ pub fn delete_note(conn: &Connection, path: &str) -> Result<(), rusqlite::Error>
 
 /// Query backlinks: notes that link TO the given path.
 pub fn get_backlinks(conn: &Connection, target_path: &str) -> Result<Vec<BacklinkResult>, rusqlite::Error> {
+    // Also fetch content from FTS table to extract a context snippet
     let mut stmt = conn.prepare(
-        "SELECT n.path, n.title FROM links l
+        "SELECT n.path, n.title, f.content FROM links l
          JOIN notes n ON n.id = l.source_id
+         LEFT JOIN notes_fts f ON f.path = n.path
          WHERE l.target_path = ?1
          ORDER BY n.title"
     )?;
 
     let results = stmt.query_map(params![target_path], |row| {
-        Ok(BacklinkResult {
-            path: row.get(0)?,
-            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-        })
+        let path: String = row.get(0)?;
+        let title: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+        let content: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        let snippet = extract_backlink_snippet(&content, target_path);
+        Ok(BacklinkResult { path, title, snippet })
     })?.collect::<Result<Vec<_>, _>>()?;
 
     Ok(results)
+}
+
+/// Extract a short snippet around the wikilink reference to `target` in `content`.
+fn extract_backlink_snippet(content: &str, target: &str) -> String {
+    // Build search patterns: [[target]] and [[target|...
+    let stem = std::path::Path::new(target)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| target.to_string());
+
+    for line in content.lines() {
+        let lower = line.to_lowercase();
+        let target_lower = target.to_lowercase();
+        let stem_lower = stem.to_lowercase();
+        if lower.contains(&format!("[[{}", target_lower)) || lower.contains(&format!("[[{}", stem_lower)) {
+            let trimmed = line.trim();
+            // Cap snippet length
+            if trimmed.len() > 200 {
+                return format!("{}...", &trimmed[..200]);
+            }
+            return trimmed.to_string();
+        }
+    }
+    String::new()
 }
 
 /// Full-text search.
@@ -225,6 +252,7 @@ pub fn search_by_filename(conn: &Connection, query: &str) -> Result<Vec<SearchRe
 pub struct BacklinkResult {
     pub path: String,
     pub title: String,
+    pub snippet: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

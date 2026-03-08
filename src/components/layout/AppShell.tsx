@@ -154,11 +154,22 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
 function Titlebar() {
   const { t } = useTranslation();
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
-  const toggleSidePanel = useUIStore((s) => s.toggleSidePanel);
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
   const editorMode = useUIStore((s) => s.editorMode);
   const setEditorMode = useUIStore((s) => s.setEditorMode);
   const setGraphViewOpen = useUIStore((s) => s.setGraphViewOpen);
+  const setGlobalSearchOpen = useUIStore((s) => s.setGlobalSearchOpen);
+
+  // 智能切换右侧面板：点反链图标，如已显示反链则收起，否则打开并切到反链
+  const handleBacklinksToggle = () => {
+    const { sidePanelVisible, sidePanelTab, toggleSidePanel, setSidePanelTab } = useUIStore.getState();
+    if (sidePanelVisible && sidePanelTab === 'backlinks') {
+      toggleSidePanel();
+    } else {
+      if (!sidePanelVisible) toggleSidePanel();
+      setSidePanelTab('backlinks');
+    }
+  };
 
   return (
     <div
@@ -182,6 +193,16 @@ function Titlebar() {
 
       <div className="flex-1" data-tauri-drag-region />
 
+      {/* ── 全局搜索入口 ────────────────────────────────── */}
+      <button
+        onClick={() => setGlobalSearchOpen(true)}
+        className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
+        title={t('actions.search')}
+        aria-label={t('actions.search')}
+      >
+        <SearchIcon />
+      </button>
+
       {/* ── 知识图谱入口 ────────────────────────────────── */}
       <button
         onClick={() => setGraphViewOpen(true)}
@@ -192,11 +213,12 @@ function Titlebar() {
         <GraphIcon />
       </button>
 
+      {/* ── 反向链接面板 ────────────────────────────────── */}
       <button
-        onClick={toggleSidePanel}
+        onClick={handleBacklinksToggle}
         className="p-1.5 rounded hover:bg-theme-hover transition-colors text-muted-foreground"
-        title={t('actions.toggleSidePanel')}
-        aria-label={t('actions.toggleSidePanel')}
+        title={t('backlinks.title')}
+        aria-label={t('backlinks.title')}
       >
         <BacklinksIcon />
       </button>
@@ -258,6 +280,15 @@ function SettingsIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" x2="16.65" y1="21" y2="16.65" />
     </svg>
   );
 }

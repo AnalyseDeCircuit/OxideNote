@@ -50,11 +50,16 @@ export function BacklinksPanel() {
               <li key={bl.path}>
                 <button
                   onClick={() => openNote(bl.path, bl.title || bl.path)}
-                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-theme-hover transition-colors truncate text-foreground"
+                  className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-theme-hover transition-colors text-foreground"
                   title={bl.path}
                 >
                   <span className="text-theme-accent mr-1.5">←</span>
                   {bl.title || bl.path}
+                  {bl.snippet && (
+                    <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                      {bl.snippet}
+                    </p>
+                  )}
                 </button>
               </li>
             ))}

@@ -139,7 +139,9 @@ function App() {
       if (mod && e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         if (useWorkspaceStore.getState().vaultPath) {
-          const name = `Untitled ${Date.now()}`;
+          const now = new Date();
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const name = `Untitled ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())}`;
           createNote('', name)
             .then(async (path) => {
               const tree = await listTree('', useSettingsStore.getState().sortMode);

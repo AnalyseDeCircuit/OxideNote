@@ -16,6 +16,8 @@ import { useMemo } from 'react';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { useTranslation } from 'react-i18next';
+import { EditorView } from '@codemirror/view';
+import { getEditorView } from '@/lib/editorViewRef';
 
 // ── 标题条目类型 ────────────────────────────────────────────
 interface HeadingItem {
@@ -161,12 +163,18 @@ function scrollToLine(line: number, headingText: string) {
     return;
   }
 
-  // 编辑/分屏模式：滚动 CodeMirror 行
-  const cmEditor = document.querySelector('.cm-editor');
-  if (!cmEditor) return;
+  // 编辑/分屏模式：通过 CodeMirror API 精确滚动到行
+  const view = getEditorView();
+  if (!view) return;
 
-  const cmLines = cmEditor.querySelectorAll('.cm-line');
-  if (line >= 0 && line < cmLines.length) {
-    cmLines[line].scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
+  // CodeMirror 行号 1-based，extractHeadings 的 line 是 0-based
+  const lineNumber = line + 1;
+  if (lineNumber < 1 || lineNumber > view.state.doc.lines) return;
+
+  const docLine = view.state.doc.line(lineNumber);
+  view.dispatch({
+    effects: EditorView.scrollIntoView(docLine.from, { y: 'center' }),
+    selection: { anchor: docLine.from },
+  });
+  view.focus();
 }
