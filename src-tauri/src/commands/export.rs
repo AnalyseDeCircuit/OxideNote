@@ -11,7 +11,7 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -209,4 +209,57 @@ pub async fn export_note_bundle(
         .map_err(|e| ExportError::Io(e.to_string()))?;
 
     Ok(())
+}
+
+// ── Static site publishing ──────────────────────────────────
+
+/// A single page in the static site (rendered by frontend, written by backend).
+#[derive(Debug, Deserialize)]
+pub struct SitePage {
+    /// Relative path for the output file (e.g. "notes/hello.html")
+    pub path: String,
+    /// Rendered HTML content
+    pub html: String,
+}
+
+/// Publish a set of pre-rendered HTML pages to an output directory.
+/// The frontend renders markdown → HTML; this command handles file writes.
+#[tauri::command]
+pub async fn publish_static_site(
+    output_dir: String,
+    pages: Vec<SitePage>,
+    index_html: String,
+) -> Result<usize, ExportError> {
+    let output = PathBuf::from(&output_dir);
+
+    // Ensure output directory exists
+    fs::create_dir_all(&output)
+        .map_err(|e| ExportError::Io(e.to_string()))?;
+
+    // Write index.html
+    fs::write(output.join("index.html"), &index_html)
+        .map_err(|e| ExportError::Io(e.to_string()))?;
+
+    let mut count = 0;
+    for page in &pages {
+        // Sanitize path: prevent directory traversal
+        let rel = Path::new(&page.path);
+        if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            continue;
+        }
+
+        let target = output.join(rel);
+
+        // Create parent directories if needed
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| ExportError::Io(e.to_string()))?;
+        }
+
+        fs::write(&target, &page.html)
+            .map_err(|e| ExportError::Io(e.to_string()))?;
+        count += 1;
+    }
+
+    Ok(count)
 }

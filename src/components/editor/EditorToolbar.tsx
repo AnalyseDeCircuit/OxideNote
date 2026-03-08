@@ -37,6 +37,7 @@ import {
   Mic,
   MicOff,
   Settings2,
+  Printer,
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import { exportToPdf } from '@/lib/exportPdf';
@@ -251,6 +252,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       <ToolbarGroup>
         <ToolbarBtn icon={<FileDown size={14} />} title={t('pdf.export')} onClick={handleExportPdf} />
         <ToolbarBtn icon={<FileCode size={14} />} title={t('export.htmlExport')} onClick={handleExportHtml} />
+        <ToolbarBtn icon={<Printer size={14} />} title={t('toolbar.print')} onClick={() => window.print()} />
         <ToolbarBtn icon={<Settings2 size={14} />} title={t('typesetting.title')} onClick={() => setTypesettingOpen(true)} />
         <ToolbarBtn
           icon={isListening ? <MicOff size={14} /> : <Mic size={14} />}

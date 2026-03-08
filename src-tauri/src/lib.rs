@@ -54,6 +54,7 @@ pub fn run() {
             commands::health::repair_vault,
             commands::browser::open_browser_window,
             commands::export::export_note_bundle,
+            commands::export::publish_static_site,
             commands::import::bulk_import_notes,
             commands::crypto::is_note_encrypted,
             commands::crypto::encrypt_note,

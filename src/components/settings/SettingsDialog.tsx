@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck } from 'lucide-react';
-import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate } from '@/store/settingsStore';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard } from 'lucide-react';
+import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate, type ActionId, DEFAULT_KEYBINDINGS } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore, flushAllPendingSaves } from '@/store/noteStore';
@@ -73,6 +73,7 @@ const SIDEBAR_TABS = [
   { id: 'general', icon: Monitor },
   { id: 'editor', icon: Type },
   { id: 'appearance', icon: Palette },
+  { id: 'keybindings', icon: Keyboard },
   { id: 'about', icon: Info },
 ] as const;
 
@@ -157,6 +158,7 @@ export function SettingsDialog() {
             {tab === 'general' && <GeneralTab />}
             {tab === 'editor' && <EditorTab />}
             {tab === 'appearance' && <AppearanceTab />}
+            {tab === 'keybindings' && <KeybindingsTab />}
             {tab === 'about' && <AboutTab />}
           </div>
         </div>
@@ -547,6 +549,140 @@ function AppearanceTab() {
           spellCheck={false}
         />
       </SettingsCard>
+    </>
+  );
+}
+
+// ── Keybinding label mapping ─────────────────────────────────
+
+const ACTION_LABELS: Record<ActionId, string> = {
+  quickOpen: 'settings.shortcutQuickOpen',
+  commandPalette: 'settings.shortcutCommandPalette',
+  globalSearch: 'settings.shortcutGlobalSearch',
+  settings: 'settings.shortcutSettings',
+  toggleSidebar: 'settings.shortcutSidebar',
+  toggleSidePanel: 'settings.shortcutSidePanel',
+  closeTab: 'settings.shortcutCloseTab',
+  prevTab: 'settings.shortcutPrevTab',
+  nextTab: 'settings.shortcutNextTab',
+  newNote: 'settings.shortcutNewNote',
+  toggleFocusMode: 'settings.shortcutFocusMode',
+};
+
+/**
+ * Format a keybinding for display.
+ * Converts "Mod+Shift+F" → "⌘ ⇧ F" on Mac or "Ctrl ⇧ F" elsewhere.
+ */
+function formatKeybinding(combo: string): string {
+  const isMac = navigator.platform.includes('Mac');
+  return combo
+    .split('+')
+    .map((p) => {
+      const lower = p.toLowerCase();
+      if (lower === 'mod') return isMac ? '⌘' : 'Ctrl';
+      if (lower === 'shift') return '⇧';
+      if (lower === 'alt') return isMac ? '⌥' : 'Alt';
+      if (lower === 'arrowleft') return '←';
+      if (lower === 'arrowright') return '→';
+      if (lower === 'arrowup') return '↑';
+      if (lower === 'arrowdown') return '↓';
+      if (p === '\\') return '\\';
+      if (p === ',') return ',';
+      return p.toUpperCase();
+    })
+    .join(' ');
+}
+
+/**
+ * Convert a keydown event to a keybinding string.
+ */
+function eventToCombo(e: KeyboardEvent): string | null {
+  // Ignore modifier-only presses
+  if (['Control', 'Meta', 'Shift', 'Alt'].includes(e.key)) return null;
+
+  const parts: string[] = [];
+  if (e.metaKey || e.ctrlKey) parts.push('Mod');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.altKey) parts.push('Alt');
+  parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  return parts.join('+');
+}
+
+function KeybindingsTab() {
+  const { t } = useTranslation();
+  const keybindings = useSettingsStore((s) => s.keybindings);
+  const setKeybinding = useSettingsStore((s) => s.setKeybinding);
+  const resetKeybindings = useSettingsStore((s) => s.resetKeybindings);
+  const [recording, setRecording] = useState<ActionId | null>(null);
+  const recordRef = useRef<ActionId | null>(null);
+  recordRef.current = recording;
+
+  // Listen for keydown when recording
+  useEffect(() => {
+    if (!recording) return;
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const combo = eventToCombo(e);
+      if (!combo || !recordRef.current) return;
+      setKeybinding(recordRef.current, combo);
+      setRecording(null);
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [recording, setKeybinding]);
+
+  const actions = Object.keys(ACTION_LABELS) as ActionId[];
+
+  return (
+    <>
+      <SettingsCard title={t('settings.keybindings')}>
+        <div className="space-y-1">
+          {actions.map((action) => {
+            const isRecording = recording === action;
+            const isDefault = keybindings[action] === DEFAULT_KEYBINDINGS[action];
+            return (
+              <div
+                key={action}
+                className="flex items-center justify-between py-1.5 px-1 rounded hover:bg-theme-hover transition-colors"
+              >
+                <span className="text-sm text-foreground">
+                  {t(ACTION_LABELS[action], action)}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+                      isRecording
+                        ? 'bg-theme-accent/20 text-theme-accent border border-theme-accent animate-pulse'
+                        : 'bg-background border border-theme-border text-foreground hover:border-theme-accent/50'
+                    }`}
+                    onClick={() => setRecording(isRecording ? null : action)}
+                  >
+                    {isRecording
+                      ? t('settings.pressKey', '...')
+                      : formatKeybinding(keybindings[action])}
+                  </button>
+                  {!isDefault && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setKeybinding(action, DEFAULT_KEYBINDINGS[action])}
+                      title={t('settings.resetDefault', '重置')}
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SettingsCard>
+      <button
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
+        onClick={resetKeybindings}
+      >
+        {t('settings.resetAllKeybindings', '重置所有快捷键')}
+      </button>
     </>
   );
 }

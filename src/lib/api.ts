@@ -201,6 +201,16 @@ export async function exportNoteBundle(path: string, savePath: string): Promise<
   return invoke<void>('export_note_bundle', { path, savePath });
 }
 
+/** Publish pre-rendered pages as a static HTML site */
+export interface SitePage {
+  path: string;
+  html: string;
+}
+
+export async function publishStaticSite(outputDir: string, pages: SitePage[], indexHtml: string): Promise<number> {
+  return invoke<number>('publish_static_site', { outputDir, pages, indexHtml });
+}
+
 /** Bulk import external .md files into the vault */
 export interface ImportResult {
   imported: number;

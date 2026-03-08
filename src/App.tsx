@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { useSettingsStore, initTabSync } from '@/store/settingsStore';
+import { useSettingsStore, initTabSync, type ActionId } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useNoteStore, flushAllPendingSaves, flushPendingSave } from '@/store/noteStore';
 import { AppShell } from '@/components/layout/AppShell';
@@ -18,6 +18,119 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { toast } from '@/hooks/useToast';
 import i18n from '@/i18n';
+
+// ── Keybinding matching engine ──────────────────────────────
+
+/**
+ * Parse a keybinding string like "Mod+Shift+F" and compare with an event.
+ * "Mod" = Cmd on Mac, Ctrl on other platforms.
+ */
+function matchKeybinding(
+  e: KeyboardEvent,
+  bindings: Record<ActionId, string>,
+): ActionId | null {
+  for (const [action, combo] of Object.entries(bindings)) {
+    if (keybindingMatches(e, combo)) {
+      return action as ActionId;
+    }
+  }
+  return null;
+}
+
+function keybindingMatches(e: KeyboardEvent, combo: string): boolean {
+  const parts = combo.split('+');
+  let needMod = false;
+  let needShift = false;
+  let needAlt = false;
+  let targetKey = '';
+
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (lower === 'mod') needMod = true;
+    else if (lower === 'shift') needShift = true;
+    else if (lower === 'alt') needAlt = true;
+    else targetKey = part;
+  }
+
+  const hasMod = e.metaKey || e.ctrlKey;
+  if (needMod !== hasMod) return false;
+  if (needShift !== e.shiftKey) return false;
+  if (needAlt !== e.altKey) return false;
+
+  // Compare key case-insensitively (for letter keys)
+  return e.key.toLowerCase() === targetKey.toLowerCase()
+    || e.key === targetKey; // For special keys like ArrowLeft, \\, etc.
+}
+
+function executeAction(action: ActionId) {
+  switch (action) {
+    case 'quickOpen':
+      useUIStore.getState().setQuickOpenOpen(true);
+      break;
+    case 'commandPalette':
+      useUIStore.getState().setCommandPaletteOpen(true);
+      break;
+    case 'globalSearch':
+      useUIStore.getState().setGlobalSearchOpen(true);
+      break;
+    case 'settings':
+      useUIStore.getState().setSettingsOpen(true);
+      break;
+    case 'toggleSidebar':
+      useUIStore.getState().toggleSidebar();
+      break;
+    case 'toggleSidePanel':
+      useUIStore.getState().toggleSidePanel();
+      break;
+    case 'closeTab': {
+      const active = useNoteStore.getState().activeTabPath;
+      if (active) {
+        flushPendingSave(active).then((outcome) => {
+          if (outcome === 'saved' || outcome === 'noop') {
+            useNoteStore.getState().closeTab(active);
+          }
+        });
+      }
+      break;
+    }
+    case 'prevTab': {
+      const { openTabs, activeTabPath } = useNoteStore.getState();
+      if (openTabs.length > 1 && activeTabPath) {
+        const idx = openTabs.findIndex((t) => t.path === activeTabPath);
+        const prev = idx > 0 ? idx - 1 : openTabs.length - 1;
+        useNoteStore.getState().setActiveTab(openTabs[prev].path);
+      }
+      break;
+    }
+    case 'nextTab': {
+      const { openTabs, activeTabPath } = useNoteStore.getState();
+      if (openTabs.length > 1 && activeTabPath) {
+        const idx = openTabs.findIndex((t) => t.path === activeTabPath);
+        const next = idx < openTabs.length - 1 ? idx + 1 : 0;
+        useNoteStore.getState().setActiveTab(openTabs[next].path);
+      }
+      break;
+    }
+    case 'newNote': {
+      if (useWorkspaceStore.getState().vaultPath) {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const name = `Untitled ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())}`;
+        createNote('', name)
+          .then(async (path) => {
+            const tree = await listTree('', useSettingsStore.getState().sortMode);
+            useWorkspaceStore.getState().setTree(tree);
+            useNoteStore.getState().openNote(path, name);
+          })
+          .catch(() => {});
+      }
+      break;
+    }
+    case 'toggleFocusMode':
+      useUIStore.getState().toggleFocusMode();
+      break;
+  }
+}
 
 function App() {
   const vaultPath = useWorkspaceStore((s) => s.vaultPath);
@@ -99,98 +212,15 @@ function App() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // Global keyboard shortcuts
+  // Global keyboard shortcuts — driven by user-configurable keybindings
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
+      const bindings = useSettingsStore.getState().keybindings;
+      const matched = matchKeybinding(e, bindings);
+      if (!matched) return;
 
-      // Cmd+P → Quick Open
-      if (mod && e.key === 'p' && !e.shiftKey) {
-        e.preventDefault();
-        useUIStore.getState().setQuickOpenOpen(true);
-      }
-
-      // Cmd+K → Command Palette
-      if (mod && e.key === 'k' && !e.shiftKey) {
-        e.preventDefault();
-        useUIStore.getState().setCommandPaletteOpen(true);
-      }
-
-      // Cmd+Shift+F → Global Search
-      if (mod && e.shiftKey && e.key === 'f') {
-        e.preventDefault();
-        useUIStore.getState().setGlobalSearchOpen(true);
-      }
-
-      // Cmd+, → Settings
-      if (mod && e.key === ',') {
-        e.preventDefault();
-        useUIStore.getState().setSettingsOpen(true);
-      }
-
-      // Cmd+B → Toggle Sidebar
-      if (mod && e.key === 'b' && !e.shiftKey) {
-        e.preventDefault();
-        useUIStore.getState().toggleSidebar();
-      }
-
-      // Cmd+\ → Toggle Side Panel
-      if (mod && e.key === '\\') {
-        e.preventDefault();
-        useUIStore.getState().toggleSidePanel();
-      }
-
-      // Cmd+W → Close Current Tab (flush first)
-      if (mod && e.key === 'w' && !e.shiftKey) {
-        e.preventDefault();
-        const active = useNoteStore.getState().activeTabPath;
-        if (active) {
-          flushPendingSave(active).then((outcome) => {
-            if (outcome === 'saved' || outcome === 'noop') {
-              useNoteStore.getState().closeTab(active);
-            }
-          });
-        }
-      }
-
-      // Cmd+Option+Left → Previous Tab
-      if (mod && e.altKey && e.key === 'ArrowLeft') {
-        e.preventDefault();
-        const { openTabs, activeTabPath } = useNoteStore.getState();
-        if (openTabs.length > 1 && activeTabPath) {
-          const idx = openTabs.findIndex((t) => t.path === activeTabPath);
-          const prev = idx > 0 ? idx - 1 : openTabs.length - 1;
-          useNoteStore.getState().setActiveTab(openTabs[prev].path);
-        }
-      }
-
-      // Cmd+Option+Right → Next Tab
-      if (mod && e.altKey && e.key === 'ArrowRight') {
-        e.preventDefault();
-        const { openTabs, activeTabPath } = useNoteStore.getState();
-        if (openTabs.length > 1 && activeTabPath) {
-          const idx = openTabs.findIndex((t) => t.path === activeTabPath);
-          const next = idx < openTabs.length - 1 ? idx + 1 : 0;
-          useNoteStore.getState().setActiveTab(openTabs[next].path);
-        }
-      }
-
-      // Cmd+N → New Note in vault root
-      if (mod && e.key === 'n' && !e.shiftKey) {
-        e.preventDefault();
-        if (useWorkspaceStore.getState().vaultPath) {
-          const now = new Date();
-          const pad = (n: number) => String(n).padStart(2, '0');
-          const name = `Untitled ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())}`;
-          createNote('', name)
-            .then(async (path) => {
-              const tree = await listTree('', useSettingsStore.getState().sortMode);
-              useWorkspaceStore.getState().setTree(tree);
-              useNoteStore.getState().openNote(path, name);
-            })
-            .catch(() => {});
-        }
-      }
+      e.preventDefault();
+      executeAction(matched);
     };
 
     window.addEventListener('keydown', handleKeyDown);

@@ -19,6 +19,7 @@ import { GraphView } from '@/components/graph/GraphView';
 import { FlashcardView } from '@/components/flashcard/FlashcardView';
 import { VideoPanel } from '@/components/video/VideoPanel';
 import { BrowserPanel } from '@/components/browser/BrowserPanel';
+import { PresentationView } from '@/components/presentation/PresentationView';
 import { listTree } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
 
@@ -30,6 +31,7 @@ export function AppShell() {
   const flashcardOpen = useUIStore((s) => s.flashcardOpen);
   const videoPanelOpen = useUIStore((s) => s.videoPanelOpen);
   const browserPanelOpen = useUIStore((s) => s.browserPanelOpen);
+  const presentationMode = useUIStore((s) => s.presentationMode);
   const focusMode = useUIStore((s) => s.focusMode);
 
   // Listen for file system changes from the Rust watcher
@@ -172,6 +174,9 @@ export function AppShell() {
 
       {/* ── 闪卡复习全屏覆盖层 ──────────────────────────── */}
       {flashcardOpen && <FlashcardView onClose={() => useUIStore.getState().setFlashcardOpen(false)} />}
+
+      {/* ── 演示模式全屏覆盖层 ──────────────────────────── */}
+      {presentationMode && <PresentationView onClose={() => useUIStore.getState().setPresentationMode(false)} />}
     </div>
   );
 }
@@ -253,6 +258,7 @@ function Titlebar() {
   const setGraphViewOpen = useUIStore((s) => s.setGraphViewOpen);
   const setGlobalSearchOpen = useUIStore((s) => s.setGlobalSearchOpen);
   const setFlashcardOpen = useUIStore((s) => s.setFlashcardOpen);
+  const setPresentationMode = useUIStore((s) => s.setPresentationMode);
   const setVideoPanelOpen = useUIStore((s) => s.setVideoPanelOpen);
   const setBrowserPanelOpen = useUIStore((s) => s.setBrowserPanelOpen);
 
@@ -317,6 +323,16 @@ function Titlebar() {
         aria-label={t('flashcard.title')}
       >
         <FlashcardIcon />
+      </button>
+
+      {/* ── 演示模式入口 ────────────────────────────────── */}
+      <button
+        onClick={() => setPresentationMode(true)}
+        className="p-1.5 rounded-md hover:bg-theme-hover transition-colors text-muted-foreground hover:text-foreground"
+        title={t('presentation.title')}
+        aria-label={t('presentation.title')}
+      >
+        <PresentationIcon />
       </button>
 
       {/* ── 视频面板入口 ────────────────────────────────── */}
@@ -467,6 +483,18 @@ function BrowserIcon() {
       <circle cx="12" cy="12" r="10" />
       <line x1="2" y1="12" x2="22" y2="12" />
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
+// Presentation/slideshow icon (play inside a screen)
+function PresentationIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <polygon points="10,7 16,10 10,13" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
     </svg>
   );
 }

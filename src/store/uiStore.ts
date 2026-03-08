@@ -30,6 +30,10 @@ interface UIState {
   commandPaletteOpen: boolean;
   /** Zen/focus mode — hides all chrome */
   focusMode: boolean;
+  /** Presentation/slide mode */
+  presentationMode: boolean;
+  /** Current slide index (0-based) */
+  currentSlide: number;
 
   toggleSidebar: () => void;
   toggleSidePanel: () => void;
@@ -48,6 +52,8 @@ interface UIState {
   setCommandPaletteOpen: (v: boolean) => void;
   setFocusMode: (v: boolean) => void;
   toggleFocusMode: () => void;
+  setPresentationMode: (v: boolean) => void;
+  setCurrentSlide: (n: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -65,6 +71,8 @@ export const useUIStore = create<UIState>((set) => ({
   browserPanelOpen: false,
   commandPaletteOpen: false,
   focusMode: false,
+  presentationMode: false,
+  currentSlide: 0,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
@@ -83,4 +91,6 @@ export const useUIStore = create<UIState>((set) => ({
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   setFocusMode: (v) => set({ focusMode: v }),
   toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode })),
+  setPresentationMode: (v) => set(v ? { presentationMode: true, currentSlide: 0 } : { presentationMode: false }),
+  setCurrentSlide: (n) => set({ currentSlide: n }),
 }));

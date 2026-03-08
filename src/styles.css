@@ -886,3 +886,93 @@ html {
 
 /* ── 任务列表 ──────────────────────────────────────────────── */
 .oxide-markdown-preview input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--theme-accent); }
+
+/* ═════════════════════════════════════════════════════════════
+   Print Styles — @media print
+   Hides all app chrome (sidebar, tabs, toolbar, titlebar, status bar)
+   and formats the editor/preview content for clean paper output.
+   ═════════════════════════════════════════════════════════════ */
+
+@media print {
+  /* Hide all app chrome — sidebar, titlebar, tab bar, toolbar, status bar, side panels */
+  [data-tauri-drag-region],
+  [data-panel-id="sidebar"],
+  [data-panel-id="side-panel"],
+  [data-panel-id="video-panel"],
+  [data-panel-id="browser-panel"],
+  [data-panel-group-id="oxidenote-layout"] > [data-panel-resize-handle-id] {
+    display: none !important;
+  }
+
+  /* Hide tab bar (first child flex row with h-9) and status bar (border-t row) */
+  [data-panel-id="editor"] > div > div:first-child,
+  [data-panel-id="editor"] > div > div:last-child {
+    display: none !important;
+  }
+
+  /* Reset layout — full-width content */
+  body, html {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Editor panel takes full width */
+  [data-panel-id="editor"] {
+    flex: 1 1 100% !important;
+  }
+
+  /* Preview content formatting */
+  .oxide-markdown-preview {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 12pt !important;
+    line-height: 1.6 !important;
+    color: black !important;
+    background: white !important;
+  }
+
+  .oxide-markdown-preview h1 { font-size: 20pt !important; }
+  .oxide-markdown-preview h2 { font-size: 16pt !important; }
+  .oxide-markdown-preview h3 { font-size: 13pt !important; }
+
+  .oxide-markdown-preview pre {
+    border: 1px solid #ccc !important;
+    background: #f8f8f8 !important;
+    page-break-inside: avoid;
+  }
+
+  .oxide-markdown-preview img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+
+  .oxide-markdown-preview table {
+    page-break-inside: avoid;
+  }
+
+  .oxide-markdown-preview blockquote {
+    border-left-color: #999 !important;
+    color: #333 !important;
+  }
+
+  .oxide-markdown-preview a {
+    color: black !important;
+    text-decoration: underline !important;
+  }
+
+  /* Mermaid diagrams: ensure they print visibly */
+  .oxide-markdown-preview .mermaid-container {
+    border-color: #ccc !important;
+    background: white !important;
+    page-break-inside: avoid;
+  }
+
+  /* Page break helpers: use `---` in markdown to force page breaks */
+  .oxide-markdown-preview hr {
+    page-break-after: always;
+    border: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+  }
+}

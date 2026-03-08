@@ -107,12 +107,22 @@
     "customCSSPlaceholder": "输入自定义 CSS 代码片段...",
     "techStack": "技术栈",
     "shortcuts": "快捷键",
+    "keybindings": "快捷键设置",
     "shortcutQuickOpen": "快速打开",
+    "shortcutCommandPalette": "命令面板",
     "shortcutGlobalSearch": "全局搜索",
     "shortcutSettings": "设置",
     "shortcutNewNote": "新建笔记",
     "shortcutSidebar": "切换侧栏",
+    "shortcutSidePanel": "切换侧面板",
+    "shortcutCloseTab": "关闭标签页",
+    "shortcutPrevTab": "上一个标签页",
+    "shortcutNextTab": "下一个标签页",
+    "shortcutFocusMode": "专注模式",
     "shortcutSave": "保存",
+    "pressKey": "请按下快捷键...",
+    "resetDefault": "重置为默认",
+    "resetAllKeybindings": "重置所有快捷键",
     "aboutDescription": "一个本地优先的 Markdown 知识库应用。",
     "aboutBuiltWith": "使用 Tauri 2 + React 构建，你的笔记始终保存在本地。",
     "templates": "笔记模板",
@@ -153,7 +163,8 @@
     "image": "图片",
     "horizontalRule": "水平分割线",
     "math": "数学公式",
-    "table": "插入表格"
+    "table": "插入表格",
+    "print": "打印"
   },
   "graph": {
     "title": "知识图谱",
@@ -425,5 +436,15 @@
   },
   "breadcrumb": {
     "root": "根目录"
+  },
+  "presentation": {
+    "title": "演示模式",
+    "exit": "退出",
+    "navigate": "切换幻灯片"
+  },
+  "publish": {
+    "title": "发布为静态站点",
+    "success": "成功发布 {{count}} 个页面",
+    "failed": "发布失败"
   }
 }

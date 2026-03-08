@@ -107,12 +107,22 @@
     "customCSSPlaceholder": "Enter custom CSS snippets...",
     "techStack": "Tech Stack",
     "shortcuts": "Shortcuts",
+    "keybindings": "Keybindings",
     "shortcutQuickOpen": "Quick Open",
+    "shortcutCommandPalette": "Command Palette",
     "shortcutGlobalSearch": "Global Search",
     "shortcutSettings": "Settings",
     "shortcutNewNote": "New Note",
     "shortcutSidebar": "Toggle Sidebar",
+    "shortcutSidePanel": "Toggle Side Panel",
+    "shortcutCloseTab": "Close Tab",
+    "shortcutPrevTab": "Previous Tab",
+    "shortcutNextTab": "Next Tab",
+    "shortcutFocusMode": "Focus Mode",
     "shortcutSave": "Save",
+    "pressKey": "Press a key...",
+    "resetDefault": "Reset to default",
+    "resetAllKeybindings": "Reset all keybindings",
     "aboutDescription": "A local-first Markdown knowledge vault.",
     "aboutBuiltWith": "Built with Tauri 2 + React. Your notes always stay local.",
     "templates": "Note Templates",
@@ -153,7 +163,8 @@
     "image": "Image",
     "horizontalRule": "Horizontal Rule",
     "math": "Math Formula",
-    "table": "Insert Table"
+    "table": "Insert Table",
+    "print": "Print"
   },
   "graph": {
     "title": "Knowledge Graph",
@@ -425,5 +436,15 @@
   },
   "breadcrumb": {
     "root": "Root"
+  },
+  "presentation": {
+    "title": "Presentation",
+    "exit": "Exit",
+    "navigate": "Navigate slides"
+  },
+  "publish": {
+    "title": "Publish as Static Site",
+    "success": "Published {{count}} pages",
+    "failed": "Publish failed"
   }
 }

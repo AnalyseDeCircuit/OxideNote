@@ -8,10 +8,12 @@
 import { useUIStore } from '@/store/uiStore';
 import { useNoteStore, flushPendingSave, flushAllPendingSaves } from '@/store/noteStore';
 import { getRandomNote, exportNoteBundle, bulkImportNotes, encryptNote, decryptNoteToDisk } from '@/lib/api';
+import { publishSite } from '@/lib/publishSite';
 import { save, open } from '@tauri-apps/plugin-dialog';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { toast } from '@/hooks/useToast';
 import { promptPassword, promptPasswordWithConfirm } from '@/components/ui/PasswordDialog';
+import i18n from '@/i18n';
 
 export interface AppCommand {
   id: string;
@@ -244,6 +246,23 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         decryptNoteToDisk(activeTab, password).catch((e) =>
           toast({ title: String(e), variant: 'error' })
         );
+      },
+    },
+    {
+      id: 'publish-site',
+      label: t('publish.title'),
+      category: edit,
+      action: async () => {
+        const tree = useWorkspaceStore.getState().tree;
+        if (tree.length === 0) return;
+        try {
+          const count = await publishSite(tree);
+          if (count > 0) {
+            toast({ title: i18n.t('publish.success', { count }) });
+          }
+        } catch (e) {
+          toast({ title: t('publish.failed'), description: String(e), variant: 'error' });
+        }
       },
     },
   ];

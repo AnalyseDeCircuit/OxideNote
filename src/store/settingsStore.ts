@@ -46,6 +46,41 @@ export type Density = 'compact' | 'comfortable' | 'spacious';
 export type Language = 'zh-CN' | 'en';
 export type SortMode = 'name' | 'modified';
 
+// ── Keybinding types ────────────────────────────────────────
+
+export type ActionId =
+  | 'quickOpen'
+  | 'commandPalette'
+  | 'globalSearch'
+  | 'settings'
+  | 'toggleSidebar'
+  | 'toggleSidePanel'
+  | 'closeTab'
+  | 'prevTab'
+  | 'nextTab'
+  | 'newNote'
+  | 'toggleFocusMode';
+
+export interface KeyBinding {
+  action: ActionId;
+  key: string; // e.g. "Mod+P", "Mod+Shift+F"
+}
+
+// Default keybindings — Mod = Cmd on Mac, Ctrl on Win/Linux
+export const DEFAULT_KEYBINDINGS: Record<ActionId, string> = {
+  quickOpen: 'Mod+P',
+  commandPalette: 'Mod+K',
+  globalSearch: 'Mod+Shift+F',
+  settings: 'Mod+,',
+  toggleSidebar: 'Mod+B',
+  toggleSidePanel: 'Mod+\\',
+  closeTab: 'Mod+W',
+  prevTab: 'Mod+Alt+ArrowLeft',
+  nextTab: 'Mod+Alt+ArrowRight',
+  newNote: 'Mod+N',
+  toggleFocusMode: 'Mod+Shift+Z',
+};
+
 interface TabSnapshot { path: string; title: string; }
 export interface NoteTemplate { name: string; content: string; }
 
@@ -73,6 +108,8 @@ interface SettingsState {
   noteTemplates: NoteTemplate[];
   // Custom CSS snippet injected at runtime
   customCSS: string;
+  // Custom keybindings (overrides per action)
+  keybindings: Record<ActionId, string>;
 
   // Actions
   setTheme: (theme: ThemeId) => void;
@@ -89,6 +126,8 @@ interface SettingsState {
   setSortMode: (mode: SortMode) => void;
   setNoteTemplates: (templates: NoteTemplate[]) => void;
   setCustomCSS: (css: string) => void;
+  setKeybinding: (action: ActionId, key: string) => void;
+  resetKeybindings: () => void;
 }
 
 const STORAGE_KEY = 'oxidenote-settings';
@@ -121,6 +160,7 @@ function persistSettings(state: SettingsState) {
     sortMode: state.sortMode,
     noteTemplates: state.noteTemplates,
     customCSS: state.customCSS,
+    keybindings: state.keybindings,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -145,6 +185,7 @@ export const useSettingsStore = create<SettingsState>()(
   sortMode: (persisted.sortMode as SortMode) ?? 'name',
   noteTemplates: persisted.noteTemplates ?? [],
   customCSS: persisted.customCSS ?? '',
+  keybindings: { ...DEFAULT_KEYBINDINGS, ...(persisted.keybindings as Partial<Record<ActionId, string>> ?? {}) },
 
   setTheme: (theme) => set({ theme }),
   setSortMode: (mode) => set({ sortMode: mode }),
@@ -164,6 +205,11 @@ export const useSettingsStore = create<SettingsState>()(
       return { recentVaults: [path, ...filtered].slice(0, 10) };
     }),
   setCustomCSS: (css) => set({ customCSS: css }),
+  setKeybinding: (action, key) =>
+    set((state) => ({
+      keybindings: { ...state.keybindings, [action]: key },
+    })),
+  resetKeybindings: () => set({ keybindings: { ...DEFAULT_KEYBINDINGS } }),
 })));
 
 // ─── Side-effect subscriptions ─────────────────────────────

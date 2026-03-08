@@ -19,7 +19,7 @@ import i18n from '@/i18n';
  * Build a minimal marked instance for HTML export.
  * Mirrors the MarkdownPreview pipeline minus interactive features.
  */
-function createHtmlMarked(): Marked {
+export function createHtmlMarked(): Marked {
   const marked = new Marked();
 
   // KaTeX block math
@@ -108,7 +108,7 @@ export async function exportToHtml(content: string, title: string): Promise<void
 /**
  * Wrap rendered content in a complete HTML document with embedded styles.
  */
-function buildHtmlDocument(title: string, bodyHtml: string): string {
+export function buildHtmlDocument(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -131,7 +131,7 @@ ${HTML_EXPORT_STYLES}
 
 // ─── Embedded styles for standalone HTML ────────────────────
 
-const HTML_EXPORT_STYLES = `
+export const HTML_EXPORT_STYLES = `
   :root {
     color-scheme: light;
   }
@@ -180,10 +180,10 @@ const HTML_EXPORT_STYLES = `
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-function escapeHtml(str: string): string {
+export function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sanitizeFilename(name: string): string {
+export function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'export';
 }
