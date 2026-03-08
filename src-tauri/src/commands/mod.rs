@@ -1,10 +1,13 @@
 pub mod attachment;
+pub mod bookmark;
 pub mod browser;
 pub mod crypto;
 pub mod export;
 pub mod health;
+pub mod history;
 pub mod import;
 pub mod note;
 pub mod search;
+pub mod trash;
 pub mod util;
 pub mod vault;

@@ -5,6 +5,7 @@ import { useUIStore, type EditorMode, type SidePanelTab } from '@/store/uiStore'
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { VaultTree } from '@/components/tree/VaultTree';
+import { BookmarkList } from '@/components/tree/BookmarkList';
 import { TabBar } from '@/components/editor/TabBar';
 import { NoteEditor } from '@/components/editor/NoteEditor';
 import { StatusBar } from '@/components/editor/StatusBar';
@@ -13,6 +14,7 @@ import { OutlinePanel } from '@/components/editor/OutlinePanel';
 import { TagPanel } from '@/components/editor/TagPanel';
 import { TaskPanel } from '@/components/editor/TaskPanel';
 import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
+import { HistoryPanel } from '@/components/editor/HistoryPanel';
 import { GraphView } from '@/components/graph/GraphView';
 import { FlashcardView } from '@/components/flashcard/FlashcardView';
 import { VideoPanel } from '@/components/video/VideoPanel';
@@ -105,6 +107,7 @@ export function AppShell() {
                 maxSize="35%"
                 className="bg-surface"
               >
+                <BookmarkList />
                 <VaultTree />
               </Panel>
               <Separator className="w-px bg-theme-border hover:bg-theme-accent transition-colors" />
@@ -208,6 +211,11 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
           onClick={() => setSidePanelTab('properties')}
           label={t('properties.title')}
         />
+        <TabButton
+          active={activeTab === 'history'}
+          onClick={() => setSidePanelTab('history')}
+          label={t('history.title')}
+        />
       </div>
       <div className="flex-1 min-h-0">
         {activeTab === 'backlinks' && <BacklinksPanel />}
@@ -215,6 +223,7 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
         {activeTab === 'tags' && <TagPanel />}
         {activeTab === 'tasks' && <TaskPanel onClose={() => useUIStore.getState().toggleSidePanel()} />}
         {activeTab === 'properties' && <PropertiesPanel />}
+        {activeTab === 'history' && <HistoryPanel />}
       </div>
     </div>
   );

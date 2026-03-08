@@ -107,6 +107,14 @@ pub async fn open_vault(
         tracing::warn!("Failed to start file watcher");
     }
 
+    // Clean up expired trash entries (>30 days) in background
+    {
+        let vault_clone = vault_path.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::commands::trash::cleanup_expired_trash(&vault_clone);
+        });
+    }
+
     Ok(path)
 }
 

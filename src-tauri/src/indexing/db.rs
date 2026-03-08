@@ -52,6 +52,14 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
         CREATE INDEX IF NOT EXISTS idx_aliases_note ON aliases(note_id);
+
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            id INTEGER PRIMARY KEY,
+            path TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_bookmarks_order ON bookmarks(sort_order);
         ",
     )?;
 

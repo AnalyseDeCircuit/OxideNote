@@ -12,6 +12,8 @@ import {
   RefreshCw,
   CalendarDays,
   ArrowUpDown,
+  Star,
+  Trash2,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -27,6 +29,9 @@ import {
   moveEntry,
   revealInFinder,
   searchByFilename,
+  addBookmark,
+  removeBookmark,
+  isBookmarked,
   type TreeNode,
 } from '@/lib/api';
 import {
@@ -40,12 +45,14 @@ import {
   ContextMenuSubContent,
 } from '@/components/ui/context-menu';
 import { toast } from '@/hooks/useToast';
+import { TrashView } from '@/components/tree/TrashView';
 
 export function VaultTree() {
   const { t } = useTranslation();
   const tree = useWorkspaceStore((s) => s.tree);
   const treeLoading = useWorkspaceStore((s) => s.treeLoading);
   const sortMode = useSettingsStore((s) => s.sortMode);
+  const [showTrash, setShowTrash] = useState(false);
 
   const handleToggleSort = useCallback(() => {
     const next = sortMode === 'name' ? 'modified' : 'name';
@@ -114,6 +121,11 @@ export function VaultTree() {
             title={sortMode === 'name' ? t('sidebar.sortByModified') : t('sidebar.sortByName')}
             onClick={handleToggleSort}
           />
+          <ToolbarButton
+            icon={<Trash2 size={15} />}
+            title={t('trash.title')}
+            onClick={() => setShowTrash(!showTrash)}
+          />
         </div>
       </div>
 
@@ -126,7 +138,10 @@ export function VaultTree() {
         />
       )}
 
-      {/* Tree */}
+      {/* Tree or Trash view */}
+      {showTrash ? (
+        <TrashView onClose={() => setShowTrash(false)} />
+      ) : (
       <div className="flex-1 overflow-y-auto py-1.5 px-1.5" role="tree" aria-label={t('sidebar.files')}>
         {treeLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -142,6 +157,7 @@ export function VaultTree() {
           ))
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -403,6 +419,26 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
         }}>
           {t('sidebar.revealInFinder')}
         </ContextMenuItem>
+        {!node.is_dir && node.name.endsWith('.md') && (
+          <ContextMenuItem onClick={async () => {
+            try {
+              const bookmarked = await isBookmarked(node.path);
+              if (bookmarked) {
+                await removeBookmark(node.path);
+                toast({ title: t('bookmarks.removed') });
+              } else {
+                await addBookmark(node.path);
+                toast({ title: t('bookmarks.added') });
+              }
+              window.dispatchEvent(new Event('bookmarks:changed'));
+            } catch (err) {
+              toast({ title: t('bookmarks.addFailed'), variant: 'error' });
+            }
+          }}>
+            <Star size={14} className="mr-2" />
+            {t('bookmarks.add')}
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={handleDelete} className="text-red-400">
           {t('sidebar.delete')}

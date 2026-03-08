@@ -380,5 +380,50 @@
     "fontFamily": "Font",
     "exportWithSettings": "Export with Settings",
     "preset": "Preset"
+  },
+  "history": {
+    "title": "Version History",
+    "empty": "No history yet",
+    "restore": "Restore this version",
+    "restoreConfirm": "Restore to this version? Current content will be overwritten.",
+    "restored": "Restored to historical version",
+    "restoreFailed": "Restore failed",
+    "loadFailed": "Failed to load history",
+    "diff": "View Diff",
+    "snapshot": "Snapshot",
+    "current": "Current",
+    "timeAgo": "{{time}} ago",
+    "bytes": "{{size}} bytes"
+  },
+  "trash": {
+    "title": "Trash",
+    "empty": "Trash is empty",
+    "restore": "Restore",
+    "restoreConfirm": "Restore \"{{name}}\"?",
+    "restored": "Restored: {{name}}",
+    "restoreFailed": "Restore failed",
+    "permanentDelete": "Delete Permanently",
+    "permanentDeleteConfirm": "Permanently delete \"{{name}}\"? This cannot be undone.",
+    "deleted": "Permanently deleted",
+    "deleteFailed": "Delete failed",
+    "emptyTrash": "Empty Trash",
+    "emptyTrashConfirm": "Empty the trash? All items will be permanently deleted.",
+    "emptied": "Trash emptied",
+    "emptyFailed": "Empty failed",
+    "retentionNote": "Trash items are automatically removed after 30 days",
+    "deletedAt": "Deleted {{time}}"
+  },
+  "bookmarks": {
+    "title": "Bookmarks",
+    "empty": "No bookmarks yet",
+    "add": "Add Bookmark",
+    "remove": "Remove Bookmark",
+    "added": "Added to bookmarks",
+    "removed": "Removed from bookmarks",
+    "addFailed": "Failed to add bookmark",
+    "removeFailed": "Failed to remove bookmark"
+  },
+  "breadcrumb": {
+    "root": "Root"
   }
 }

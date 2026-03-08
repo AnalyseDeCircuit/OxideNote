@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useNoteStore } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
+import { Breadcrumb } from '@/components/editor/Breadcrumb';
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -29,6 +30,8 @@ export function StatusBar() {
 
   return (
     <div className="h-7 flex items-center px-4 gap-4 border-t border-theme-border bg-surface text-[11px] text-muted-foreground select-none shrink-0">
+      <Breadcrumb path={activeTabPath} />
+      <span className="mx-1 text-muted-foreground/30">|</span>
       <span>
         Ln {cursorLine}, Col {cursorCol}
       </span>

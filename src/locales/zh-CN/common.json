@@ -380,5 +380,50 @@
     "fontFamily": "字体",
     "exportWithSettings": "使用排版设置导出",
     "preset": "预设"
+  },
+  "history": {
+    "title": "版本历史",
+    "empty": "暂无历史记录",
+    "restore": "恢复此版本",
+    "restoreConfirm": "确定要恢复到此版本吗？当前内容将被覆盖。",
+    "restored": "已恢复到历史版本",
+    "restoreFailed": "恢复失败",
+    "loadFailed": "加载历史记录失败",
+    "diff": "对比差异",
+    "snapshot": "快照",
+    "current": "当前版本",
+    "timeAgo": "{{time}}前",
+    "bytes": "{{size}} 字节"
+  },
+  "trash": {
+    "title": "回收站",
+    "empty": "回收站为空",
+    "restore": "恢复",
+    "restoreConfirm": "确定要恢复 \"{{name}}\" 吗？",
+    "restored": "已恢复: {{name}}",
+    "restoreFailed": "恢复失败",
+    "permanentDelete": "永久删除",
+    "permanentDeleteConfirm": "确定要永久删除 \"{{name}}\" 吗？此操作不可撤销。",
+    "deleted": "已永久删除",
+    "deleteFailed": "删除失败",
+    "emptyTrash": "清空回收站",
+    "emptyTrashConfirm": "确定要清空回收站吗？所有项目将被永久删除。",
+    "emptied": "回收站已清空",
+    "emptyFailed": "清空失败",
+    "retentionNote": "回收站项目将在 30 天后自动清理",
+    "deletedAt": "删除于 {{time}}"
+  },
+  "bookmarks": {
+    "title": "收藏夹",
+    "empty": "暂无收藏",
+    "add": "添加收藏",
+    "remove": "取消收藏",
+    "added": "已添加到收藏夹",
+    "removed": "已从收藏夹移除",
+    "addFailed": "添加收藏失败",
+    "removeFailed": "取消收藏失败"
+  },
+  "breadcrumb": {
+    "root": "根目录"
   }
 }

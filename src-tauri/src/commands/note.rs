@@ -128,6 +128,16 @@ pub async fn write_note(
         }
     }
 
+    // Save a history snapshot of the old content before overwriting.
+    // Only runs when the file already exists and has content.
+    if full_path.exists() {
+        if let Ok(old_content) = std::fs::read_to_string(&full_path) {
+            if let Err(e) = crate::commands::history::save_snapshot(base, &path, &old_content) {
+                tracing::warn!("Failed to save history snapshot for {}: {}", path, e);
+            }
+        }
+    }
+
     // Atomic write: write to .tmp then rename
     let tmp_path = full_path.with_extension("md.tmp");
     std::fs::write(&tmp_path, &content)
@@ -303,31 +313,16 @@ pub async fn rename_entry(
     Ok(rel_path)
 }
 
-/// Delete a file or folder (moves to system trash).
+/// Delete a file or folder (moves to application trash).
+/// Delegates to the soft_delete command for manifest-tracked trash.
 #[tauri::command]
 pub async fn delete_entry(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<(), NoteError> {
-    let vault_path = state.vault_path.read();
-    let base = vault_path.as_ref().ok_or(NoteError::NoVault)?;
-    let full_path = validate_inside_vault(base, &path)?;
-
-    if !full_path.exists() {
-        return Err(NoteError::NotFound(path));
-    }
-
-    // Prevent deleting the vault root
-    let canonical_base = base.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
-    if full_path == canonical_base {
-        return Err(NoteError::Io("Cannot delete vault root".into()));
-    }
-
-    trash::delete(&full_path)
-        .map_err(|e| NoteError::Io(format!("Trash failed: {}", e)))?;
-
-    tracing::info!("Deleted: {}", path);
-    Ok(())
+    crate::commands::trash::soft_delete(path, state)
+        .await
+        .map_err(|e| NoteError::Io(e.to_string()))
 }
 
 /// 移动文件或文件夹到新的父目录

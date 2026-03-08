@@ -59,6 +59,20 @@ pub fn run() {
             commands::crypto::encrypt_note,
             commands::crypto::decrypt_note,
             commands::crypto::decrypt_note_to_disk,
+            commands::history::list_note_history,
+            commands::history::read_history_snapshot,
+            commands::history::restore_snapshot,
+            commands::history::diff_with_current,
+            commands::trash::soft_delete,
+            commands::trash::list_trash,
+            commands::trash::restore_from_trash,
+            commands::trash::permanent_delete,
+            commands::trash::empty_trash,
+            commands::bookmark::add_bookmark,
+            commands::bookmark::remove_bookmark,
+            commands::bookmark::list_bookmarks,
+            commands::bookmark::reorder_bookmarks,
+            commands::bookmark::is_bookmarked,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

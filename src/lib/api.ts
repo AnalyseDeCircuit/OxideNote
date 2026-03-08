@@ -230,3 +230,105 @@ export async function decryptNote(path: string, password: string): Promise<strin
 export async function decryptNoteToDisk(path: string, password: string): Promise<void> {
   return invoke<void>('decrypt_note_to_disk', { path, password });
 }
+
+// ─── History commands ────────────────────────────────────────
+
+export interface HistoryEntry {
+  id: string;
+  timestamp: number;
+  size: number;
+}
+
+export interface DiffChunk {
+  tag: string;   // "equal" | "insert" | "delete"
+  value: string;
+}
+
+/** List all history snapshots for a note, newest first */
+export async function listNoteHistory(path: string): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>('list_note_history', { path });
+}
+
+/** Read the content of a specific history snapshot */
+export async function readHistorySnapshot(path: string, snapshotId: string): Promise<string> {
+  return invoke<string>('read_history_snapshot', { path, snapshotId });
+}
+
+/** Restore a snapshot to overwrite the current note */
+export async function restoreSnapshot(path: string, snapshotId: string): Promise<void> {
+  return invoke<void>('restore_snapshot', { path, snapshotId });
+}
+
+/** Compute line-level diff between a snapshot and the current content */
+export async function diffWithCurrent(path: string, snapshotId: string): Promise<DiffChunk[]> {
+  return invoke<DiffChunk[]>('diff_with_current', { path, snapshotId });
+}
+
+// ─── Trash commands ──────────────────────────────────────────
+
+export interface TrashEntry {
+  id: string;
+  original_path: string;
+  trash_path: string;
+  deleted_at: number;
+  size: number;
+  is_dir: boolean;
+}
+
+/** Move a file or directory to application trash */
+export async function softDelete(path: string): Promise<void> {
+  return invoke<void>('soft_delete', { path });
+}
+
+/** List all items currently in trash */
+export async function listTrash(): Promise<TrashEntry[]> {
+  return invoke<TrashEntry[]>('list_trash');
+}
+
+/** Restore a trashed item back to its original location */
+export async function restoreFromTrash(entryId: string): Promise<void> {
+  return invoke<void>('restore_from_trash', { entryId });
+}
+
+/** Permanently delete a single item from trash */
+export async function permanentDelete(entryId: string): Promise<void> {
+  return invoke<void>('permanent_delete', { entryId });
+}
+
+/** Empty the entire trash */
+export async function emptyTrash(): Promise<void> {
+  return invoke<void>('empty_trash');
+}
+
+// ─── Bookmark commands ───────────────────────────────────────
+
+export interface BookmarkEntry {
+  path: string;
+  created_at: string;
+  sort_order: number;
+}
+
+/** Add a note to bookmarks */
+export async function addBookmark(path: string): Promise<void> {
+  return invoke<void>('add_bookmark', { path });
+}
+
+/** Remove a note from bookmarks */
+export async function removeBookmark(path: string): Promise<void> {
+  return invoke<void>('remove_bookmark', { path });
+}
+
+/** List all bookmarks ordered by sort_order */
+export async function listBookmarks(): Promise<BookmarkEntry[]> {
+  return invoke<BookmarkEntry[]>('list_bookmarks');
+}
+
+/** Reorder bookmarks by providing the full path array in desired order */
+export async function reorderBookmarks(paths: string[]): Promise<void> {
+  return invoke<void>('reorder_bookmarks', { paths });
+}
+
+/** Check if a note is bookmarked */
+export async function isBookmarked(path: string): Promise<boolean> {
+  return invoke<boolean>('is_bookmarked', { path });
+}
