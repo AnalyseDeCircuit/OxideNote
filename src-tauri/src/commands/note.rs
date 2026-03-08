@@ -179,7 +179,11 @@ pub async fn create_note(
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
         )
     };
-    std::fs::write(&full_path, &default_content)
+    // 原子写入：先写 .tmp 再 rename，与 write_note 保持一致
+    let tmp_path = full_path.with_extension("md.tmp");
+    std::fs::write(&tmp_path, &default_content)
+        .map_err(|e| NoteError::Io(e.to_string()))?;
+    std::fs::rename(&tmp_path, &full_path)
         .map_err(|e| NoteError::Io(e.to_string()))?;
 
     let rel_path = full_path

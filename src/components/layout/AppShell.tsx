@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { listen } from '@tauri-apps/api/event';
 import { useUIStore, type EditorMode, type SidePanelTab } from '@/store/uiStore';
@@ -22,17 +22,25 @@ export function AppShell() {
   const graphViewOpen = useUIStore((s) => s.graphViewOpen);
 
   // Listen for file system changes from the Rust watcher
+  // Watcher 事件频繁（每次自动保存都触发），对 tree 刷新做 500ms debounce
+  // 避免大仓库下每次保存都执行完整的文件系统遍历
+  const treeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const unlisten = listen('vault:file-changed', async () => {
-      try {
-        const tree = await listTree('', useSettingsStore.getState().sortMode);
-        useWorkspaceStore.getState().setTree(tree);
-      } catch {
-        // Vault may have been removed
-      }
+      if (treeRefreshTimerRef.current) clearTimeout(treeRefreshTimerRef.current);
+      treeRefreshTimerRef.current = setTimeout(async () => {
+        treeRefreshTimerRef.current = null;
+        try {
+          const tree = await listTree('', useSettingsStore.getState().sortMode);
+          useWorkspaceStore.getState().setTree(tree);
+        } catch {
+          // Vault may have been removed
+        }
+      }, 500);
     });
 
     return () => {
+      if (treeRefreshTimerRef.current) clearTimeout(treeRefreshTimerRef.current);
       unlisten.then((fn) => fn());
     };
   }, []);

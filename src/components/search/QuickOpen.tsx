@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Command } from 'cmdk';
 import { useUIStore } from '@/store/uiStore';
 import { useNoteStore } from '@/store/noteStore';
@@ -12,22 +12,28 @@ export function QuickOpen() {
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useTranslation();
 
+  // 150ms debounce 避免每次按键都触发 IPC + DB 查询
   const doSearch = useCallback((value: string) => {
     setQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (!value.trim()) {
       setResults([]);
       return;
     }
-    searchByFilename(value)
-      .then(setResults)
-      .catch(() => setResults([]));
+    searchTimerRef.current = setTimeout(() => {
+      searchByFilename(value)
+        .then(setResults)
+        .catch(() => setResults([]));
+    }, 150);
   }, []);
 
   // Reset state when closing
   useEffect(() => {
     if (!open) {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       setQuery('');
       setResults([]);
     }

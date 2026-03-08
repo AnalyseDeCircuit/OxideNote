@@ -244,7 +244,10 @@ export function GraphView() {
 
     return () => {
       resizeObserver.disconnect();
-      // force-graph 没有 destroy 方法，清空容器即可
+      // 停止 force-graph 内部的 RAF 循环和 D3 力仿真，避免内存/CPU 泄漏
+      if (graphRef.current?._destructor) {
+        graphRef.current._destructor();
+      }
       el.innerHTML = '';
       graphRef.current = null;
     };

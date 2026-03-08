@@ -24,36 +24,36 @@ pub fn parse_note(content: &str, file_name: &str) -> ParsedNote {
     let mut result = ParsedNote::default();
 
     // Extract frontmatter with precise end detection
+    // 使用字节级搜索直接定位闭合 ---，正确处理 \n 和 \r\n 两种换行
     let body = if content.starts_with("---") {
-        // Find closing --- that sits on its own line
         let after_open = &content[3..];
-        let mut found_end = None;
-        for (i, line) in after_open.lines().enumerate() {
-            if i == 0 && line.is_empty() {
-                // first line after opening --- might be empty, skip
-                continue;
+        // 尝试在原始字节流中找到行首的 ---
+        // 支持 LF (\n---\n) 和 CRLF (\r\n---\r\n) 两种换行格式
+        let (end_pos, skip_len) = if let Some(pos) = after_open.find("\n---\n") {
+            (pos + 1, pos + 1 + 3 + 1) // +1 跳过 \n，3 是 "---"，+1 跳过尾部 \n
+        } else if let Some(pos) = after_open.find("\r\n---\r\n") {
+            (pos + 2, pos + 2 + 3 + 2) // +2 跳过 \r\n
+        } else if let Some(pos) = after_open.find("\n---\r\n") {
+            (pos + 1, pos + 1 + 3 + 2) // 混合换行：前 \n，后 \r\n
+        } else {
+            // 末尾情况：文件以 \n--- 结尾但没有尾部换行
+            if let Some(pos) = after_open.find("\n---") {
+                let remainder = &after_open[pos + 1 + 3..];
+                if remainder.is_empty() || remainder == "\n" || remainder == "\r\n" {
+                    (pos + 1, after_open.len())
+                } else {
+                    (0, 0) // 不是合法的闭合标记
+                }
+            } else {
+                (0, 0)
             }
-            if i == 0 {
-                // first non-empty line after ---, just continue
-                continue;
-            }
-            if line.trim() == "---" {
-                // byte offset: sum of chars up to this line
-                let byte_offset = after_open[..].lines()
-                    .take(i)
-                    .map(|l| l.len() + 1) // +1 for \n
-                    .sum::<usize>();
-                found_end = Some(byte_offset);
-                break;
-            }
-        }
-        if let Some(end_offset) = found_end {
-            let yaml_str = after_open[..end_offset].trim();
+        };
+
+        if skip_len > 0 {
+            let yaml_str = after_open[..end_pos].trim();
             parse_frontmatter(yaml_str, &mut result);
-            let body_start = end_offset + "---".len();
-            let remaining = &after_open[body_start..];
-            // Skip leading newline after closing ---
-            remaining.strip_prefix('\n').unwrap_or(remaining)
+            let remaining = &after_open[skip_len..];
+            remaining
         } else {
             content
         }

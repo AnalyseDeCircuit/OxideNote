@@ -40,38 +40,54 @@ pub async fn open_vault(
     }
 
     tracing::info!("Opening vault at: {}", path);
+
+    // 切换 vault 前先停掉旧 watcher，防止旧 watcher 持有新 DB 连接导致跨 vault 幽灵索引
+    *state.watcher.lock() = None;
+
     *state.vault_path.write() = Some(vault_path.clone());
 
     // Initialize index database (write connection)
     match crate::indexing::db::open_db(&vault_path) {
         Ok(conn) => {
+            *state.db.lock() = Some(conn);
+
             // Open a second connection for read-only queries (avoids blocking writes)
             match crate::indexing::db::open_db(&vault_path) {
                 Ok(read_conn) => {
                     *state.read_db.lock() = Some(read_conn);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to open read connection, reads will share write conn: {}", e);
+                    // 读连接打开失败时，回退共享写连接，确保搜索/反链/图谱仍可用
+                    tracing::warn!("Failed to open read connection, falling back to write conn: {}", e);
+                    *state.read_db.lock() = Some(
+                        crate::indexing::db::open_db(&vault_path)
+                            .unwrap_or_else(|_| {
+                                // 极端情况：连第三次打开都失败，则无法 fallback
+                                // read_db 保持 None，后续读命令会返回 NoIndex
+                                panic!("Cannot open any DB connection for vault");
+                            })
+                    );
                 }
             }
 
-            *state.db.lock() = Some(conn);
             tracing::info!("Index database initialized (read+write connections)");
 
-            // Scan vault in background to avoid blocking the UI
+            // 后台扫描：从 Mutex 中取出连接直接传递给后台任务，
+            // 避免整个扫描期间持锁阻塞 watcher 增量索引
+            let scan_conn = state.db.lock().take();
             let db_arc = state.db.clone();
             let vault_clone = vault_path.clone();
             let handle = app_handle.clone();
             tokio::task::spawn_blocking(move || {
-                let db_guard = db_arc.lock();
-                if let Some(conn) = db_guard.as_ref() {
-                    if let Err(e) = crate::indexing::scanner::scan_vault(&vault_clone, conn) {
+                if let Some(conn) = scan_conn {
+                    if let Err(e) = crate::indexing::scanner::scan_vault(&vault_clone, &conn) {
                         tracing::warn!("Vault scan failed: {}", e);
                     } else {
                         tracing::info!("Vault scan completed");
                     }
+                    // 扫描完毕，将连接放回 Mutex 供后续写操作使用
+                    *db_arc.lock() = Some(conn);
                 }
-                drop(db_guard);
                 let _ = handle.emit("vault:index-ready", ());
             });
         }
