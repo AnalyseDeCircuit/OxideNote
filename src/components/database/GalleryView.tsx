@@ -14,6 +14,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DatabaseSchema, Column, Row } from '@/lib/database';
 import { updateCell, deleteRow, sortRows, filterRows } from '@/lib/database';
+import { FileText } from 'lucide-react';
 
 interface GalleryViewProps {
   schema: DatabaseSchema;
@@ -127,7 +128,7 @@ function GalleryCard({ row, titleCol, coverCol, metaCols, onCellChange, onDelete
         </div>
       ) : (
         <div className="h-20 bg-surface flex items-center justify-center">
-          <span className="text-2xl text-muted-foreground/30">📄</span>
+          <FileText size={24} className="text-muted-foreground/30" />
         </div>
       )}
 

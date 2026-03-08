@@ -143,9 +143,9 @@ export async function listAllTags(): Promise<TagCount[]> {
   return invoke<TagCount[]>('list_all_tags');
 }
 
-/** 按标签搜索笔记 */
-export async function searchByTag(tag: string): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>('search_by_tag', { tag });
+/** 按标签搜索笔记，可选层级匹配 */
+export async function searchByTag(tag: string, hierarchical?: boolean): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('search_by_tag', { tag, hierarchical: hierarchical ?? false });
 }
 
 // ─── File management commands ────────────────────────────────
@@ -203,6 +203,8 @@ export interface TaskItem {
   line: number;
   text: string;
   done: boolean;
+  due_date: string | null;
+  priority: string | null;
 }
 
 /** List all task items (- [ ] / - [x]) across the vault */
@@ -228,6 +230,11 @@ export interface SitePage {
 
 export async function publishStaticSite(outputDir: string, pages: SitePage[], indexHtml: string): Promise<number> {
   return invoke<number>('publish_static_site', { outputDir, pages, indexHtml });
+}
+
+/** Write HTML to a temp file with images inlined and open in system browser for printing */
+export async function printHtml(htmlContent: string, notePath: string): Promise<void> {
+  return invoke<void>('print_html', { htmlContent, notePath });
 }
 
 /** Bulk import external .md files into the vault */
@@ -367,4 +374,31 @@ export async function isBookmarked(path: string): Promise<boolean> {
 /** Clip a web page: fetch HTML, convert to Markdown, save as a note */
 export async function clipWebpage(url: string, folder: string = ''): Promise<string> {
   return invoke<string>('clip_webpage', { url, folder });
+}
+
+// ─── Advanced Search ────────────────────────────────────────
+
+/** Advanced search combining FTS, tag, and path filters */
+export async function advancedSearch(
+  query?: string,
+  tagFilter?: string,
+  pathFilter?: string,
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('advanced_search', {
+    query: query ?? null,
+    tagFilter: tagFilter ?? null,
+    pathFilter: pathFilter ?? null,
+  });
+}
+
+// ─── PDF Annotation Persistence ─────────────────────────────
+
+/** Save PDF annotations via backend (bypasses note pipeline) */
+export async function savePdfAnnotations(pdfPath: string, annotationsJson: string): Promise<void> {
+  return invoke<void>('save_pdf_annotations', { pdfPath, annotationsJson });
+}
+
+/** Load PDF annotations from backend storage */
+export async function loadPdfAnnotations(pdfPath: string): Promise<string> {
+  return invoke<string>('load_pdf_annotations', { pdfPath });
 }

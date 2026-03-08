@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Trash2, RotateCcw, XCircle, Folder, FileText } from 'lucide-react';
+import { Trash2, RotateCcw, XCircle, Folder, FileText, X } from 'lucide-react';
 import {
   listTrash,
   restoreFromTrash,
@@ -119,7 +119,7 @@ export function TrashView({ onClose }: TrashViewProps) {
             className="text-xs px-2 py-1 rounded hover:bg-theme-hover text-muted-foreground transition-colors"
             onClick={onClose}
           >
-            ✕
+            <X size={14} />
           </button>
         </div>
       </div>

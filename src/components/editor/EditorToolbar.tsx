@@ -42,7 +42,9 @@ import {
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import { exportToPdf } from '@/lib/exportPdf';
-import { exportToHtml } from '@/lib/exportHtml';
+import { exportToHtml, createHtmlMarked, buildHtmlDocument } from '@/lib/exportHtml';
+import { printHtml } from '@/lib/api';
+import DOMPurify from 'dompurify';
 import { isSpeechRecognitionSupported, startVoiceInput, stopVoiceInput } from '@/lib/speechRecognition';
 import { toast } from '@/hooks/useToast';
 import { TypesettingDialog } from '@/components/typesetting/TypesettingDialog';
@@ -211,6 +213,36 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   };
 
+  // ── Print via system browser ──────────────────────────────
+  // window.print() does not work in Tauri WebView. Instead we
+  // render Markdown → sanitized HTML, then call the Rust backend
+  // to write a temp file and open it in the system browser with
+  // an auto-print script.
+  const handlePrint = useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const content = view.state.doc.toString();
+    const activeTab = useNoteStore.getState().activeTabPath;
+    if (!activeTab) return;
+    const title = activeTab.replace(/\.md$/, '').split('/').pop() || 'print';
+
+    try {
+      const marked = createHtmlMarked();
+      const rawHtml = await marked.parse(content);
+      // Sanitize to prevent XSS from untrusted Markdown content
+      const cleanHtml = DOMPurify.sanitize(rawHtml, {
+        ADD_TAGS: ['math-block'],
+        ADD_ATTR: ['displaystyle'],
+      });
+      const fullHtml = buildHtmlDocument(title, cleanHtml);
+      // Delegate to Rust: inlines local images as data URIs,
+      // writes temp file and opens in system browser
+      await printHtml(fullHtml, activeTab);
+    } catch (err) {
+      toast({ title: t('toolbar.printFailed'), description: String(err), variant: 'error' });
+    }
+  }, [viewRef, t]);
+
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
@@ -256,7 +288,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       <ToolbarGroup>
         <ToolbarBtn icon={<FileDown size={14} />} title={t('pdf.export')} onClick={handleExportPdf} />
         <ToolbarBtn icon={<FileCode size={14} />} title={t('export.htmlExport')} onClick={handleExportHtml} />
-        <ToolbarBtn icon={<Printer size={14} />} title={t('toolbar.print')} onClick={() => window.print()} />
+        <ToolbarBtn icon={<Printer size={14} />} title={t('toolbar.print')} onClick={handlePrint} />
         <ToolbarBtn icon={<Settings2 size={14} />} title={t('typesetting.title')} onClick={() => setTypesettingOpen(true)} />
         <ToolbarBtn
           icon={isListening ? <MicOff size={14} /> : <Mic size={14} />}

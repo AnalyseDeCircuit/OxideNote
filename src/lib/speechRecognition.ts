@@ -4,6 +4,10 @@
  * Uses the Web Speech API (SpeechRecognition) when available.
  * Falls back gracefully with a "not supported" error on platforms
  * where the API is unavailable (e.g. Tauri WebKit on macOS).
+ *
+ * Note: On macOS WebKit, the SpeechRecognition constructor may exist
+ * but the service is blocked, resulting in a "service-not-allowed"
+ * error. We treat this the same as "not supported".
  */
 
 // ── Type declarations for Web Speech API ────────────────────
@@ -115,7 +119,14 @@ export function startVoiceInput(
   };
 
   recognition.onerror = (event) => {
-    callbacks.onError(event.error);
+    // "service-not-allowed" and "not-allowed" mean the platform
+    // does not permit speech recognition (common in Tauri WebKit).
+    // Treat these as "not supported" for a clearer user message.
+    if (event.error === 'service-not-allowed' || event.error === 'not-allowed') {
+      callbacks.onError('not_supported');
+    } else {
+      callbacks.onError(event.error);
+    }
   };
 
   recognition.onend = () => {
@@ -124,7 +135,16 @@ export function startVoiceInput(
   };
 
   activeRecognition = recognition;
-  recognition.start();
+
+  // recognition.start() may throw synchronously on platforms where
+  // the speech service is blocked (e.g. Tauri WebKit on macOS).
+  try {
+    recognition.start();
+  } catch {
+    activeRecognition = null;
+    callbacks.onError('not_supported');
+    return () => {};
+  }
 
   return () => {
     recognition.stop();

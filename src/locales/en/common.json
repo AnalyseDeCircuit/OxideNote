@@ -141,7 +141,11 @@
     "searching": "Searching...",
     "noResults": "No matching results found",
     "noContentResults": "No matching content found",
-    "recent": "Recent"
+    "recent": "Recent",
+    "advancedPlaceholder": "Search (supports tag: and path: prefixes)",
+    "syntaxHint": "Syntax: tag:name path:folder/ keyword",
+    "filterTag": "Tag",
+    "filterPath": "Path"
   },
   "outline": {
     "title": "Outline",
@@ -164,7 +168,8 @@
     "horizontalRule": "Horizontal Rule",
     "math": "Math Formula",
     "table": "Insert Table",
-    "print": "Print"
+    "print": "Print",
+    "printFailed": "Print failed"
   },
   "graph": {
     "title": "Knowledge Graph",
@@ -218,7 +223,7 @@
     "brokenLinks": "Broken links",
     "brokenLinksCount": "{{count}} WikiLinks point to non-existent notes",
     "none": "None",
-    "allGood": "✓ Vault is healthy",
+    "allGood": "Vault is healthy",
     "repair": "Repair"
   },
   "tags": {
@@ -231,7 +236,16 @@
     "pending": "Pending",
     "done": "Done",
     "showCompleted": "Show completed",
-    "empty": "No tasks found"
+    "empty": "No tasks found",
+    "listView": "List view",
+    "kanbanView": "Kanban view",
+    "sortByFile": "Sort by file",
+    "sortByPriority": "Sort by priority",
+    "sortByDueDate": "Sort by due date",
+    "priorityHigh": "High priority",
+    "priorityMedium": "Medium priority",
+    "priorityLow": "Low priority",
+    "noPriority": "No priority"
   },
   "properties": {
     "title": "Properties",
@@ -475,6 +489,12 @@
     "saving": "Saving...",
     "saved": "Canvas saved",
     "saveFailed": "Failed to save canvas",
-    "close": "Close"
+    "close": "Close",
+    "selectTool": "Select tool",
+    "drawTool": "Draw tool",
+    "addCard": "Add card",
+    "noteCard": "Note card",
+    "openNote": "Open note",
+    "cardPlaceholder": "Type here..."
   }
 }

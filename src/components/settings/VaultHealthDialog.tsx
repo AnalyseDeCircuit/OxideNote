@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Loader2, Check, AlertTriangle } from 'lucide-react';
 
 export function VaultHealthDialog() {
   const { t } = useTranslation();
@@ -166,7 +166,8 @@ export function VaultHealthDialog() {
               )}
 
               {isHealthy && (
-                <div className="text-green-500 text-xs font-medium pt-1">
+                <div className="text-green-500 text-xs font-medium pt-1 flex items-center gap-1">
+                  <Check size={12} />
                   {t('health.allGood')}
                 </div>
               )}
@@ -194,7 +195,7 @@ function StatusRow({ ok, label, detail }: { ok: boolean; label: string; detail: 
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className={ok ? 'text-green-500' : 'text-yellow-500'}>
-        {ok ? '✓' : '⚠'}
+        {ok ? <Check size={12} /> : <AlertTriangle size={12} />}
       </span>
       <span className="font-medium text-foreground">{label}</span>
       <span className="text-muted-foreground">{detail}</span>

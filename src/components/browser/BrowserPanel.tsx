@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { openBrowserWindow, clipWebpage } from '@/lib/api';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { toast } from '@/hooks/useToast';
+import { Loader2, ClipboardCopy, X } from 'lucide-react';
 
 interface BrowserPanelProps {
   onClose: () => void;
@@ -84,7 +85,7 @@ export function BrowserPanel({ onClose }: BrowserPanelProps) {
           onClick={onClose}
           className="text-muted-foreground hover:text-foreground text-xs"
         >
-          ✕
+          <X size={14} />
         </button>
       </div>
 
@@ -120,7 +121,7 @@ export function BrowserPanel({ onClose }: BrowserPanelProps) {
           className="px-2 py-1 text-xs rounded border border-theme-border hover:bg-theme-hover text-muted-foreground disabled:opacity-40"
           title={t('browser.clip')}
         >
-          {clipping ? '⏳' : '📋'}
+          {clipping ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCopy size={14} />}
         </button>
       </div>
 

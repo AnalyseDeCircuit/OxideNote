@@ -2,9 +2,9 @@
  * AudioRecorder — In-app audio recording component
  *
  * Uses the browser's MediaRecorder API to capture audio from the
- * user's microphone. Saves recordings as `.webm` attachments via
- * the existing `saveAttachment()` API, then inserts a Markdown
- * audio embed link at the current cursor position.
+ * user's microphone. Detects the best supported audio mimeType
+ * at runtime (webm → mp4 → ogg → default) to work across
+ * different WebView engines (Chromium, WebKit, etc.).
  *
  * States: idle → recording → processing → idle
  */
@@ -13,6 +13,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { saveAttachment } from '@/lib/api';
 import { toast } from '@/hooks/useToast';
+import { Mic, Square } from 'lucide-react';
 
 interface AudioRecorderProps {
   /** Called with the relative path of the saved audio attachment */
@@ -20,6 +21,37 @@ interface AudioRecorderProps {
 }
 
 type RecordingState = 'idle' | 'recording' | 'processing';
+
+// Preferred mimeType candidates in order of preference
+const MIME_CANDIDATES: { mimeType: string; extension: string }[] = [
+  { mimeType: 'audio/webm;codecs=opus', extension: 'webm' },
+  { mimeType: 'audio/webm', extension: 'webm' },
+  { mimeType: 'audio/mp4', extension: 'm4a' },
+  { mimeType: 'audio/ogg;codecs=opus', extension: 'ogg' },
+  { mimeType: 'audio/ogg', extension: 'ogg' },
+];
+
+/** Detect the best audio format supported by this WebView engine */
+function detectAudioFormat(): { mimeType: string | null; extension: string } {
+  if (typeof MediaRecorder === 'undefined') {
+    return { mimeType: null, extension: 'webm' };
+  }
+  for (const candidate of MIME_CANDIDATES) {
+    if (MediaRecorder.isTypeSupported(candidate.mimeType)) {
+      return candidate;
+    }
+  }
+  // Let the browser choose its default if nothing matched
+  return { mimeType: null, extension: 'webm' };
+}
+
+/** Map a MIME type string to a file extension, with a fallback */
+function extensionForMime(mime: string, fallback: string): string {
+  if (mime.includes('mp4')) return 'm4a';
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('webm')) return 'webm';
+  return fallback;
+}
 
 export function AudioRecorder({ onSaved }: AudioRecorderProps) {
   const { t } = useTranslation();
@@ -29,6 +61,8 @@ export function AudioRecorder({ onSaved }: AudioRecorderProps) {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const streamRef = useRef<MediaStream | null>(null);
+  const actualMimeRef = useRef<string>('audio/webm');
+  const actualExtRef = useRef<string>('webm');
 
   // Cleanup on unmount: stop recording, release microphone, clear timer
   useEffect(() => {
@@ -49,7 +83,17 @@ export function AudioRecorder({ onSaved }: AudioRecorderProps) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      // Detect the best supported audio format for this platform
+      const { mimeType, extension } = detectAudioFormat();
+
+      const recorderOptions: MediaRecorderOptions = {};
+      if (mimeType) recorderOptions.mimeType = mimeType;
+
+      const recorder = new MediaRecorder(stream, recorderOptions);
+      // Store the actual mimeType chosen by the recorder, then derive
+      // the file extension from it to avoid extension/format mismatch
+      actualMimeRef.current = recorder.mimeType || mimeType || 'audio/webm';
+      actualExtRef.current = extensionForMime(actualMimeRef.current, extension);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
@@ -66,15 +110,15 @@ export function AudioRecorder({ onSaved }: AudioRecorderProps) {
         streamRef.current = null;
 
         // Build the audio blob and convert to base64
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: actualMimeRef.current });
         const buffer = await blob.arrayBuffer();
         const bytes = new Uint8Array(buffer);
         const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
         const base64 = btoa(binary);
 
-        // Save via attachment API
+        // Save via attachment API with the correct file extension
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `recording-${timestamp}.webm`;
+        const filename = `recording-${timestamp}.${actualExtRef.current}`;
         try {
           const relPath = await saveAttachment(base64, filename);
           onSaved(relPath);
@@ -122,7 +166,7 @@ export function AudioRecorder({ onSaved }: AudioRecorderProps) {
           className="px-2 py-1 text-xs rounded border border-theme-border hover:bg-theme-hover text-muted-foreground flex items-center gap-1"
           title={t('audio.startRecording')}
         >
-          🎙️ {t('audio.record')}
+          <Mic size={14} className="shrink-0" /> {t('audio.record')}
         </button>
       )}
 
@@ -135,7 +179,7 @@ export function AudioRecorder({ onSaved }: AudioRecorderProps) {
             className="px-2 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
             title={t('audio.stopRecording')}
           >
-            ⏹ {t('audio.stop')}
+            <Square size={12} className="shrink-0 fill-current" /> {t('audio.stop')}
           </button>
         </>
       )}

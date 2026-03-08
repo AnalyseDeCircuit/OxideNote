@@ -141,7 +141,11 @@
     "searching": "搜索中...",
     "noResults": "未找到匹配的结果",
     "noContentResults": "未找到匹配内容",
-    "recent": "最近打开"
+    "recent": "最近打开",
+    "advancedPlaceholder": "搜索 (支持 tag:标签 path:路径 前缀)",
+    "syntaxHint": "语法: tag:标签 path:路径/ 关键词",
+    "filterTag": "标签",
+    "filterPath": "路径"
   },
   "outline": {
     "title": "大纲",
@@ -164,7 +168,8 @@
     "horizontalRule": "水平分割线",
     "math": "数学公式",
     "table": "插入表格",
-    "print": "打印"
+    "print": "打印",
+    "printFailed": "打印失败"
   },
   "graph": {
     "title": "知识图谱",
@@ -218,7 +223,7 @@
     "brokenLinks": "断裂链接",
     "brokenLinksCount": "{{count}} 个 WikiLink 指向不存在的笔记",
     "none": "无",
-    "allGood": "✓ 知识库状态良好",
+    "allGood": "知识库状态良好",
     "repair": "修复"
   },
   "tags": {
@@ -231,7 +236,16 @@
     "pending": "待办",
     "done": "已完成",
     "showCompleted": "显示已完成",
-    "empty": "暂无任务"
+    "empty": "暂无任务",
+    "listView": "列表视图",
+    "kanbanView": "看板视图",
+    "sortByFile": "按文件排序",
+    "sortByPriority": "按优先级排序",
+    "sortByDueDate": "按截止日期排序",
+    "priorityHigh": "高优先级",
+    "priorityMedium": "中优先级",
+    "priorityLow": "低优先级",
+    "noPriority": "无优先级"
   },
   "properties": {
     "title": "属性",
@@ -475,6 +489,12 @@
     "saving": "保存中...",
     "saved": "画布已保存",
     "saveFailed": "保存画布失败",
-    "close": "关闭"
+    "close": "关闭",
+    "selectTool": "选择工具",
+    "drawTool": "画笔工具",
+    "addCard": "添加卡片",
+    "noteCard": "笔记卡片",
+    "openNote": "打开笔记",
+    "cardPlaceholder": "在此输入内容..."
   }
 }

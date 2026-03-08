@@ -83,3 +83,72 @@ pub async fn save_attachment(
     tracing::info!("Saved attachment: {}", rel_path);
     Ok(rel_path)
 }
+
+// ============================================================================
+// PDF Annotation Persistence
+// ============================================================================
+
+/// Save PDF annotation data as a JSON file under `.oxidenote/annotations/`.
+/// Uses a hash of the PDF path as the filename to avoid conflicts.
+#[tauri::command]
+pub async fn save_pdf_annotations(
+    pdf_path: String,
+    annotations_json: String,
+    state: State<'_, AppState>,
+) -> Result<(), AttachmentError> {
+    let vault_path = state.vault_path.read();
+    let base = vault_path.as_ref().ok_or(AttachmentError::NoVault)?;
+
+    let annotations_dir = base.join(".oxidenote").join("annotations");
+    std::fs::create_dir_all(&annotations_dir)
+        .map_err(|e| AttachmentError::Io(e.to_string()))?;
+
+    let hash = hash_path(&pdf_path);
+    let file_path = annotations_dir.join(format!("{}.json", hash));
+
+    // Validate JSON before writing to prevent storing corrupt data
+    serde_json::from_str::<serde_json::Value>(&annotations_json)
+        .map_err(|_| AttachmentError::InvalidData)?;
+
+    // Atomic write: write to tmp file then rename, to avoid corrupt data on crash
+    let tmp_path = file_path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, annotations_json.as_bytes())
+        .map_err(|e| AttachmentError::Io(e.to_string()))?;
+    std::fs::rename(&tmp_path, &file_path)
+        .map_err(|e| AttachmentError::Io(e.to_string()))?;
+
+    tracing::debug!("Saved PDF annotations for: {}", pdf_path);
+    Ok(())
+}
+
+/// Load PDF annotation data from `.oxidenote/annotations/`.
+/// Returns an empty JSON array if no annotations exist.
+#[tauri::command]
+pub async fn load_pdf_annotations(
+    pdf_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, AttachmentError> {
+    let vault_path = state.vault_path.read();
+    let base = vault_path.as_ref().ok_or(AttachmentError::NoVault)?;
+
+    let hash = hash_path(&pdf_path);
+    let file_path = base.join(".oxidenote").join("annotations").join(format!("{}.json", hash));
+
+    if file_path.exists() {
+        std::fs::read_to_string(&file_path)
+            .map_err(|e| AttachmentError::Io(e.to_string()))
+    } else {
+        Ok(String::from("{\"annotations\":[]}"))
+    }
+}
+
+/// Generate a deterministic hash for a file path to use as annotation filename.
+/// Uses SHA-256 (truncated to 32 hex chars) for stability across Rust versions.
+fn hash_path(path: &str) -> String {
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(path.as_bytes());
+    let result = hasher.finalize();
+    // Use first 16 bytes (32 hex chars) for a stable, collision-resistant ID
+    result.iter().take(16).map(|b| format!("{:02x}", b)).collect()
+}

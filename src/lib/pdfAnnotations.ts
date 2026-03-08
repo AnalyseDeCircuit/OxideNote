@@ -1,13 +1,14 @@
 /**
  * PDF Annotation Data Model & Persistence
  *
- * Annotations are stored per-PDF in:
+ * Annotations are stored per-PDF by the Rust backend in:
  *   <vault>/.oxidenote/annotations/<hash-of-path>.json
  *
- * Supports highlight and underline types with optional notes.
+ * Uses dedicated backend commands for persistence
+ * (bypasses the note read/write pipeline).
  */
 
-import { readNote, writeNote } from '@/lib/api';
+import { savePdfAnnotations, loadPdfAnnotations } from '@/lib/api';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -36,26 +37,11 @@ interface AnnotationStore {
 
 // ─── Persistence ─────────────────────────────────────────────
 
-/** Generate a simple hash for a file path to use as annotation filename */
-function hashPath(path: string): string {
-  let hash = 0;
-  for (let i = 0; i < path.length; i++) {
-    const ch = path.charCodeAt(i);
-    hash = ((hash << 5) - hash) + ch;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(36);
-}
-
-function annotationFilePath(pdfPath: string): string {
-  return `.oxidenote/annotations/${hashPath(pdfPath)}.json`;
-}
-
 /** Load annotations for a PDF file */
 export async function loadAnnotations(pdfPath: string): Promise<PdfAnnotation[]> {
   try {
-    const note = await readNote(annotationFilePath(pdfPath));
-    const data = JSON.parse(note.content) as AnnotationStore;
+    const json = await loadPdfAnnotations(pdfPath);
+    const data = JSON.parse(json) as AnnotationStore;
     return data.annotations;
   } catch {
     return [];
@@ -66,7 +52,7 @@ export async function loadAnnotations(pdfPath: string): Promise<PdfAnnotation[]>
 export async function saveAnnotations(pdfPath: string, annotations: PdfAnnotation[]): Promise<void> {
   const data: AnnotationStore = { annotations };
   const json = JSON.stringify(data, null, 2);
-  await writeNote(annotationFilePath(pdfPath), json);
+  await savePdfAnnotations(pdfPath, json);
 }
 
 /** Generate a unique annotation ID */
@@ -96,7 +82,7 @@ export function exportAnnotationsAsMarkdown(pdfPath: string, annotations: PdfAnn
   for (const [page, pageAnnotations] of Array.from(byPage.entries()).sort((a, b) => a[0] - b[0])) {
     lines.push(`## Page ${page + 1}`, '');
     for (const a of pageAnnotations) {
-      const icon = a.type === 'highlight' ? '🟡' : '📝';
+      const icon = a.type === 'highlight' ? '[Highlight]' : '[Note]';
       lines.push(`${icon} **${a.selectedText}**`);
       if (a.note) {
         lines.push(`> ${a.note}`);

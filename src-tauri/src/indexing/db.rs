@@ -369,21 +369,40 @@ pub fn list_all_tags(conn: &Connection) -> Result<Vec<TagCount>, rusqlite::Error
 }
 
 /// Search notes by tag.
-pub fn search_by_tag(conn: &Connection, tag: &str) -> Result<Vec<SearchResult>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        "SELECT n.path, n.title FROM tags t
-         JOIN notes n ON n.id = t.note_id
-         WHERE t.tag = ?1
-         ORDER BY n.title"
-    )?;
-    let results = stmt.query_map(params![tag], |row| {
-        Ok(SearchResult {
-            path: row.get(0)?,
-            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-            snippet: String::new(),
-        })
-    })?.collect::<Result<Vec<_>, _>>()?;
-    Ok(results)
+/// When `hierarchical` is true, also matches descendant tags (e.g. `dev` matches `dev/rust`).
+pub fn search_by_tag(conn: &Connection, tag: &str, hierarchical: bool) -> Result<Vec<SearchResult>, rusqlite::Error> {
+    if hierarchical {
+        let like_pattern = format!("{}/%", tag.replace('%', "\\%").replace('_', "\\_"));
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT n.path, n.title FROM tags t
+             JOIN notes n ON n.id = t.note_id
+             WHERE t.tag = ?1 OR t.tag LIKE ?2 ESCAPE '\\'
+             ORDER BY n.title"
+        )?;
+        let results = stmt.query_map(params![tag, like_pattern], |row| {
+            Ok(SearchResult {
+                path: row.get(0)?,
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                snippet: String::new(),
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(results)
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT n.path, n.title FROM tags t
+             JOIN notes n ON n.id = t.note_id
+             WHERE t.tag = ?1
+             ORDER BY n.title"
+        )?;
+        let results = stmt.query_map(params![tag], |row| {
+            Ok(SearchResult {
+                path: row.get(0)?,
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                snippet: String::new(),
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(results)
+    }
 }
 
 /// Query all aliases as (lowercase alias → note path) mapping.
@@ -542,4 +561,126 @@ pub fn get_block_backlinks(
     })?;
 
     rows.collect()
+}
+
+// ============================================================================
+// Advanced search — combines FTS, tag, and path filters
+// ============================================================================
+
+/// Advanced search with optional FTS query, tag filter, and path filter.
+/// Builds a dynamic SQL query based on which filters are provided.
+pub fn advanced_search(
+    conn: &Connection,
+    query: Option<&str>,
+    tag_filter: Option<&str>,
+    path_filter: Option<&str>,
+) -> Result<Vec<SearchResult>, rusqlite::Error> {
+    // If only a plain FTS query with no filters, delegate to the standard search
+    if tag_filter.is_none() && path_filter.is_none() {
+        if let Some(q) = query {
+            if !q.trim().is_empty() {
+                return search_fts(conn, q);
+            }
+        }
+        return Ok(vec![]);
+    }
+
+    let has_fts = query.map_or(false, |q| !q.trim().is_empty());
+    let has_tag = tag_filter.map_or(false, |t| !t.trim().is_empty());
+    let has_path = path_filter.map_or(false, |p| !p.trim().is_empty());
+
+    // Build query dynamically
+    // Base: select from notes, optionally join FTS and tags
+    let mut sql = String::from("SELECT DISTINCT n.path, n.title, ");
+
+    if has_fts {
+        sql.push_str("snippet(notes_fts, 2, '<mark>', '</mark>', '...', 32) ");
+    } else {
+        sql.push_str("'' ");
+    }
+
+    sql.push_str("FROM notes n ");
+
+    if has_fts {
+        sql.push_str("JOIN notes_fts f ON f.path = n.path ");
+    }
+    if has_tag {
+        sql.push_str("JOIN tags t ON t.note_id = n.id ");
+    }
+
+    sql.push_str("WHERE 1=1 ");
+
+    let mut param_values: Vec<String> = Vec::new();
+    let mut param_idx = 1;
+
+    if has_fts {
+        // Sanitize FTS query
+        let fts_q = query.unwrap().trim();
+        let fts_query: String = fts_q
+            .split_whitespace()
+            .map(|w| {
+                let cleaned: String = w.chars()
+                    .filter(|c| *c != '"' && *c != '*' && *c != '^')
+                    .collect();
+                format!("\"{}\"", cleaned)
+            })
+            .filter(|w| w != "\"\"")
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if fts_query.is_empty() {
+            return Ok(vec![]);
+        }
+
+        sql.push_str(&format!("AND notes_fts MATCH ?{} ", param_idx));
+        param_values.push(fts_query);
+        param_idx += 1;
+    }
+
+    if has_tag {
+        let tag = tag_filter.unwrap().trim();
+        // Hierarchical match: exact or descendant
+        let escaped_tag = tag.replace('%', "\\%").replace('_', "\\_");
+        let like_pattern = format!("{}/%", escaped_tag);
+        sql.push_str(&format!("AND (t.tag = ?{} OR t.tag LIKE ?{} ESCAPE '\\') ", param_idx, param_idx + 1));
+        param_values.push(tag.to_string());
+        param_values.push(like_pattern);
+        param_idx += 2;
+    }
+
+    if has_path {
+        let path = path_filter.unwrap().trim();
+        let escaped = path.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let pattern = format!("{}%", escaped);
+        sql.push_str(&format!("AND n.path LIKE ?{} ESCAPE '\\' ", param_idx));
+        param_values.push(pattern);
+        param_idx += 1;
+    }
+
+    // Suppress unused variable warning
+    let _ = param_idx;
+
+    if has_fts {
+        sql.push_str("ORDER BY rank LIMIT 50");
+    } else {
+        sql.push_str("ORDER BY n.title LIMIT 50");
+    }
+
+    let mut stmt = conn.prepare(&sql)?;
+
+    // Bind parameters dynamically
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    let results = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok(SearchResult {
+            path: row.get(0)?,
+            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            snippet: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(results)
 }

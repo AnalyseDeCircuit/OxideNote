@@ -53,21 +53,51 @@ const mermaidSessionId = Math.random().toString(36).slice(2, 8);
 let mermaidIdCounter = 0;
 
 /**
- * Returns emoji icon for callout type.
- * Compatible with Obsidian callout type names.
+ * Build an inline SVG string with Lucide-compatible attributes.
+ * Used for callout icons rendered inside HTML strings.
  */
+function calloutSvg(paths: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+}
+
+// Pre-built Lucide-style inline SVG icons for each callout category
+const CALLOUT_PENCIL = calloutSvg('<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>');
+const CALLOUT_FILE_TEXT = calloutSvg('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>');
+const CALLOUT_INFO = calloutSvg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>');
+const CALLOUT_CHECK_SQUARE = calloutSvg('<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>');
+const CALLOUT_LIGHTBULB = calloutSvg('<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>');
+const CALLOUT_FLAME = calloutSvg('<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>');
+const CALLOUT_CIRCLE_CHECK = calloutSvg('<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>');
+const CALLOUT_CIRCLE_HELP = calloutSvg('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>');
+const CALLOUT_TRIANGLE_ALERT = calloutSvg('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>');
+const CALLOUT_CIRCLE_X = calloutSvg('<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>');
+const CALLOUT_SHIELD_ALERT = calloutSvg('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/>');
+const CALLOUT_BUG = calloutSvg('<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>');
+const CALLOUT_CLIPBOARD = calloutSvg('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>');
+const CALLOUT_QUOTE = calloutSvg('<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 5v3z"/>');
+const CALLOUT_PIN = calloutSvg('<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>');
+const CALLOUT_MUSIC = calloutSvg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>');
+
+/** Callout type → inline SVG icon, compatible with Obsidian callout type names */
+const CALLOUT_ICON_MAP: Record<string, string> = {
+  note: CALLOUT_PENCIL,
+  abstract: CALLOUT_FILE_TEXT, summary: CALLOUT_FILE_TEXT, tldr: CALLOUT_FILE_TEXT,
+  info: CALLOUT_INFO,
+  todo: CALLOUT_CHECK_SQUARE,
+  tip: CALLOUT_LIGHTBULB, hint: CALLOUT_LIGHTBULB,
+  important: CALLOUT_FLAME,
+  success: CALLOUT_CIRCLE_CHECK, check: CALLOUT_CIRCLE_CHECK, done: CALLOUT_CIRCLE_CHECK,
+  question: CALLOUT_CIRCLE_HELP, help: CALLOUT_CIRCLE_HELP, faq: CALLOUT_CIRCLE_HELP,
+  warning: CALLOUT_TRIANGLE_ALERT, caution: CALLOUT_TRIANGLE_ALERT, attention: CALLOUT_TRIANGLE_ALERT,
+  failure: CALLOUT_CIRCLE_X, fail: CALLOUT_CIRCLE_X, missing: CALLOUT_CIRCLE_X,
+  danger: CALLOUT_SHIELD_ALERT, error: CALLOUT_SHIELD_ALERT,
+  bug: CALLOUT_BUG,
+  example: CALLOUT_CLIPBOARD,
+  quote: CALLOUT_QUOTE, cite: CALLOUT_QUOTE,
+};
+
 function getCalloutIcon(type: string): string {
-  const icons: Record<string, string> = {
-    note: '📝', abstract: '📄', summary: '📄', tldr: '📄',
-    info: 'ℹ️', todo: '☑️', tip: '💡', hint: '💡', important: '🔥',
-    success: '✅', check: '✅', done: '✅',
-    question: '❓', help: '❓', faq: '❓',
-    warning: '⚠️', caution: '⚠️', attention: '⚠️',
-    failure: '❌', fail: '❌', missing: '❌',
-    danger: '🚫', error: '🚫', bug: '🐛',
-    example: '📋', quote: '💬', cite: '💬',
-  };
-  return `<span class="callout-icon">${icons[type] || '📌'}</span>`;
+  return `<span class="callout-icon">${CALLOUT_ICON_MAP[type] || CALLOUT_PIN}</span>`;
 }
 
 /**
@@ -291,7 +321,7 @@ function createMarkedInstance(getTokenLine: (token: object) => number | undefine
         if (audioExtensions.test(href)) {
           const safeHref = escapeAttr(href);
           const label = title ? escapeHtml(title) : escapeHtml(href.split('/').pop() || 'Audio');
-          return `<div class="audio-player"><span class="audio-label">🎵 ${label}</span><audio controls preload="metadata" src="${safeHref}"></audio></div>`;
+          return `<div class="audio-player"><span class="audio-label">${CALLOUT_MUSIC} ${label}</span><audio controls preload="metadata" src="${safeHref}"></audio></div>`;
         }
         // Fall through by returning false to use default rendering
         return false as unknown as string;

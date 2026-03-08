@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNoteStore } from '@/store/noteStore';
-import { searchNotes, type SearchResult } from '@/lib/api';
+import { searchNotes, advancedSearch, type SearchResult } from '@/lib/api';
 import { useTranslation } from 'react-i18next';
 
 /** Sanitize FTS snippet: only allow <mark> and </mark> tags */
@@ -18,6 +18,38 @@ function sanitizeSnippet(html: string): string {
     .replace(new RegExp(MARK_OPEN.replace(/\x00/g, '\\x00'), 'g'), '<mark>')
     .replace(new RegExp(MARK_CLOSE.replace(/\x00/g, '\\x00'), 'g'), '</mark>');
   return safe;
+}
+
+// ─── Search query parser ─────────────────────────────────────
+// Extracts `tag:xxx` and `path:yyy` prefix filters from the raw query string.
+// Remaining text is used as the FTS query.
+
+interface ParsedQuery {
+  ftsQuery: string;
+  tagFilter?: string;
+  pathFilter?: string;
+}
+
+function parseSearchQuery(raw: string): ParsedQuery {
+  let fts = raw;
+  let tagFilter: string | undefined;
+  let pathFilter: string | undefined;
+
+  // Extract tag:xxx
+  const tagMatch = fts.match(/\btag:(\S+)/);
+  if (tagMatch) {
+    tagFilter = tagMatch[1];
+    fts = fts.replace(tagMatch[0], '');
+  }
+
+  // Extract path:xxx
+  const pathMatch = fts.match(/\bpath:(\S+)/);
+  if (pathMatch) {
+    pathFilter = pathMatch[1];
+    fts = fts.replace(pathMatch[0], '');
+  }
+
+  return { ftsQuery: fts.trim(), tagFilter, pathFilter };
 }
 
 interface GlobalSearchProps {
@@ -65,7 +97,18 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     setLoading(true);
     timerRef.current = setTimeout(async () => {
       try {
-        const res = await searchNotes(value);
+        const parsed = parseSearchQuery(value);
+        let res: SearchResult[];
+        // Use advanced search when filters are present
+        if (parsed.tagFilter || parsed.pathFilter) {
+          res = await advancedSearch(
+            parsed.ftsQuery || undefined,
+            parsed.tagFilter,
+            parsed.pathFilter,
+          );
+        } else {
+          res = await searchNotes(parsed.ftsQuery);
+        }
         setResults(res);
       } catch {
         setResults([]);
@@ -74,10 +117,10 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     }, 300);
   }, []);
 
-  const handleSelect = (r: SearchResult) => {
+  const handleSelect = useCallback((r: SearchResult) => {
     openNote(r.path, r.title || r.path);
     onClose();
-  };
+  }, [openNote, onClose]);
 
   // ── Keyboard navigation ──────────────────────────────────────────────────
   // ArrowDown/ArrowUp cycle through results, Enter opens the selected item.
@@ -109,7 +152,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
         handleSelect(results[selectedIndex]);
       }
     },
-    [results, selectedIndex, onClose],
+    [results, selectedIndex, onClose, handleSelect],
   );
 
   /** Scroll the result at `idx` into the visible area of the list */
@@ -121,6 +164,10 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   }
 
   if (!open) return null;
+
+  // Parse active filters for display
+  const parsed = parseSearchQuery(query);
+  const hasFilters = !!(parsed.tagFilter || parsed.pathFilter);
 
   return (
     <div
@@ -138,7 +185,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             ref={inputRef}
             value={query}
             onChange={(e) => doSearch(e.target.value)}
-            placeholder={t('search.searchContent')}
+            placeholder={t('search.advancedPlaceholder')}
             className="flex-1 text-sm bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
             onKeyDown={handleKeyDown}
           />
@@ -146,6 +193,35 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             <span className="text-xs text-muted-foreground">{t('search.searching')}</span>
           )}
         </div>
+
+        {/* Active filter chips */}
+        {hasFilters && (
+          <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-theme-border bg-surface/50">
+            {parsed.tagFilter && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-theme-accent/15 text-theme-accent">
+                tag:{parsed.tagFilter}
+              </span>
+            )}
+            {parsed.pathFilter && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-theme-accent/15 text-theme-accent">
+                path:{parsed.pathFilter}
+              </span>
+            )}
+            {parsed.ftsQuery && (
+              <span className="text-[10px] text-muted-foreground ml-1">
+                + &quot;{parsed.ftsQuery}&quot;
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Syntax hint when input is empty */}
+        {!query && (
+          <div className="px-4 py-3 text-[11px] text-muted-foreground border-b border-theme-border">
+            <p className="mb-1">{t('search.syntaxHint')}</p>
+            <code className="text-theme-accent">tag:dev path:projects/ keyword</code>
+          </div>
+        )}
 
         {/* Results — keyboard-navigable list */}
         <div ref={resultListRef} className="max-h-[400px] overflow-y-auto">

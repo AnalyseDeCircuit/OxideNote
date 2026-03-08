@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useNoteStore } from '@/store/noteStore';
 import { toast } from '@/hooks/useToast';
 import { exportToPdfWithSettings, type TypesettingSettings } from '@/lib/exportPdf';
+import { X } from 'lucide-react';
 
 interface TypesettingDialogProps {
   open: boolean;
@@ -124,7 +125,7 @@ export function TypesettingDialog({ open, onClose, content }: TypesettingDialogP
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-theme-border">
           <h2 className="text-sm font-semibold text-foreground">{t('typesetting.title')}</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">✕</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs"><X size={14} /></button>
         </div>
 
         <div className="px-5 py-4 space-y-4">

@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use serde::Serialize;
 use tauri::State;
 
@@ -252,14 +254,17 @@ pub async fn list_all_tags(
 }
 
 /// Search notes by tag.
+/// When `hierarchical` is true, also matches descendant tags (e.g. `dev` matches `dev/rust`).
 #[tauri::command]
 pub async fn search_by_tag(
     tag: String,
+    hierarchical: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Vec<db::SearchResult>, SearchError> {
     let db_guard = state.read_db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
-    db::search_by_tag(conn, &tag).map_err(|e| SearchError::Internal(e.to_string()))
+    db::search_by_tag(conn, &tag, hierarchical.unwrap_or(false))
+        .map_err(|e| SearchError::Internal(e.to_string()))
 }
 
 /// Return a random note from the vault index.
@@ -279,9 +284,20 @@ pub struct TaskItem {
     pub line: usize,
     pub text: String,
     pub done: bool,
+    pub due_date: Option<String>,
+    pub priority: Option<String>,
 }
 
+/// Regex to extract due date from task text: `@2026-03-09`
+static TASK_DUE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"@(\d{4}-\d{2}-\d{2})").unwrap());
+
+/// Regex to extract priority from task text: `!high`, `!medium`, `!low`
+static TASK_PRIORITY_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"!(high|medium|low)").unwrap());
+
 /// Scan all vault .md files for task checkbox items (- [ ] / - [x]).
+/// Extracts inline metadata: `@YYYY-MM-DD` for due dates, `!high/medium/low` for priority.
 #[tauri::command]
 pub async fn list_tasks(
     state: State<'_, AppState>,
@@ -317,26 +333,56 @@ fn collect_tasks(
                 let rel_str = rel_path.to_string_lossy().to_string();
                 for (i, line) in content.lines().enumerate() {
                     let trimmed = line.trim();
-                    if let Some(text) = trimmed.strip_prefix("- [ ] ") {
-                        tasks.push(TaskItem {
-                            path: rel_str.clone(),
-                            line: i + 1,
-                            text: text.to_string(),
-                            done: false,
-                        });
-                    } else if let Some(text) = trimmed.strip_prefix("- [x] ").or_else(|| trimmed.strip_prefix("- [X] ")) {
-                        tasks.push(TaskItem {
-                            path: rel_str.clone(),
-                            line: i + 1,
-                            text: text.to_string(),
-                            done: true,
-                        });
-                    }
+                    let (text, done) = if let Some(t) = trimmed.strip_prefix("- [ ] ") {
+                        (t, false)
+                    } else if let Some(t) = trimmed.strip_prefix("- [x] ").or_else(|| trimmed.strip_prefix("- [X] ")) {
+                        (t, true)
+                    } else {
+                        continue;
+                    };
+
+                    // Extract due date (@YYYY-MM-DD)
+                    let due_date = TASK_DUE_RE.captures(text).map(|c| c[1].to_string());
+                    // Extract priority (!high/!medium/!low)
+                    let priority = TASK_PRIORITY_RE.captures(text).map(|c| c[1].to_string());
+                    // Clean display text: remove metadata markers
+                    let clean_text = TASK_DUE_RE.replace_all(text, "");
+                    let clean_text = TASK_PRIORITY_RE.replace_all(&clean_text, "");
+                    let clean_text = clean_text.trim().to_string();
+
+                    tasks.push(TaskItem {
+                        path: rel_str.clone(),
+                        line: i + 1,
+                        text: clean_text,
+                        done,
+                        due_date,
+                        priority,
+                    });
                 }
             }
         }
     }
     Ok(())
+}
+
+// ============================================================================
+// Advanced search with structured filters
+// ============================================================================
+
+/// Advanced search combining FTS, tag, and path filters.
+/// Frontend parses `tag:xxx path:yyy query` and sends structured filters.
+#[tauri::command]
+pub async fn advanced_search(
+    query: Option<String>,
+    tag_filter: Option<String>,
+    path_filter: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<db::SearchResult>, SearchError> {
+    let db_guard = state.read_db.lock();
+    let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+
+    db::advanced_search(conn, query.as_deref(), tag_filter.as_deref(), path_filter.as_deref())
+        .map_err(|e| SearchError::Internal(e.to_string()))
 }
 
 // ============================================================================

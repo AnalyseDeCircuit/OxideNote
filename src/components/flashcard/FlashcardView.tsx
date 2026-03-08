@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, RotateCcw, ChevronLeft } from 'lucide-react';
+import { X, RotateCcw, ChevronLeft, PartyPopper } from 'lucide-react';
 import {
   type CardWithState,
   type Deck,
@@ -256,7 +256,7 @@ function RatingButton({ label, color, onClick }: { label: string; color: string;
 function CompletedView({ onBack, t }: { onBack: () => void; t: (key: string) => string }) {
   return (
     <div className="text-center py-16 space-y-4">
-      <div className="text-4xl">🎉</div>
+      <PartyPopper size={36} className="mx-auto text-theme-accent" />
       <div className="text-lg text-foreground">{t('flashcard.completed')}</div>
       <button
         onClick={onBack}

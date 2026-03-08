@@ -8,6 +8,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { generateId, type DatabaseSchema, type Column, type Row } from '@/lib/database';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface CalendarViewProps {
   schema: DatabaseSchema;
@@ -85,11 +86,11 @@ export function CalendarView({ schema, onSchemaChange }: CalendarViewProps) {
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Calendar header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-theme-border">
-        <button onClick={prevMonth} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" aria-label="Previous month">◀</button>
+        <button onClick={prevMonth} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" aria-label="Previous month"><ChevronLeft size={14} /></button>
         <span className="text-sm font-medium text-foreground min-w-[140px] text-center">
           {year}-{String(month + 1).padStart(2, '0')}
         </span>
-        <button onClick={nextMonth} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" aria-label="Next month">▶</button>
+        <button onClick={nextMonth} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" aria-label="Next month"><ChevronRight size={14} /></button>
         <button onClick={goToday} className="px-2 py-0.5 text-xs rounded border border-theme-border hover:bg-theme-hover text-muted-foreground ml-2">
           {t('dailyNote.today')}
         </button>

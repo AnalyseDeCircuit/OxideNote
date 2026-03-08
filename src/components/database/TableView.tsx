@@ -14,6 +14,7 @@ import type { DatabaseSchema, Column, Row } from '@/lib/database';
 import { updateCell, deleteRow, deleteColumn, sortRows, filterRows } from '@/lib/database';
 import { searchByFilename } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
+import { Link2, FileText } from 'lucide-react';
 
 interface TableViewProps {
   schema: DatabaseSchema;
@@ -422,7 +423,7 @@ function RelationCell({ value, editing, onStartEdit, onEndEdit, onChange }: Rela
               onClick={(e) => { e.stopPropagation(); handleNavigate(p); }}
               title={p}
             >
-              🔗 {displayName(p)}
+              <Link2 size={10} className="shrink-0" /> {displayName(p)}
             </span>
           ))
         ) : (
@@ -471,7 +472,7 @@ function RelationCell({ value, editing, onStartEdit, onEndEdit, onChange }: Rela
               onClick={() => handleAdd(r.path)}
               className="w-full px-2 py-1.5 text-xs text-left hover:bg-theme-hover text-foreground flex items-center gap-1"
             >
-              <span className="text-muted-foreground">📄</span>
+              <FileText size={12} className="text-muted-foreground shrink-0" />
               <span className="truncate">{r.title || displayName(r.path)}</span>
               <span className="text-[10px] text-muted-foreground ml-auto truncate max-w-[100px]">{r.path}</span>
             </button>
