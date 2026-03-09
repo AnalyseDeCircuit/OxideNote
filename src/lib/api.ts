@@ -627,3 +627,129 @@ export async function chatStream(
 export async function chatAbort(requestId: string): Promise<void> {
   return invoke<void>('chat_abort', { requestId });
 }
+
+// ─── Chat persistence types ────────────────────────────────
+
+export interface ChatSessionInfo {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  archived: boolean;
+}
+
+export interface ChatMessageRow {
+  id: number;
+  session_id: string;
+  role: string;
+  content: string;
+  reasoning: string | null;
+  images: string | null;
+  usage: string | null;
+  created_at: number;
+}
+
+export interface ChatSearchResult {
+  message_id: number;
+  session_id: string;
+  session_title: string;
+  content_snippet: string;
+  role: string;
+  created_at: number;
+}
+
+export interface TokenStatsRow {
+  lifetime_prompt: number;
+  lifetime_completion: number;
+}
+
+export interface MigrateResult {
+  sessions_imported: number;
+  messages_imported: number;
+}
+
+// ─── Chat persistence commands ──────────────────────────────
+
+export async function listChatSessions(
+  limit: number,
+  offset: number,
+  includeArchived = false,
+): Promise<ChatSessionInfo[]> {
+  return invoke<ChatSessionInfo[]>('list_chat_sessions', {
+    limit, offset, includeArchived,
+  });
+}
+
+export async function loadChatSession(
+  sessionId: string,
+): Promise<[ChatSessionInfo, ChatMessageRow[]]> {
+  return invoke<[ChatSessionInfo, ChatMessageRow[]]>('load_chat_session', { sessionId });
+}
+
+export async function createChatSession(
+  id: string,
+  title: string,
+): Promise<ChatSessionInfo> {
+  return invoke<ChatSessionInfo>('create_chat_session', { id, title });
+}
+
+export async function updateChatSessionTitle(
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  return invoke<void>('update_chat_session_title', { sessionId, title });
+}
+
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  return invoke<void>('delete_chat_session', { sessionId });
+}
+
+export async function saveChatMessage(
+  sessionId: string,
+  role: string,
+  content: string,
+  reasoning?: string | null,
+  images?: string | null,
+  usage?: string | null,
+): Promise<number> {
+  return invoke<number>('save_chat_message', {
+    sessionId, role, content,
+    reasoning: reasoning ?? null,
+    images: images ?? null,
+    usage: usage ?? null,
+  });
+}
+
+export async function searchChatMessages(
+  query: string,
+  limit: number,
+): Promise<ChatSearchResult[]> {
+  return invoke<ChatSearchResult[]>('search_chat_messages', { query, limit });
+}
+
+export async function getTokenStats(): Promise<TokenStatsRow> {
+  return invoke<TokenStatsRow>('get_token_stats', {});
+}
+
+export async function updateTokenStats(
+  promptDelta: number,
+  completionDelta: number,
+): Promise<void> {
+  return invoke<void>('update_token_stats', { promptDelta, completionDelta });
+}
+
+export async function resetLifetimeTokensDb(): Promise<void> {
+  return invoke<void>('reset_lifetime_tokens', {});
+}
+
+export async function migrateChatFromJson(jsonString: string): Promise<MigrateResult> {
+  return invoke<MigrateResult>('migrate_chat_from_json', { jsonString });
+}
+
+export async function saveChatImage(
+  sessionId: string,
+  dataBase64: string,
+  mediaType: string,
+): Promise<string> {
+  return invoke<string>('save_chat_image', { sessionId, dataBase64, mediaType });
+}

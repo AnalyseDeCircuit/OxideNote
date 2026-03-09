@@ -7,6 +7,16 @@ import {
   chatAbort,
   buildChatContext,
   listModels,
+  listChatSessions,
+  loadChatSession,
+  createChatSession,
+  updateChatSessionTitle,
+  deleteChatSession,
+  saveChatMessage,
+  getTokenStats,
+  updateTokenStats,
+  resetLifetimeTokensDb,
+  migrateChatFromJson,
   type ChatMessage,
   type ChatConfig,
   type ChatProvider,
@@ -15,6 +25,7 @@ import {
   type StreamChunk,
   type TokenUsage,
   type ImageAttachment,
+  type ChatSessionInfo,
 } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 
@@ -96,9 +107,9 @@ interface ChatState {
   cleanup: () => void;
   sendMessage: (content: string, currentNotePath?: string, images?: ImageAttachment[]) => Promise<void>;
   stopStreaming: () => void;
-  createSession: (title?: string) => void;
-  switchSession: (id: string) => void;
-  deleteSession: (id: string) => void;
+  createSession: (title?: string) => Promise<void>;
+  switchSession: (id: string) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
   addReferencedFile: (path: string, title: string) => void;
   removeReferencedFile: (path: string) => void;
   applyEdit: (index: number) => void;
@@ -137,37 +148,24 @@ export const PROVIDER_DEFAULTS: Record<ChatProvider, { url: string; placeholder:
   custom: { url: '', placeholder: 'sk-...' },
 };
 
-// ── Persistence helpers ─────────────────────────────────────
+// ── Config persistence (lightweight, stays in localStorage) ─
 
-const STORAGE_KEY = 'oxidenote-chat';
+const CONFIG_KEY = 'oxidenote-chat-config';
+const MIGRATION_KEY = 'oxidenote-chat-migrated';
 
-function loadPersistedState(): Partial<ChatState> {
+function loadPersistedConfig(): ChatConfig {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const data = JSON.parse(raw);
-    return {
-      sessions: data.sessions ?? [],
-      currentSessionId: data.currentSessionId ?? null,
-      messages: data.messages ?? [],
-      config: { ...DEFAULT_CONFIG, ...data.config },
-      tokenStats: data.tokenStats ?? { sessionPrompt: 0, sessionCompletion: 0, lifetimePrompt: 0, lifetimeCompletion: 0 },
-    };
+    const raw = localStorage.getItem(CONFIG_KEY);
+    if (!raw) return { ...DEFAULT_CONFIG };
+    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
   } catch {
-    return {};
+    return { ...DEFAULT_CONFIG };
   }
 }
 
-function persistState(state: ChatState) {
+function persistConfig(config: ChatConfig) {
   try {
-    const data = {
-      sessions: state.sessions,
-      currentSessionId: state.currentSessionId,
-      messages: state.messages,
-      config: state.config,
-      tokenStats: state.tokenStats,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
   } catch {
     // Storage quota exceeded — ignore
   }
@@ -219,18 +217,44 @@ function parseEdits(text: string): EditSuggestion[] {
   return edits;
 }
 
-// ── Store ───────────────────────────────────────────────────
+// ── DB row converters ───────────────────────────────────────
 
-const persisted = loadPersistedState();
+/** Convert a ChatSessionInfo from DB to a local ChatSession. */
+function toStoreSession(info: ChatSessionInfo): ChatSession {
+  return {
+    id: info.id,
+    title: info.title,
+    messages: [], // messages are loaded lazily via switchSession
+    createdAt: info.created_at,
+    updatedAt: info.updated_at,
+  };
+}
+
+/** Convert a ChatMessageRow from DB back to a ChatMessage. */
+function rowToMessage(row: import('@/lib/api').ChatMessageRow): ChatMessage {
+  const msg: ChatMessage = {
+    role: row.role as ChatMessage['role'],
+    content: row.content,
+  };
+  if (row.reasoning) msg.reasoning = row.reasoning;
+  if (row.images) {
+    try {
+      msg.images = JSON.parse(row.images);
+    } catch { /* invalid json, skip */ }
+  }
+  return msg;
+}
+
+// ── Store ───────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>()(
   subscribeWithSelector((set, get) => ({
-    // Persisted state
-    sessions: persisted.sessions ?? [],
-    currentSessionId: persisted.currentSessionId ?? null,
-    messages: persisted.messages ?? [],
-    config: persisted.config ?? { ...DEFAULT_CONFIG },
-    tokenStats: persisted.tokenStats ?? { sessionPrompt: 0, sessionCompletion: 0, lifetimePrompt: 0, lifetimeCompletion: 0 },
+    // Persistent state (DB-backed)
+    sessions: [],
+    currentSessionId: null,
+    messages: [],
+    config: loadPersistedConfig(),
+    tokenStats: { sessionPrompt: 0, sessionCompletion: 0, lifetimePrompt: 0, lifetimeCompletion: 0 },
 
     // Transient state
     isStreaming: false,
@@ -246,12 +270,62 @@ export const useChatStore = create<ChatState>()(
     contextInfo: null,
     _unlisten: null,
 
-    // ── Initialize event listener ───────────────────────────
+    // ── Initialize: load from DB + set up event listener ────
 
     init: async () => {
       // Avoid double-init
       if (get()._unlisten) return;
 
+      // Check for legacy localStorage data migration
+      const legacyKey = 'oxidenote-chat';
+      const migrated = localStorage.getItem(MIGRATION_KEY);
+      if (!migrated) {
+        const legacyData = localStorage.getItem(legacyKey);
+        if (legacyData) {
+          try {
+            const result = await migrateChatFromJson(legacyData);
+            console.info(
+              `Chat migration: ${result.sessions_imported} sessions, ${result.messages_imported} messages`,
+            );
+            localStorage.removeItem(legacyKey);
+            // Persist config separately from the migrated blob
+            try {
+              const parsed = JSON.parse(legacyData);
+              if (parsed.config) {
+                persistConfig({ ...DEFAULT_CONFIG, ...parsed.config });
+              }
+            } catch { /* ignore */ }
+          } catch (err) {
+            console.warn('Chat migration failed:', err);
+          }
+          localStorage.setItem(MIGRATION_KEY, '1');
+        } else {
+          localStorage.setItem(MIGRATION_KEY, '1');
+        }
+      }
+
+      // Load sessions list from DB
+      try {
+        const sessions = await listChatSessions(100, 0, false);
+        const sessionInfos: ChatSession[] = sessions.map(toStoreSession);
+
+        // Load token stats from DB
+        let tokenStats = get().tokenStats;
+        try {
+          const dbStats = await getTokenStats();
+          tokenStats = {
+            ...tokenStats,
+            lifetimePrompt: dbStats.lifetime_prompt,
+            lifetimeCompletion: dbStats.lifetime_completion,
+          };
+        } catch { /* DB not ready yet, use defaults */ }
+
+        set({ sessions: sessionInfos, tokenStats });
+      } catch {
+        // DB not ready (vault not opened yet)
+      }
+
+      // Set up streaming event listener
       const unlisten = await listen<StreamChunk>('chat-stream-chunk', (event) => {
         const chunk = event.payload;
         const state = get();
@@ -311,6 +385,26 @@ export const useChatStore = create<ChatState>()(
             lastUsage: chunk.usage ?? state.lastUsage,
             tokenStats: newStats,
           });
+
+          // Persist assistant message to DB (fire-and-forget)
+          if (state.currentSessionId) {
+            saveChatMessage(
+              state.currentSessionId,
+              'assistant',
+              state.streamingContent,
+              state.streamingReasoning || null,
+              null,
+              chunk.usage ? JSON.stringify(chunk.usage) : null,
+            ).catch((err) => console.warn('Failed to save assistant message:', err));
+
+            // Update token stats in DB
+            if (chunk.usage) {
+              updateTokenStats(
+                chunk.usage.prompt_tokens,
+                chunk.usage.completion_tokens,
+              ).catch((err) => console.warn('Failed to update token stats:', err));
+            }
+          }
         } else {
           // Accumulate streaming content
           const updates: Partial<ChatState> = {};
@@ -352,7 +446,7 @@ export const useChatStore = create<ChatState>()(
 
       // Ensure a session exists
       if (!state.currentSessionId) {
-        get().createSession();
+        await get().createSession();
       }
 
       const requestId = crypto.randomUUID();
@@ -365,16 +459,20 @@ export const useChatStore = create<ChatState>()(
       };
 
       const updatedMessages = [...state.messages, userMsg];
+      const sessionId = get().currentSessionId;
 
       // Auto-title: use first 30 chars of first user message
+      const currentSession = state.sessions.find(s => s.id === sessionId);
+      const isFirstMsg = currentSession ? currentSession.messages.filter(m => m.role === 'user').length === 0 : true;
+      const autoTitle = isFirstMsg ? content.slice(0, 30).trim() : undefined;
+
       const sessions = state.sessions.map((s) => {
-        if (s.id !== get().currentSessionId) return s;
-        const isFirstMsg = s.messages.filter(m => m.role === 'user').length === 0;
+        if (s.id !== sessionId) return s;
         return {
           ...s,
           messages: updatedMessages,
           updatedAt: Date.now(),
-          title: isFirstMsg ? content.slice(0, 30).trim() || s.title : s.title,
+          title: autoTitle ?? s.title,
         };
       });
 
@@ -388,6 +486,17 @@ export const useChatStore = create<ChatState>()(
         currentRequestId: requestId,
         pendingEdits: [],
       });
+
+      // Persist user message to DB (fire-and-forget)
+      if (sessionId) {
+        const imagesJson = images?.length ? JSON.stringify(images) : null;
+        saveChatMessage(sessionId, 'user', content, null, imagesJson, null)
+          .catch((err) => console.warn('Failed to save user message:', err));
+        if (autoTitle) {
+          updateChatSessionTitle(sessionId, autoTitle)
+            .catch((err) => console.warn('Failed to update session title:', err));
+        }
+      }
 
       try {
         // Estimate current history tokens
@@ -471,11 +580,12 @@ export const useChatStore = create<ChatState>()(
 
     // ── Session management ──────────────────────────────────
 
-    createSession: (title) => {
+    createSession: async (title) => {
       const id = crypto.randomUUID();
+      const displayTitle = title ?? '';
       const session: ChatSession = {
         id,
-        title: title ?? '',
+        title: displayTitle,
         messages: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -489,22 +599,52 @@ export const useChatStore = create<ChatState>()(
         contextInfo: null,
         tokenStats: { ...s.tokenStats, sessionPrompt: 0, sessionCompletion: 0 },
       }));
+
+      // Persist to DB
+      createChatSession(id, displayTitle)
+        .catch((err) => console.warn('Failed to create session in DB:', err));
     },
 
-    switchSession: (id) => {
-      const session = get().sessions.find(s => s.id === id);
-      if (!session) return;
+    switchSession: async (id) => {
+      // Optimistic: show empty while loading
       set({
         currentSessionId: id,
-        messages: [...session.messages],
+        messages: [],
         pendingEdits: [],
         referencedFiles: [],
         contextInfo: null,
         tokenStats: { ...get().tokenStats, sessionPrompt: 0, sessionCompletion: 0 },
       });
+
+      // Load full session from DB
+      try {
+        const [sessionInfo, rows] = await loadChatSession(id);
+        const messages: ChatMessage[] = rows.map(rowToMessage);
+
+        // Guard against stale load: only apply if this session is still active
+        if (get().currentSessionId !== id) return;
+
+        // Rebuild local session with loaded messages
+        set((s) => ({
+          messages,
+          sessions: s.sessions.map((ss) =>
+            ss.id === id
+              ? { ...ss, messages, title: sessionInfo.title, updatedAt: sessionInfo.updated_at }
+              : ss,
+          ),
+        }));
+      } catch (err) {
+        console.warn('Failed to load session from DB:', err);
+        // Try falling back to in-memory session data
+        if (get().currentSessionId !== id) return;
+        const cached = get().sessions.find(s => s.id === id);
+        if (cached) {
+          set({ messages: [...cached.messages] });
+        }
+      }
     },
 
-    deleteSession: (id) => {
+    deleteSession: async (id) => {
       set((s) => {
         const sessions = s.sessions.filter(ss => ss.id !== id);
         const isCurrent = s.currentSessionId === id;
@@ -515,6 +655,10 @@ export const useChatStore = create<ChatState>()(
           pendingEdits: isCurrent ? [] : s.pendingEdits,
         };
       });
+
+      // Delete from DB
+      deleteChatSession(id)
+        .catch((err) => console.warn('Failed to delete session from DB:', err));
     },
 
     // ── Reference management ────────────────────────────────
@@ -582,28 +726,18 @@ export const useChatStore = create<ChatState>()(
       set((s) => ({
         tokenStats: { ...s.tokenStats, lifetimePrompt: 0, lifetimeCompletion: 0 },
       }));
+      resetLifetimeTokensDb()
+        .catch((err) => console.warn('Failed to reset lifetime tokens in DB:', err));
     },
   })),
 );
 
-// Auto-persist on state changes (debounced to avoid excessive writes during streaming)
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
+// Auto-persist config changes to localStorage (lightweight — no session/message data)
 useChatStore.subscribe(
-  (state) => ({
-    sessions: state.sessions,
-    currentSessionId: state.currentSessionId,
-    messages: state.messages,
-    config: state.config,
-    tokenStats: state.tokenStats,
-  }),
-  () => {
-    if (persistTimer) clearTimeout(persistTimer);
-    persistTimer = setTimeout(() => {
-      persistTimer = null;
-      persistState(useChatStore.getState());
-    }, 1000);
+  (state) => state.config,
+  (config) => {
+    persistConfig(config);
   },
-  { equalityFn: () => false },
 );
 
 // ── System prompt builder ───────────────────────────────────

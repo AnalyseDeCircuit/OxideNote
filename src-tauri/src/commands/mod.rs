@@ -3,6 +3,7 @@ pub mod bookmark;
 pub mod browser;
 pub mod canvas;
 pub mod chat;
+pub mod chat_db;
 pub mod clip;
 pub mod crypto;
 pub mod embedding;

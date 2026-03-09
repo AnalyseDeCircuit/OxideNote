@@ -94,6 +94,18 @@ pub fn run() {
             commands::chat::chat_abort,
             commands::chat::build_chat_context,
             commands::chat::list_models,
+            commands::chat_db::list_chat_sessions,
+            commands::chat_db::load_chat_session,
+            commands::chat_db::create_chat_session,
+            commands::chat_db::update_chat_session_title,
+            commands::chat_db::delete_chat_session,
+            commands::chat_db::save_chat_message,
+            commands::chat_db::search_chat_messages,
+            commands::chat_db::get_token_stats,
+            commands::chat_db::update_token_stats,
+            commands::chat_db::reset_lifetime_tokens,
+            commands::chat_db::migrate_chat_from_json,
+            commands::chat_db::save_chat_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

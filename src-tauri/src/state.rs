@@ -19,6 +19,8 @@ pub struct AppState {
     /// Cancel senders for in-flight chat streams, keyed by request_id.
     /// Arc-wrapped so spawned tasks can access it after command returns.
     pub abort_senders: Arc<std::sync::Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
+    /// Chat persistence database — separate from index.db because chat data is not rebuildable
+    pub chat_db: Arc<Mutex<Option<Connection>>>,
 }
 
 impl AppState {
@@ -29,6 +31,7 @@ impl AppState {
             db: Arc::new(Mutex::new(None)),
             read_db: Arc::new(Mutex::new(None)),
             abort_senders: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            chat_db: Arc::new(Mutex::new(None)),
         }
     }
 }

@@ -75,6 +75,17 @@ pub async fn open_vault(
     *state.db.lock() = Some(conn);
     *state.read_db.lock() = read_conn;
 
+    // Open chat persistence database (separate from index.db)
+    match crate::commands::chat_db::open_chat_db(&vault_path) {
+        Ok(chat_conn) => {
+            *state.chat_db.lock() = Some(chat_conn);
+            tracing::info!("Chat database initialized");
+        }
+        Err(e) => {
+            tracing::warn!("Failed to open chat database: {}. Chat persistence will be unavailable.", e);
+        }
+    }
+
     tracing::info!("Index database initialized (read+write connections)");
 
     // 后台扫描：从 Mutex 中取出连接直接传递给后台任务，
