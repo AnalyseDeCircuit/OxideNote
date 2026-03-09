@@ -91,7 +91,22 @@ fn build_openai_request(
         body["temperature"] = serde_json::json!(temp);
     }
 
-    body["max_tokens"] = serde_json::json!(config.max_tokens);
+    // OpenAI o-series reasoning models require max_completion_tokens;
+    // the legacy max_tokens param is rejected for o1/o3/o4 models.
+    // They also reject the temperature parameter (only accept 1 or omit).
+    if config.provider == ChatProvider::OpenAI {
+        let ml = config.model.to_lowercase();
+        if ml.starts_with("o1") || ml.starts_with("o3") || ml.starts_with("o4") {
+            body["max_completion_tokens"] = serde_json::json!(config.max_tokens);
+            if let Some(obj) = body.as_object_mut() {
+                obj.remove("temperature");
+            }
+        } else {
+            body["max_tokens"] = serde_json::json!(config.max_tokens);
+        }
+    } else {
+        body["max_tokens"] = serde_json::json!(config.max_tokens);
+    }
 
     // Apply thinking mode patches per provider
     apply_thinking_patch(&mut body, config);
@@ -595,8 +610,11 @@ pub fn resolve_temperature(config: &ChatConfig) -> Option<f64> {
 
     let model = config.model.to_lowercase();
 
-    // Moonshot K2.5 requires fixed temperature=1.0
-    if contains_any(&model, &["k2.5", "kimi"]) && config.provider == ChatProvider::Moonshot {
+    // Moonshot K2.5 and K2-thinking models require fixed temperature=1.0
+    // (other Kimi models like kimi-k2-turbo default to 0.6 via provider)
+    if config.provider == ChatProvider::Moonshot
+        && contains_any(&model, &["k2.5", "k2-thinking"])
+    {
         return Some(1.0);
     }
 
@@ -634,24 +652,41 @@ pub fn should_enable_thinking(config: &ChatConfig) -> bool {
     }
 }
 
-/// Apply provider-specific thinking mode patches to the request body
+/// Apply provider-specific thinking mode patches to the request body.
+/// Handles both enabling and disabling thinking for providers that require
+/// explicit control (e.g. K2.5 defaults to thinking-on and needs explicit disable).
 pub fn apply_thinking_patch(body: &mut serde_json::Value, config: &ChatConfig) {
-    if !should_enable_thinking(config) {
-        return;
-    }
+    let enabled = should_enable_thinking(config);
 
     match config.provider {
         ChatProvider::Moonshot => {
-            // Kimi API requires thinking as an object, not a boolean
-            body["thinking"] = serde_json::json!({ "type": "enabled" });
-            body["temperature"] = serde_json::json!(1.0);
-            body["top_p"] = serde_json::json!(0.95);
+            let model = config.model.to_lowercase();
+            if model.contains("k2.5") {
+                // K2.5: explicit thinking control (defaults to enabled on server)
+                if enabled {
+                    body["thinking"] = serde_json::json!({ "type": "enabled" });
+                } else {
+                    body["thinking"] = serde_json::json!({ "type": "disabled" });
+                }
+                // K2.5 API enforces fixed temperature=1.0 and top_p=0.95;
+                // intentionally overrides user preference per API spec.
+                body["temperature"] = serde_json::json!(1.0);
+                body["top_p"] = serde_json::json!(0.95);
+            }
+            // kimi-k2-thinking models: reasoning is automatic, no patch needed
         }
         ChatProvider::DeepSeek => {
-            // DeepSeek R1 reasoning appears automatically
+            // DeepSeek: thinking param only supported by reasoner/R1 models,
+            // not by deepseek-chat (V3).
+            if enabled {
+                let model = config.model.to_lowercase();
+                if contains_any(&model, &["r1", "reasoner"]) {
+                    body["thinking"] = serde_json::json!({ "type": "enabled" });
+                }
+            }
         }
         ChatProvider::OpenRouter => {
-            // OpenRouter reasoning appears based on model
+            // OpenRouter: reasoning handled by per-model routing
         }
         _ => {}
     }
@@ -668,23 +703,33 @@ pub fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 pub fn fallback_context_window(model: &str) -> u32 {
     let m = model.to_lowercase();
     match () {
+        // OpenAI
         _ if m.starts_with("gpt-5") => 400_000,
         _ if m.starts_with("gpt-4.1") || m.starts_with("gpt-4-1") => 1_047_576,
         _ if m.starts_with("gpt-4o") || m.starts_with("gpt-4-turbo") => 128_000,
         _ if m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4") => 200_000,
+        // Anthropic
         _ if m.contains("claude") => 200_000,
+        // DeepSeek
         _ if m.contains("deepseek") => 128_000,
+        // Google Gemini
         _ if m.contains("gemini-3") || m.contains("gemini-2") => 1_000_000,
         _ if m.contains("gemini-1.5") => 1_048_576,
         _ if m.contains("gemini") => 32_768,
-        _ if m.contains("k2.5") || m.contains("kimi") => 256_000,
-        _ if m.contains("moonshot") => 128_000,
+        // Moonshot / Kimi (K2.5 has 256k, K2 non-thinking has 128k)
+        _ if m.contains("k2.5") => 256_000,
+        _ if m.contains("kimi") || m.contains("moonshot") => 128_000,
+        // Meta Llama
         _ if m.contains("llama-4") || m.contains("llama4") => 131_072,
         _ if m.contains("llama-3") || m.contains("llama3") => 128_000,
+        // Alibaba Qwen
         _ if m.contains("qwen3") || m.contains("qwen-3") => 131_072,
         _ if m.contains("qwen2") || m.contains("qwen-2") => 131_072,
+        // Mistral
         _ if m.contains("mistral") || m.contains("mixtral") => 128_000,
+        // Microsoft Phi
         _ if m.contains("phi-4") || m.contains("phi4") => 128_000,
+        // Cohere
         _ if m.contains("command-r") => 128_000,
         _ => 8_192,
     }
