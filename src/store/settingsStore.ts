@@ -59,7 +59,8 @@ export type ActionId =
   | 'prevTab'
   | 'nextTab'
   | 'newNote'
-  | 'toggleFocusMode';
+  | 'toggleFocusMode'
+  | 'toggleChat';
 
 export interface KeyBinding {
   action: ActionId;
@@ -79,6 +80,7 @@ export const DEFAULT_KEYBINDINGS: Record<ActionId, string> = {
   nextTab: 'Mod+Alt+ArrowRight',
   newNote: 'Mod+N',
   toggleFocusMode: 'Mod+Shift+Z',
+  toggleChat: 'Mod+L',
 };
 
 interface TabSnapshot { path: string; title: string; }

@@ -121,6 +121,7 @@
     "shortcutPrevTab": "Previous Tab",
     "shortcutNextTab": "Next Tab",
     "shortcutFocusMode": "Focus Mode",
+    "shortcutToggleChat": "AI Assistant",
     "shortcutSave": "Save",
     "pressKey": "Press a key...",
     "resetDefault": "Reset to default",
@@ -271,7 +272,9 @@
     "openVaultFailed": "Failed to open vault",
     "switchVaultFailed": "Failed to switch vault",
     "unsavedExit": "You have unsaved changes. Exit anyway?",
-    "closeTab": "Close tab"
+    "closeTab": "Close tab",
+    "toggleChat": "Toggle AI Assistant",
+    "moreTools": "More Tools"
   },
   "statusBar": {
     "words": "words",

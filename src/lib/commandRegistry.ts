@@ -138,6 +138,21 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
 
     // ── Panels ──────────────────────────────────────────────
     {
+      id: 'toggle-chat',
+      label: t('actions.toggleChat'),
+      shortcut: '⌘L',
+      category: panel,
+      action: () => {
+        const { sidePanelVisible, sidePanelTab, toggleSidePanel, setSidePanelTab } = useUIStore.getState();
+        if (sidePanelVisible && sidePanelTab === 'chat') {
+          toggleSidePanel();
+        } else {
+          if (!sidePanelVisible) toggleSidePanel();
+          setSidePanelTab('chat');
+        }
+      },
+    },
+    {
       id: 'knowledge-graph',
       label: t('actions.knowledgeGraph'),
       category: panel,

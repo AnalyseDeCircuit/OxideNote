@@ -13,6 +13,7 @@ import { VaultHealthDialog } from '@/components/settings/VaultHealthDialog';
 import { Toaster } from '@/components/ui/toaster';
 import { PasswordDialog } from '@/components/ui/PasswordDialog';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { openVault, listTree, createNote, readNote } from '@/lib/api';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { confirm } from '@tauri-apps/plugin-dialog';
@@ -129,6 +130,17 @@ function executeAction(action: ActionId) {
     case 'toggleFocusMode':
       useUIStore.getState().toggleFocusMode();
       break;
+    case 'toggleChat': {
+      // Smart toggle: if chat panel is visible, close it; otherwise open + switch to chat tab
+      const { sidePanelVisible, sidePanelTab, toggleSidePanel, setSidePanelTab } = useUIStore.getState();
+      if (sidePanelVisible && sidePanelTab === 'chat') {
+        toggleSidePanel();
+      } else {
+        if (!sidePanelVisible) toggleSidePanel();
+        setSidePanelTab('chat');
+      }
+      break;
+    }
   }
 }
 
@@ -228,7 +240,7 @@ function App() {
   }, []);
 
   return (
-    <>
+    <TooltipProvider delayDuration={300}>
       {vaultPath ? (
         <ErrorBoundary>
           <AppShell />
@@ -243,7 +255,7 @@ function App() {
       <VaultHealthDialog />
       <PasswordDialog />
       <Toaster />
-    </>
+    </TooltipProvider>
   );
 }
 

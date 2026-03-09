@@ -121,6 +121,7 @@
     "shortcutPrevTab": "上一个标签页",
     "shortcutNextTab": "下一个标签页",
     "shortcutFocusMode": "专注模式",
+    "shortcutToggleChat": "AI 助手",
     "shortcutSave": "保存",
     "pressKey": "请按下快捷键...",
     "resetDefault": "重置为默认",
@@ -271,7 +272,9 @@
     "openVaultFailed": "打开仓库失败",
     "switchVaultFailed": "切换仓库失败",
     "unsavedExit": "有未保存的更改，确定要退出吗？",
-    "closeTab": "关闭标签"
+    "closeTab": "关闭标签",
+    "toggleChat": "切换 AI 助手",
+    "moreTools": "更多工具"
   },
   "statusBar": {
     "words": "字",

@@ -571,6 +571,7 @@ const ACTION_LABELS: Record<ActionId, string> = {
   nextTab: 'settings.shortcutNextTab',
   newNote: 'settings.shortcutNewNote',
   toggleFocusMode: 'settings.shortcutFocusMode',
+  toggleChat: 'settings.shortcutToggleChat',
 };
 
 /**
