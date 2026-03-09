@@ -183,6 +183,16 @@ fn create_chat_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             completed_at     TEXT,
             created_at       TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- AI memory: persistent facts and preferences across sessions
+        CREATE TABLE IF NOT EXISTS memories (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            content    TEXT NOT NULL,
+            category   TEXT NOT NULL DEFAULT 'general',
+            created_at INTEGER NOT NULL,
+            pinned     INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
         ",
     )?;
     Ok(())
@@ -666,4 +676,94 @@ pub async fn save_chat_image(
     })
     .await
     .map_err(|e| ChatDbError::Io(format!("Task join failed: {}", e)))?
+}
+
+// ── AI Memory CRUD ──────────────────────────────────────────
+
+/// A persistent AI memory entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiMemory {
+    pub id: i64,
+    pub content: String,
+    pub category: String,
+    pub created_at: i64,
+    pub pinned: bool,
+}
+
+/// List all AI memories, pinned first, then by recency.
+#[tauri::command]
+pub async fn list_ai_memories(
+    state: State<'_, AppState>,
+) -> Result<Vec<AiMemory>, ChatDbError> {
+    with_chat_db(&state.chat_db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, content, category, created_at, pinned
+             FROM memories ORDER BY pinned DESC, created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(AiMemory {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                category: row.get(2)?,
+                created_at: row.get(3)?,
+                pinned: row.get::<_, i32>(4)? != 0,
+            })
+        })?;
+        let mut memories = Vec::new();
+        for row in rows {
+            memories.push(row?);
+        }
+        Ok(memories)
+    })
+}
+
+/// Add a new AI memory entry.
+#[tauri::command]
+pub async fn add_ai_memory(
+    content: String,
+    category: String,
+    state: State<'_, AppState>,
+) -> Result<AiMemory, ChatDbError> {
+    with_chat_db(&state.chat_db, |conn| {
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "INSERT INTO memories (content, category, created_at) VALUES (?1, ?2, ?3)",
+            params![content, category, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(AiMemory {
+            id,
+            content,
+            category,
+            created_at: now,
+            pinned: false,
+        })
+    })
+}
+
+/// Delete an AI memory by ID.
+#[tauri::command]
+pub async fn delete_ai_memory(
+    id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), ChatDbError> {
+    with_chat_db(&state.chat_db, |conn| {
+        conn.execute("DELETE FROM memories WHERE id = ?1", params![id])?;
+        Ok(())
+    })
+}
+
+/// Toggle pinned state of an AI memory.
+#[tauri::command]
+pub async fn toggle_ai_memory_pin(
+    id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), ChatDbError> {
+    with_chat_db(&state.chat_db, |conn| {
+        conn.execute(
+            "UPDATE memories SET pinned = CASE WHEN pinned = 0 THEN 1 ELSE 0 END WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    })
 }

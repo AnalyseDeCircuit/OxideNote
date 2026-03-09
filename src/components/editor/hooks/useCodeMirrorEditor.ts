@@ -28,6 +28,7 @@ import { blockRefExtension, refreshBlockRefEffect } from '../extensions/blockRef
 import { wikilinkCompletionSource } from '../extensions/wikilinkCompletion';
 import { tagCompletionSource } from '../extensions/tagCompletion';
 import { slashCommandSource } from '../extensions/slashCommands';
+import { aiInlineExtension } from '../extensions/aiInline';
 
 export interface UseCodeMirrorOptions {
   initialContent?: string;
@@ -218,6 +219,9 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         // WikiLink decoration + Cmd/Ctrl+click navigation
         wikilinkExtension((target) => onNavigateRef.current?.(target)),
         blockRefExtension(() => currentNotePathRef.current),
+
+        // Inline AI (ghost text, transform preview, accept/reject keybindings)
+        aiInlineExtension(),
 
         // Theme
         themeCompartment.of(makeOxideTheme(isDarkTheme())),

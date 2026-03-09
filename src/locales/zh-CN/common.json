@@ -199,7 +199,9 @@
     "zoomIn": "放大",
     "zoomOut": "缩小",
     "zoomFit": "适应窗口",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "aiAnalyze": "AI 分析图谱结构",
+    "aiAnalysisTitle": "AI 图谱分析"
   },
   "dailyNote": {
     "today": "今天",
@@ -621,7 +623,12 @@
     "setupButton": "前往设置",
     "continuePrompt": "请根据上下文，自然地继续写下一段。保持与已有内容一致的风格和语气。\n当前光标位于第 {{lineNum}} 行附近。\n\n上下文片段：\n---\n{{surrounding}}\n---",
     "rewritePrompt": "请改写以下选中内容，使其更加清晰、流畅和专业。\n保持原意不变，仅优化表达方式。\n\n选中内容：\n> {{selection}}\n\n使用 <edit> 格式返回修改建议。",
-    "summarizePrompt": "请总结以下内容的核心要点和关键信息。\n输出为简洁的 Markdown 要点列表，每个要点一行。\n\n内容：\n---\n{{content}}\n---"
+    "summarizePrompt": "请总结以下内容的核心要点和关键信息。\n输出为简洁的 Markdown 要点列表，每个要点一行。\n\n内容：\n---\n{{content}}\n---",
+    "agentTriggered": "已启动 Agent：{{kind}}",
+    "agentCompleted": "Agent 已完成，产生了 {{count}} 项变更",
+    "agentRunning": "Agent 运行中",
+    "viewChanges": "查看变更",
+    "agentKindHint": "选择 Agent 类型"
   },
   "profile": {
     "title": "个人资料",
@@ -728,5 +735,68 @@
       "empty": "暂无运行记录"
     },
     "doomLoop": "智能体已停止：检测到重复执行相同操作"
+  },
+  "inlineAi": {
+    "title": "AI 助手",
+    "rewrite": "重写",
+    "improve": "润色",
+    "shorter": "精简",
+    "longer": "扩展",
+    "translate": "翻译",
+    "summarize": "总结",
+    "explain": "解释",
+    "continue": "续写",
+    "accept": "接受",
+    "reject": "拒绝",
+    "generating": "AI 生成中...",
+    "error": "AI 操作失败",
+    "noSelection": "请先选中文本",
+    "generateTags": "AI 生成标签",
+    "flashcards": "AI 提取闪卡",
+    "aiMenu": "AI 操作",
+    "customPlaceholder": "输入自定义指令..."
+  },
+  "noteAi": {
+    "title": "AI 操作",
+    "summarize": "总结笔记",
+    "autoTag": "自动标签",
+    "translate": "翻译笔记",
+    "flashcards": "提取闪卡",
+    "processing": "AI 处理中...",
+    "failed": "AI 操作失败",
+    "summarizeTitle": "{{name}} 的总结",
+    "autoTagTitle": "{{name}} 的标签",
+    "translateTitle": "{{name}} 的翻译",
+    "flashcardsTitle": "{{name}} 的闪卡",
+    "copy": "复制",
+    "copied": "已复制",
+    "close": "关闭",
+    "insertToNote": "插入到笔记",
+    "inserted": "已插入笔记",
+    "copiedAndOpened": "已复制并打开笔记"
+  },
+  "smartTags": {
+    "suggest": "AI 推荐标签",
+    "inserted": "已插入 {{count}} 个标签"
+  },
+  "smartLinks": {
+    "suggest": "AI 推荐链接",
+    "inserted": "已插入 {{count}} 个链接"
+  },
+  "memory": {
+    "title": "AI 记忆",
+    "description": "记忆会自动注入到每次对话的系统提示中，帮助 AI 记住你的偏好和上下文。",
+    "placeholder": "添加新记忆…",
+    "empty": "暂无记忆条目",
+    "loading": "加载中…",
+    "pin": "置顶",
+    "delete": "删除",
+    "category": {
+      "general": "通用",
+      "preference": "偏好",
+      "style": "风格",
+      "context": "上下文",
+      "instruction": "指令"
+    }
   }
 }

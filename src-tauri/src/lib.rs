@@ -111,6 +111,10 @@ pub fn run() {
             commands::chat_db::reset_lifetime_tokens,
             commands::chat_db::migrate_chat_from_json,
             commands::chat_db::save_chat_image,
+            commands::chat_db::list_ai_memories,
+            commands::chat_db::add_ai_memory,
+            commands::chat_db::delete_ai_memory,
+            commands::chat_db::toggle_ai_memory_pin,
             commands::stats::get_vault_stats,
             commands::stats::list_notes_summary,
             agent::commands::agent_run,
@@ -122,6 +126,13 @@ pub fn run() {
             agent::commands::agent_dismiss_changes,
             agent::commands::agent_list_history,
             agent::commands::agent_list_custom,
+            agent::commands::agent_scheduler_config,
+            agent::commands::agent_scheduler_set_config,
+            commands::inline_ai::inline_ai_transform,
+            commands::inline_ai::inline_ai_continue,
+            commands::inline_ai::analyze_graph,
+            commands::inline_ai::suggest_tags,
+            commands::inline_ai::suggest_links,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

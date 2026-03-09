@@ -46,11 +46,15 @@ interface ForceGraphInstance {
 }
 type ForceGraphFactory = (el: HTMLElement) => ForceGraphInstance;
 const createForceGraph = ForceGraph as unknown as () => ForceGraphFactory;
-import { getGraphData, getLocalGraph, type GraphData, type GraphNode } from '@/lib/api';
+import { getGraphData, getLocalGraph, analyzeGraph, type GraphData, type GraphNode } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
+import { useChatStore } from '@/store/chatStore';
+import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
-import { X, Clock, Boxes, Globe, Focus, ZoomIn, ZoomOut, Maximize2, RotateCw } from 'lucide-react';
+import { X, Clock, Boxes, Globe, Focus, ZoomIn, ZoomOut, Maximize2, RotateCw, Sparkles, Loader2 } from 'lucide-react';
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
 
 // ── 时间轴工具函数 ──────────────────────────────────────────
 
@@ -180,6 +184,14 @@ function computeClusters(
   return result;
 }
 
+// ── Markdown rendering helper ──────────────────────────────
+
+/** Render markdown to sanitized HTML for the AI analysis panel */
+function renderMarkdown(md: string): string {
+  const raw = marked.parse(md, { async: false }) as string;
+  return DOMPurify.sanitize(raw);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // GraphView 组件
 // ═══════════════════════════════════════════════════════════════
@@ -220,6 +232,10 @@ export function GraphView() {
   const [localMode, setLocalMode] = useState(false);
   const [localDepth, setLocalDepth] = useState(2);
   const currentNotePath = useNoteStore((s) => s.activeTabPath ?? '');
+
+  // ── AI graph analysis state ──────────────────────────────
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
 
   // ── 加载图谱数据 ─────────────────────────────────────────
   useEffect(() => {
@@ -557,6 +573,29 @@ export function GraphView() {
       .finally(() => setLoading(false));
   }, [localMode, currentNotePath, localDepth, includeBlocks]);
 
+  // ── AI graph analysis handler ─────────────────────────────
+  const handleAiAnalyze = useCallback(async () => {
+    if (!graphData || aiAnalyzing) return;
+    setAiAnalyzing(true);
+    try {
+      const config = useChatStore.getState().config;
+      // Build id→title map for O(1) lookups
+      const titleMap = new Map(graphData.nodes.map((n) => [n.id, n.title || n.id]));
+      const nodes = graphData.nodes.map((n) => n.title || n.id);
+      const edges: [string, string][] = graphData.links.map((l) => [
+        titleMap.get(l.source) ?? l.source,
+        titleMap.get(l.target) ?? l.target,
+      ]);
+      const result = await analyzeGraph(nodes, edges, config);
+      setAiAnalysis(result);
+    } catch (err) {
+      console.warn('[graph] AI analysis failed:', err);
+      toast({ variant: 'error', title: String(err) });
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }, [graphData, aiAnalyzing]);
+
   // ── 格式化时间戳显示 ─────────────────────────────────────
   const cutoffLabel = useMemo(() => {
     if (!timelineEnabled || cutoffTs === Infinity || timeRange.max === 0) return '';
@@ -641,6 +680,23 @@ export function GraphView() {
           {/* Separator */}
           <div className="w-px h-4 bg-theme-border mx-1" />
 
+          {/* AI analyze */}
+          <button
+            onClick={handleAiAnalyze}
+            disabled={aiAnalyzing || !graphData?.nodes.length}
+            className={`p-1.5 rounded transition-colors ${
+              aiAnalysis
+                ? 'bg-theme-accent/20 text-theme-accent'
+                : 'hover:bg-theme-hover text-muted-foreground'
+            } disabled:opacity-40`}
+            title={t('graph.aiAnalyze')}
+          >
+            {aiAnalyzing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+          </button>
+
+          {/* Separator */}
+          <div className="w-px h-4 bg-theme-border mx-1" />
+
           {/* Local / Global toggle */}
           <button
             onClick={() => setLocalMode((v) => !v)}
@@ -712,6 +768,33 @@ export function GraphView() {
           </div>
         ) : (
           <div ref={containerRef} className="w-full h-full" />
+        )}
+
+        {/* AI analysis result overlay */}
+        {aiAnalysis && (
+          <div className="absolute top-2 right-2 w-80 max-h-[70%] bg-background/95 backdrop-blur-sm border border-theme-border rounded-lg shadow-lg flex flex-col overflow-hidden z-10">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-theme-border">
+              <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                <Sparkles size={13} className="text-theme-accent" />
+                {t('graph.aiAnalysisTitle')}
+              </span>
+              <button
+                onClick={() => setAiAnalysis(null)}
+                className="p-0.5 rounded hover:bg-theme-hover text-muted-foreground"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <div
+              className="flex-1 overflow-y-auto px-3 py-2 text-xs text-foreground prose prose-sm dark:prose-invert max-w-none
+                         [&_h1]:text-sm [&_h1]:mt-3 [&_h1]:mb-1
+                         [&_h2]:text-xs [&_h2]:mt-2 [&_h2]:mb-1
+                         [&_h3]:text-xs [&_h3]:mt-1.5 [&_h3]:mb-0.5
+                         [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1
+                         [&_li]:my-0.5"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }}
+            />
+          </div>
         )}
       </div>
 

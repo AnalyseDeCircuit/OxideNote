@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ChevronDown, Trash2, Pencil, Search } from 'lucide-react';
+import { Plus, ChevronDown, Trash2, Pencil, Search, Brain } from 'lucide-react';
 
 import { useChatStore } from '@/store/chatStore';
 import { updateChatSessionTitle, searchChatMessages, type ChatSearchResult } from '@/lib/api';
+import { AiMemoryPanel } from '@/components/chat/AiMemoryPanel';
 
 /** Chat panel header with session management */
 export function ChatHeader() {
@@ -20,6 +21,7 @@ export function ChatHeader() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ChatSearchResult[]>([]);
+  const [showMemory, setShowMemory] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -94,11 +96,19 @@ export function ChatHeader() {
   const toggleSearch = useCallback(() => {
     setShowSearch((v) => {
       if (!v) {
+        setShowMemory(false);
         requestAnimationFrame(() => searchInputRef.current?.focus());
       } else {
         setSearchQuery('');
         setSearchResults([]);
       }
+      return !v;
+    });
+  }, []);
+
+  const toggleMemory = useCallback(() => {
+    setShowMemory((v) => {
+      if (!v) setShowSearch(false);
       return !v;
     });
   }, []);
@@ -210,6 +220,19 @@ export function ChatHeader() {
         <Search className="w-4 h-4" />
       </button>
 
+      {/* Memory button */}
+      <button
+        className={`p-1 rounded-md transition-colors ${
+          showMemory
+            ? 'bg-theme-accent/15 text-theme-accent'
+            : 'hover:bg-theme-hover text-muted-foreground hover:text-foreground'
+        }`}
+        onClick={toggleMemory}
+        title={t('memory.title')}
+      >
+        <Brain className="w-4 h-4" />
+      </button>
+
       {/* New session button */}
       <button
         className="p-1 rounded-md hover:bg-theme-hover text-muted-foreground hover:text-foreground transition-colors"
@@ -257,6 +280,13 @@ export function ChatHeader() {
               {t('chat.noSearchResults')}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Memory management panel — collapsible below header */}
+      {showMemory && (
+        <div className="absolute left-0 right-0 top-full z-30 bg-surface border-b border-theme-border shadow-sm h-80 overflow-hidden">
+          <AiMemoryPanel onClose={() => setShowMemory(false)} />
         </div>
       )}
     </div>

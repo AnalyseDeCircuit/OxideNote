@@ -199,7 +199,9 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "zoomFit": "Fit to view",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "aiAnalyze": "AI Analyze Graph Structure",
+    "aiAnalysisTitle": "AI Graph Analysis"
   },
   "dailyNote": {
     "today": "Today",
@@ -622,7 +624,12 @@
     "setupButton": "Go to Settings",
     "continuePrompt": "Please continue writing the next paragraph naturally based on the context. Maintain the same style and tone as the existing content.\nThe cursor is near line {{lineNum}}.\n\nContext excerpt:\n---\n{{surrounding}}\n---",
     "rewritePrompt": "Please rewrite the following selected text to make it clearer, more fluent, and professional.\nKeep the original meaning, only improve the expression.\n\nSelected text:\n> {{selection}}\n\nUse <edit> format to return the suggested changes.",
-    "summarizePrompt": "Please summarize the key points and essential information from the following content.\nOutput as a concise Markdown bullet-point list, one point per line.\n\nContent:\n---\n{{content}}\n---"
+    "summarizePrompt": "Please summarize the key points and essential information from the following content.\nOutput as a concise Markdown bullet-point list, one point per line.\n\nContent:\n---\n{{content}}\n---",
+    "agentTriggered": "Agent started: {{kind}}",
+    "agentCompleted": "Agent completed with {{count}} changes",
+    "agentRunning": "Agent Running",
+    "viewChanges": "View Changes",
+    "agentKindHint": "Select agent type"
   },
   "profile": {
     "title": "Profile",
@@ -729,5 +736,68 @@
       "empty": "No agent runs yet"
     },
     "doomLoop": "Agent stopped: repeated identical actions detected"
+  },
+  "inlineAi": {
+    "title": "AI Assistant",
+    "rewrite": "Rewrite",
+    "improve": "Improve",
+    "shorter": "Make Shorter",
+    "longer": "Make Longer",
+    "translate": "Translate",
+    "summarize": "Summarize",
+    "explain": "Explain",
+    "continue": "Continue Writing",
+    "accept": "Accept",
+    "reject": "Reject",
+    "generating": "AI generating...",
+    "error": "AI operation failed",
+    "noSelection": "Please select text first",
+    "generateTags": "AI Generate Tags",
+    "flashcards": "AI Extract Flashcards",
+    "aiMenu": "AI Actions",
+    "customPlaceholder": "Enter custom instruction..."
+  },
+  "noteAi": {
+    "title": "AI Operations",
+    "summarize": "Summarize Note",
+    "autoTag": "Auto Tag",
+    "translate": "Translate Note",
+    "flashcards": "Extract Flashcards",
+    "processing": "AI processing...",
+    "failed": "AI operation failed",
+    "summarizeTitle": "Summary of {{name}}",
+    "autoTagTitle": "Tags for {{name}}",
+    "translateTitle": "Translation of {{name}}",
+    "flashcardsTitle": "Flashcards from {{name}}",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close",
+    "insertToNote": "Insert to Note",
+    "inserted": "Inserted to note",
+    "copiedAndOpened": "Copied and opened note"
+  },
+  "smartTags": {
+    "suggest": "AI Suggest Tags",
+    "inserted": "Inserted {{count}} tags"
+  },
+  "smartLinks": {
+    "suggest": "AI Suggest Links",
+    "inserted": "Inserted {{count}} links"
+  },
+  "memory": {
+    "title": "AI Memory",
+    "description": "Memories are injected into system prompts for every conversation, helping AI remember your preferences and context.",
+    "placeholder": "Add new memory…",
+    "empty": "No memories yet",
+    "loading": "Loading…",
+    "pin": "Pin",
+    "delete": "Delete",
+    "category": {
+      "general": "General",
+      "preference": "Preference",
+      "style": "Style",
+      "context": "Context",
+      "instruction": "Instruction"
+    }
   }
 }

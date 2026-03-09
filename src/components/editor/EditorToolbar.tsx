@@ -13,7 +13,7 @@
  */
 
 import type { MutableRefObject } from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { EditorView } from '@codemirror/view';
 import { useTranslation } from 'react-i18next';
 import {
@@ -39,8 +39,10 @@ import {
   Settings2,
   Printer,
   PenTool,
+  Sparkles,
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
+import { useChatStore } from '@/store/chatStore';
 import { exportToPdf } from '@/lib/exportPdf';
 import { exportToHtml, createHtmlMarked, buildHtmlDocument } from '@/lib/exportHtml';
 import { printHtml } from '@/lib/api';
@@ -50,6 +52,8 @@ import { toast } from '@/hooks/useToast';
 import { TypesettingDialog } from '@/components/typesetting/TypesettingDialog';
 import { AudioRecorder } from '@/components/editor/AudioRecorder';
 import { CanvasEditor } from '@/components/canvas/CanvasEditor';
+import { triggerAiTransform, triggerAiContinue } from '@/components/editor/extensions/aiInline';
+import { suggestTags, suggestLinks, listAllTags, getGraphData } from '@/lib/api';
 
 // ═══════════════════════════════════════════════════════════════
 // 工具栏组件
@@ -64,6 +68,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   const [isListening, setIsListening] = useState(false);
   const [typesettingOpen, setTypesettingOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
 
   // ── Voice input handler ───────────────────────────────────
   const handleVoiceToggle = useCallback(() => {
@@ -243,6 +248,81 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   }, [viewRef, t]);
 
+  // ── AI action handlers ──────────────────────────────────
+  const handleAiClick = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    const { from, to } = view.state.selection.main;
+    if (from === to) {
+      // No selection: trigger continuation
+      const config = useChatStore.getState().config;
+      const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+      triggerAiContinue(view, config, noteTitle).catch((err) => {
+        toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
+      });
+    } else {
+      // Has selection: show action menu
+      setAiMenuOpen((prev) => !prev);
+    }
+  }, [viewRef, t]);
+
+  const handleAiAction = useCallback((instruction: string) => {
+    setAiMenuOpen(false);
+    const view = viewRef.current;
+    if (!view) return;
+    const config = useChatStore.getState().config;
+    const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+    triggerAiTransform(view, instruction, config, noteTitle).catch((err) => {
+      toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
+    });
+  }, [viewRef, t]);
+
+  // AI suggest tags: inserts inline #tags at the end of the note
+  const handleSuggestTags = useCallback(async () => {
+    setAiMenuOpen(false);
+    const view = viewRef.current;
+    if (!view) return;
+    const config = useChatStore.getState().config;
+    const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+    const content = view.state.doc.toString();
+    try {
+      const allTags = await listAllTags();
+      const tags = await suggestTags(content, noteTitle, allTags.map((t) => t.tag), config);
+      if (!tags.length) return;
+      // Insert suggested tags as inline #tags at the end of the document
+      const tagLine = '\n\n' + tags.map((tag) => `#${tag}`).join(' ');
+      const docLen = view.state.doc.length;
+      view.dispatch({ changes: { from: docLen, to: docLen, insert: tagLine } });
+      toast({ title: t('smartTags.inserted', { count: tags.length }) });
+    } catch (err) {
+      toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
+    }
+  }, [viewRef, t]);
+
+  // AI suggest links: inserts [[WikiLinks]] at the cursor
+  const handleSuggestLinks = useCallback(async () => {
+    setAiMenuOpen(false);
+    const view = viewRef.current;
+    if (!view) return;
+    const config = useChatStore.getState().config;
+    const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+    const content = view.state.doc.toString();
+    try {
+      const graphData = await getGraphData();
+      const allTitles = graphData.nodes.map((n) => n.title).filter((t) => t && t !== noteTitle);
+      const suggestions = await suggestLinks(content, noteTitle, allTitles, config);
+      if (!suggestions.length) return;
+      // Insert suggested links at the end of the document
+      const linkLine = '\n\n' + suggestions.map((s) => `[[${s}]]`).join(' · ');
+      const docLen = view.state.doc.length;
+      view.dispatch({ changes: { from: docLen, to: docLen, insert: linkLine } });
+      toast({ title: t('smartLinks.inserted', { count: suggestions.length }) });
+    } catch (err) {
+      toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
+    }
+  }, [viewRef, t]);
+
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
@@ -318,6 +398,27 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
         <ToolbarBtn icon={<PenTool size={14} />} title={t('canvas.title')} onClick={() => setCanvasOpen(true)} />
       </ToolbarGroup>
 
+      <ToolbarDivider />
+
+      {/* ── AI ─────────────────────────────────────────── */}
+      <ToolbarGroup>
+        <div className="relative">
+          <ToolbarBtn
+            icon={<Sparkles size={14} />}
+            title={t('inlineAi.title')}
+            onClick={handleAiClick}
+          />
+          {aiMenuOpen && (
+            <AiActionMenu
+              onSelect={handleAiAction}
+              onSuggestTags={handleSuggestTags}
+              onSuggestLinks={handleSuggestLinks}
+              onClose={() => setAiMenuOpen(false)}
+            />
+          )}
+        </div>
+      </ToolbarGroup>
+
       {/* ── Typesetting dialog ──────────────────────────── */}
       <TypesettingDialog
         open={typesettingOpen}
@@ -379,4 +480,76 @@ function ToolbarGroup({ children }: { children: React.ReactNode }) {
 
 function ToolbarDivider() {
   return <div className="w-px h-4 bg-theme-border mx-1.5" />;
+}
+
+// ── AI action popup menu ────────────────────────────────────
+
+const AI_ACTIONS = [
+  { key: 'rewrite', instruction: 'Rewrite this text to be clearer and more concise' },
+  { key: 'improve', instruction: 'Improve the writing quality while preserving the meaning' },
+  { key: 'shorter', instruction: 'Make this text shorter while keeping the key points' },
+  { key: 'longer', instruction: 'Expand this text with more detail and explanation' },
+  { key: 'translate', instruction: 'Translate this text to the other language (Chinese↔English)' },
+  { key: 'summarize', instruction: 'Summarize this text into bullet points' },
+  { key: 'explain', instruction: 'Explain this text in simpler terms' },
+] as const;
+
+function AiActionMenu({
+  onSelect,
+  onSuggestTags,
+  onSuggestLinks,
+  onClose,
+}: {
+  onSelect: (instruction: string) => void;
+  onSuggestTags: () => void;
+  onSuggestLinks: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  // Close on click outside
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="absolute top-full left-0 mt-1 z-50 min-w-[160px] bg-surface border border-theme-border rounded-lg shadow-lg py-1"
+    >
+      {AI_ACTIONS.map((action) => (
+        <button
+          key={action.key}
+          type="button"
+          className="w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-theme-hover transition-colors"
+          onClick={() => onSelect(action.instruction)}
+        >
+          {t(`inlineAi.${action.key}`)}
+        </button>
+      ))}
+      {/* Intelligence actions separator */}
+      <div className="h-px bg-theme-border my-1 mx-2" />
+      <button
+        type="button"
+        className="w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-theme-hover transition-colors"
+        onClick={onSuggestTags}
+      >
+        {t('smartTags.suggest')}
+      </button>
+      <button
+        type="button"
+        className="w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-theme-hover transition-colors"
+        onClick={onSuggestLinks}
+      >
+        {t('smartLinks.suggest')}
+      </button>
+    </div>
+  );
 }

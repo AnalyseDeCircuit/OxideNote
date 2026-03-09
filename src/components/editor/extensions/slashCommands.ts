@@ -9,6 +9,9 @@
  */
 
 import type { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
+import { triggerAiTransform, triggerAiContinue } from './aiInline';
+import { useChatStore } from '@/store/chatStore';
+import { useNoteStore } from '@/store/noteStore';
 
 interface SlashCommand {
   label: string;
@@ -34,6 +37,15 @@ const COMMANDS: SlashCommand[] = [
   { label: 'image', detail: 'Image', template: '![alt](url)' },
   { label: 'link', detail: 'Link', template: '[text](url)' },
   { label: 'footnote', detail: 'Footnote', template: '[^1]: ' },
+];
+
+// AI-related slash commands use a special `template: ''` and are handled
+// by the `apply` function which dispatches AI operations on the editor.
+const AI_COMMANDS: SlashCommand[] = [
+  { label: 'ai-rewrite', detail: 'AI: Rewrite paragraph', template: '' },
+  { label: 'ai-continue', detail: 'AI: Continue writing', template: '' },
+  { label: 'ai-summarize', detail: 'AI: Summarize note', template: '' },
+  { label: 'ai-translate', detail: 'AI: Translate', template: '' },
 ];
 
 /**
@@ -63,11 +75,67 @@ export function slashCommandSource(context: CompletionContext): CompletionResult
       },
     }));
 
-  if (options.length === 0) return null;
+  // Add AI slash commands with special apply handlers
+  const aiOptions: Completion[] = AI_COMMANDS
+    .filter((cmd) => cmd.label.includes(query))
+    .map((cmd) => ({
+      label: `/${cmd.label}`,
+      detail: cmd.detail,
+      apply: (view, _completion, from, to) => {
+        // Remove the slash command text first
+        view.dispatch({ changes: { from, to, insert: '' } });
+
+        const config = useChatStore.getState().config;
+        const noteTitle = useNoteStore.getState().activeTabPath
+          ?.replace(/\.md$/, '').split('/').pop() || '';
+
+        if (cmd.label === 'ai-continue') {
+          triggerAiContinue(view, config, noteTitle).catch(console.warn);
+        } else {
+          // For transform commands, select the current paragraph
+          const cursor = view.state.selection.main.head;
+          const line = view.state.doc.lineAt(cursor);
+          // Find paragraph bounds (consecutive non-empty lines)
+          let paraStart = line.from;
+          let paraEnd = line.to;
+          // Expand backward
+          for (let ln = line.number - 1; ln >= 1; ln--) {
+            const prev = view.state.doc.line(ln);
+            if (prev.text.trim() === '') break;
+            paraStart = prev.from;
+          }
+          // Expand forward
+          for (let ln = line.number + 1; ln <= view.state.doc.lines; ln++) {
+            const next = view.state.doc.line(ln);
+            if (next.text.trim() === '') break;
+            paraEnd = next.to;
+          }
+
+          const paraText = view.state.doc.sliceString(paraStart, paraEnd);
+          if (paraText.trim()) {
+            // Select the paragraph, then transform
+            view.dispatch({
+              selection: { anchor: paraStart, head: paraEnd },
+            });
+
+            const instruction = cmd.label === 'ai-rewrite'
+              ? 'Rewrite this text to be clearer and more concise'
+              : cmd.label === 'ai-summarize'
+                ? 'Summarize this text into bullet points'
+                : 'Translate this text to the other language (Chinese↔English)';
+
+            triggerAiTransform(view, instruction, config, noteTitle).catch(console.warn);
+          }
+        }
+      },
+    }));
+
+  const allOptions = [...options, ...aiOptions];
+  if (allOptions.length === 0) return null;
 
   return {
     from,
-    options,
+    options: allOptions,
     filter: false,
   };
 }

@@ -14,6 +14,9 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { toast } from '@/hooks/useToast';
 import { promptPassword, promptPasswordWithConfirm } from '@/components/ui/PasswordDialog';
 import i18n from '@/i18n';
+import { getEditorView } from '@/lib/editorViewRef';
+import { triggerAiTransform, triggerAiContinue } from '@/components/editor/extensions/aiInline';
+import { useChatStore } from '@/store/chatStore';
 
 export interface AppCommand {
   id: string;
@@ -32,6 +35,7 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
   const nav = t('commandPalette.navigation');
   const edit = t('commandPalette.editing');
   const panel = t('commandPalette.panels');
+  const ai = 'AI';
 
   return [
     // ── Layout ──────────────────────────────────────────────
@@ -278,6 +282,61 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         } catch (e) {
           toast({ title: t('publish.failed'), description: String(e), variant: 'error' });
         }
+      },
+    },
+
+    // ── AI ──────────────────────────────────────────────────
+    {
+      id: 'ai-rewrite',
+      label: t('inlineAi.rewrite'),
+      shortcut: '⌘I',
+      category: ai,
+      action: () => {
+        const view = getEditorView();
+        if (!view) return;
+        const config = useChatStore.getState().config;
+        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+        triggerAiTransform(view, 'Rewrite this text to be clearer and more concise', config, title)
+          .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
+      },
+    },
+    {
+      id: 'ai-continue',
+      label: t('inlineAi.continue'),
+      category: ai,
+      action: () => {
+        const view = getEditorView();
+        if (!view) return;
+        const config = useChatStore.getState().config;
+        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+        triggerAiContinue(view, config, title)
+          .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
+      },
+    },
+    {
+      id: 'ai-summarize',
+      label: t('inlineAi.summarize'),
+      category: ai,
+      action: () => {
+        const view = getEditorView();
+        if (!view) return;
+        const config = useChatStore.getState().config;
+        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+        triggerAiTransform(view, 'Summarize this text into bullet points', config, title)
+          .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
+      },
+    },
+    {
+      id: 'ai-translate',
+      label: t('inlineAi.translate'),
+      category: ai,
+      action: () => {
+        const view = getEditorView();
+        if (!view) return;
+        const config = useChatStore.getState().config;
+        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+        triggerAiTransform(view, 'Translate this text to the other language (Chinese↔English)', config, title)
+          .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
       },
     },
   ];

@@ -1,13 +1,19 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, FileInput, ChevronRight, ChevronDown, RotateCcw, Trash2 } from 'lucide-react';
+import { Copy, FileInput, ChevronRight, ChevronDown, RotateCcw, Trash2, Bot, Play } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
 import type { ChatMessage as ChatMessageType } from '@/lib/api';
 import { EditCard } from '@/components/chat/EditCard';
 import { useChatStore, type EditSuggestion } from '@/store/chatStore';
+import { useAgentStore } from '@/store/agentStore';
 import { getEditorView } from '@/lib/editorViewRef';
+
+// ── Agent message marker detection ──────────────────────────
+
+const AGENT_RESULT_RE = /^<!--agent-result:(\d+)-->\n([\s\S]*)$/;
+const AGENT_STARTED_RE = /^<!--agent-started-->\n([\s\S]*)$/;
 
 interface Props {
   message: ChatMessageType;
@@ -25,6 +31,18 @@ export function ChatMessage({ message, index, isLatest }: Props) {
   }
 
   if (message.role === 'assistant') {
+    // Check for agent-result marker
+    const resultMatch = message.content.match(AGENT_RESULT_RE);
+    if (resultMatch) {
+      return <AgentResultMessage changesCount={Number(resultMatch[1])} summary={resultMatch[2]} index={index} />;
+    }
+
+    // Check for agent-started marker
+    const startedMatch = message.content.match(AGENT_STARTED_RE);
+    if (startedMatch) {
+      return <AgentStartedMessage text={startedMatch[1]} index={index} />;
+    }
+
     const edits = isLatest ? pendingEdits : [];
     return <AssistantMessage message={message} edits={edits} index={index} />;
   }
@@ -150,6 +168,90 @@ function AssistantMessage({ message, edits, index }: { message: ChatMessageType;
               title={t('chat.retry')}
             >
               <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors ml-auto"
+            onClick={() => deleteMessage(index)}
+            title={t('chat.deleteMessage')}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Agent started message ───────────────────────────────────
+
+function AgentStartedMessage({ text, index }: { text: string; index: number }) {
+  const { t } = useTranslation();
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[95%] rounded-xl px-3 py-2 bg-theme-accent/10 text-sm text-foreground border border-theme-accent/30">
+        <div className="flex items-center gap-2 mb-1">
+          <Play className="w-3.5 h-3.5 text-theme-accent" />
+          <span className="text-xs font-medium text-theme-accent">{t('chat.agentRunning')}</span>
+        </div>
+        <div className="text-muted-foreground text-xs">{text}</div>
+        <div className="flex items-center gap-1 mt-2 pt-1 border-t border-theme-border/50">
+          <button
+            className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors ml-auto"
+            onClick={() => deleteMessage(index)}
+            title={t('chat.deleteMessage')}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Agent result message ────────────────────────────────────
+
+function AgentResultMessage({ changesCount, summary, index }: { changesCount: number; summary: string; index: number }) {
+  const { t } = useTranslation();
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+  const agentStatus = useAgentStore((s) => s.status);
+  const hasProposedChanges = useAgentStore((s) => s.proposedChanges.length > 0);
+
+  // Render summary as markdown
+  const renderedHtml = useMemo(() => {
+    const raw = marked.parse(summary, { async: false }) as string;
+    return DOMPurify.sanitize(raw);
+  }, [summary]);
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[95%] rounded-xl px-3 py-2 bg-surface text-sm text-foreground border border-green-500/30">
+        <div className="flex items-center gap-2 mb-1">
+          <Bot className="w-3.5 h-3.5 text-green-500" />
+          <span className="text-xs font-medium text-green-500">
+            {t('chat.agentCompleted', { count: changesCount })}
+          </span>
+        </div>
+        <div
+          className="prose prose-sm dark:prose-invert max-w-none break-words
+            [&_pre]:bg-background [&_pre]:rounded-md [&_pre]:p-2 [&_pre]:text-xs
+            [&_code]:text-xs [&_code]:bg-background [&_code]:px-1 [&_code]:rounded"
+          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+        />
+        <div className="flex items-center gap-1 mt-2 pt-1 border-t border-theme-border/50">
+          {/* Show "View Changes" only when agent has pending proposed changes */}
+          {agentStatus === 'waiting_approval' && hasProposedChanges && (
+            <button
+              className="text-xs px-2 py-0.5 rounded bg-green-500/15 text-green-600 hover:bg-green-500/25 transition-colors"
+              onClick={() => {
+                // Switch to agent panel — use uiStore if available
+                const event = new CustomEvent('switch-panel', { detail: 'agent' });
+                window.dispatchEvent(event);
+              }}
+            >
+              {t('chat.viewChanges')}
             </button>
           )}
           <button

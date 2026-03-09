@@ -18,6 +18,7 @@ import {
   updateTokenStats,
   resetLifetimeTokensDb,
   migrateChatFromJson,
+  listAiMemories,
   type ChatMessage,
   type ChatConfig,
   type ChatProvider,
@@ -29,6 +30,7 @@ import {
   type ChatSessionInfo,
 } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
+import { useAgentStore } from '@/store/agentStore';
 import { toast } from '@/hooks/useToast';
 import i18n from '@/i18n';
 
@@ -123,6 +125,8 @@ interface ChatState {
   updateConfig: (partial: Partial<ChatConfig>) => void;
   resetSessionTokens: () => void;
   resetLifetimeTokens: () => void;
+  /** Inject an agent completion result as a chat message */
+  injectAgentResult: (summary: string, changesCount: number) => void;
 }
 
 // ── Default config ──────────────────────────────────────────
@@ -465,6 +469,68 @@ export const useChatStore = create<ChatState>()(
       const state = get();
       if (state.isStreaming) return;
 
+      // ── @agent prefix detection ─────────────────────────────
+      // Format: "@agent <kind> [instruction]"
+      // Example: "@agent daily_review" or "@agent duplicate_detector focus on folder/xyz"
+      const agentMatch = content.match(/^@agent\s+([\w]+)(?:\s+(.*))?$/s);
+      if (agentMatch) {
+        const kindStr = agentMatch[1];
+        const instruction = agentMatch[2]?.trim();
+
+        // Ensure a session exists before recording the user message
+        if (!state.currentSessionId) {
+          await get().createSession();
+        }
+        const sessionId = get().currentSessionId;
+
+        // Record user message in chat history
+        const userMsg: ChatMessage = { role: 'user', content };
+        const updatedMessages = [...get().messages, userMsg];
+        const sessions = get().sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          return { ...s, messages: updatedMessages, updatedAt: Date.now() };
+        });
+        set({ messages: updatedMessages, sessions });
+
+        // Persist user message
+        if (sessionId) {
+          saveChatMessage(sessionId, 'user', content, null, null, null)
+            .catch((err) => console.warn('Failed to save @agent user message:', err));
+        }
+
+        // Build AgentTask and delegate to agentStore
+        const agentKind = kindStr.includes('custom')
+          ? { custom: kindStr } as const
+          : kindStr as import('@/lib/api').AgentKind;
+        const task: import('@/lib/api').AgentTask = {
+          kind: agentKind,
+          scope: instruction || currentNotePath || undefined,
+        };
+        const chatConfig = get().config;
+        useAgentStore.getState().runAgent(task, chatConfig);
+
+        // Add a system notification in chat
+        const notifyMsg: ChatMessage = {
+          role: 'assistant',
+          content: `<!--agent-started-->\n${i18n.t('chat.agentTriggered', { kind: kindStr })}`,
+        };
+        const withNotify = [...get().messages, notifyMsg];
+        set({
+          messages: withNotify,
+          sessions: get().sessions.map((s) => {
+            if (s.id !== sessionId) return s;
+            return { ...s, messages: withNotify, updatedAt: Date.now() };
+          }),
+        });
+
+        if (sessionId) {
+          saveChatMessage(sessionId, 'assistant', notifyMsg.content, null, null, null)
+            .catch((err) => console.warn('Failed to save agent notification:', err));
+        }
+
+        return; // Skip normal chat stream
+      }
+
       // Ensure a session exists
       if (!state.currentSessionId) {
         await get().createSession();
@@ -569,6 +635,18 @@ export const useChatStore = create<ChatState>()(
         }
 
         set({ contextInfo });
+
+        // Load AI memories and inject into system prompt
+        try {
+          const memories = await listAiMemories();
+          if (memories.length > 0) {
+            const memorySection = '\n\n## AI Memory (persistent context)\n' +
+              memories.map((m) => `- [${m.category}] ${m.content}`).join('\n');
+            systemPrompt = (systemPrompt || defaultSystemPrompt()) + memorySection;
+          }
+        } catch {
+          // If memory loading fails, proceed without it
+        }
 
         // Assemble final messages
         const finalMessages: ChatMessage[] = [
@@ -825,6 +903,29 @@ export const useChatStore = create<ChatState>()(
       }));
       resetLifetimeTokensDb()
         .catch((err) => console.warn('Failed to reset lifetime tokens in DB:', err));
+    },
+
+    // ── Agent result injection ────────────────────────────────
+
+    injectAgentResult: (summary, changesCount) => {
+      const sessionId = get().currentSessionId;
+      if (!sessionId) return;
+
+      // Build an assistant message with agent-result marker prefix
+      const content = `<!--agent-result:${changesCount}-->\n${summary}`;
+      const agentMsg: ChatMessage = { role: 'assistant', content };
+
+      const updatedMessages = [...get().messages, agentMsg];
+      const sessions = get().sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        return { ...s, messages: updatedMessages, updatedAt: Date.now() };
+      });
+
+      set({ messages: updatedMessages, sessions });
+
+      // Persist to DB
+      saveChatMessage(sessionId, 'assistant', content, null, null, null)
+        .catch((err) => console.warn('Failed to save agent result message:', err));
     },
   })),
 );

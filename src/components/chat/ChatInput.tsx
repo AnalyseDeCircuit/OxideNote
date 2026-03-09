@@ -3,11 +3,21 @@ import { useTranslation } from 'react-i18next';
 import { Send, Square, Wand2, RefreshCw, FileText, Paperclip, X } from 'lucide-react';
 
 import { useChatStore } from '@/store/chatStore';
+import { useAgentStore } from '@/store/agentStore';
 import { useNoteStore } from '@/store/noteStore';
 import { searchNotes } from '@/lib/api';
 import { getEditorView } from '@/lib/editorViewRef';
 import { toast } from '@/hooks/useToast';
 import type { ImageAttachment, SearchResult } from '@/lib/api';
+
+// Available built-in agent kinds for @agent autocomplete
+const AGENT_KINDS = [
+  'duplicate_detector',
+  'outline_extractor',
+  'index_generator',
+  'daily_review',
+  'graph_maintainer',
+] as const;
 
 /** Chat input area with @mention, quick actions, and image attachment */
 export function ChatInput() {
@@ -22,6 +32,9 @@ export function ChatInput() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionResults, setMentionResults] = useState<SearchResult[]>([]);
   const [mentionIndex, setMentionIndex] = useState(0);
+  // @agent autocomplete state
+  const [agentSuggestions, setAgentSuggestions] = useState<string[]>([]);
+  const [agentSugIndex, setAgentSugIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,7 +91,26 @@ export function ChatInput() {
   const handleTextChange = useCallback(async (value: string) => {
     setText(value);
 
-    // Detect @mention
+    // Detect @agent autocomplete — triggers when text starts with "@agent "
+    const agentPrefixMatch = value.match(/^@agent\s+(\S*)$/);
+    if (agentPrefixMatch) {
+      const partial = agentPrefixMatch[1].toLowerCase();
+      // Also include custom agents from store
+      const customAgents = useAgentStore.getState().customAgents.map(a => a.name);
+      const allKinds = [...AGENT_KINDS, ...customAgents];
+      const filtered = partial
+        ? allKinds.filter(k => k.toLowerCase().includes(partial))
+        : allKinds;
+      setAgentSuggestions(filtered);
+      setAgentSugIndex(0);
+      // Clear note mention state
+      setMentionQuery(null);
+      setMentionResults([]);
+      return;
+    }
+    setAgentSuggestions([]);
+
+    // Detect @mention for note references
     const cursorPos = textareaRef.current?.selectionStart ?? value.length;
     const beforeCursor = value.slice(0, cursorPos);
     const atIndex = beforeCursor.lastIndexOf('@');
@@ -116,6 +148,20 @@ export function ChatInput() {
     addReferencedFile(result.path, result.title);
   }, [text, addReferencedFile]);
 
+  // Select an agent kind from @agent autocomplete
+  const selectAgentKind = useCallback((kind: string) => {
+    setText(`@agent ${kind} `);
+    setAgentSuggestions([]);
+    // Focus back on textarea and move cursor to end
+    setTimeout(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = el.value.length;
+      }
+    }, 0);
+  }, []);
+
   // ── Send / keyboard handling ──────────────────────────────
 
   const handleSend = useCallback(() => {
@@ -129,6 +175,29 @@ export function ChatInput() {
   }, [text, images, isStreaming, sendMessage]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // @agent suggestion navigation
+    if (agentSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAgentSugIndex((i) => Math.min(i + 1, agentSuggestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAgentSugIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        selectAgentKind(agentSuggestions[agentSugIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setAgentSuggestions([]);
+        return;
+      }
+    }
+
     // @mention navigation
     if (mentionQuery !== null && mentionResults.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -158,7 +227,7 @@ export function ChatInput() {
       e.preventDefault();
       handleSend();
     }
-  }, [mentionQuery, mentionResults, mentionIndex, selectMention, handleSend]);
+  }, [agentSuggestions, agentSugIndex, selectAgentKind, mentionQuery, mentionResults, mentionIndex, selectMention, handleSend]);
 
   // ── Quick actions ─────────────────────────────────────────
 
@@ -234,6 +303,26 @@ export function ChatInput() {
               onClick={() => selectMention(result)}
             >
               {result.title || result.path}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* @agent kind suggestions */}
+      {agentSuggestions.length > 0 && (
+        <div className="mx-3 mt-1 bg-surface border border-theme-accent/30 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          <div className="px-3 py-1 text-xs text-muted-foreground border-b border-theme-border">
+            {t('chat.agentKindHint')}
+          </div>
+          {agentSuggestions.map((kind, i) => (
+            <button
+              key={kind}
+              className={`w-full text-left px-3 py-1.5 text-sm ${
+                i === agentSugIndex ? 'bg-theme-hover text-theme-accent' : 'text-foreground hover:bg-theme-hover'
+              }`}
+              onClick={() => selectAgentKind(kind)}
+            >
+              {kind}
             </button>
           ))}
         </div>

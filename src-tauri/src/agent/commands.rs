@@ -60,6 +60,8 @@ pub struct AgentStatusResponse {
     pub task_id: Option<String>,
     pub kind: Option<String>,
     pub result: Option<TaskResult>,
+    /// Number of tasks waiting in the queue
+    pub queue_count: usize,
 }
 
 // ── Commands ────────────────────────────────────────────────
@@ -117,6 +119,7 @@ pub async fn agent_run(
     // Spawn the agent task
     let agent_state_clone = Arc::clone(&agent_state);
     let task_id_spawn = task_id_ret.clone();
+    let read_db_clone = Arc::clone(&read_db);
     tokio::spawn(async move {
         let result = runtime::run_agent(
             task,
@@ -146,7 +149,7 @@ pub async fn agent_run(
                 } else {
                     *run_state = AgentRunState::Idle;
                     // Drain queued tasks
-                    drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &app);
+                    drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app);
                 }
             }
             Err(e) => {
@@ -155,7 +158,7 @@ pub async fn agent_run(
                     "agent-error",
                     serde_json::json!({ "error": e.to_string() }),
                 );
-                drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &app);
+                drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app);
             }
         }
     });
@@ -214,6 +217,7 @@ pub async fn agent_resume(
 #[tauri::command]
 pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusResponse, AgentError> {
     let agent_state = &state.agent_state;
+    let queue_count = agent_state.task_queue.lock().len();
     let run_state = agent_state.run_state.lock();
     match &*run_state {
         AgentRunState::Idle => Ok(AgentStatusResponse {
@@ -221,6 +225,7 @@ pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusRespo
             task_id: None,
             kind: None,
             result: None,
+            queue_count,
         }),
         AgentRunState::Running {
             task_id,
@@ -239,6 +244,7 @@ pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusRespo
                 task_id: Some(task_id.clone()),
                 kind: Some(kind.to_string()),
                 result: None,
+                queue_count,
             })
         }
         AgentRunState::WaitingApproval(result) => Ok(AgentStatusResponse {
@@ -246,6 +252,7 @@ pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusRespo
             task_id: Some(result.task_id.clone()),
             kind: Some(result.kind.to_string()),
             result: Some(result.clone()),
+            queue_count,
         }),
     }
 }
@@ -439,15 +446,156 @@ fn resolve_agent_settings(
 }
 
 /// Drain queued tasks after the current one completes.
-/// This is a fire-and-forget spawn — we don't track the result.
+/// Pops the next task from the queue and spawns it using the same
+/// run_agent pattern. Each task runs sequentially (fire-and-forget).
 fn drain_queued_tasks(
-    _agent_state: &Arc<AgentState>,
-    _config: &ChatConfig,
-    _vault_path: &PathBuf,
-    _db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
-    _app: &AppHandle,
+    agent_state: &Arc<AgentState>,
+    config: &ChatConfig,
+    vault_path: &PathBuf,
+    db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+    read_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+    chat_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+    app: &AppHandle,
 ) {
-    // Queue draining is deferred to P2 — for now, tasks are simply dropped.
-    // In P2, each queued task will be spawned sequentially after the current
-    // one completes, reusing the same run_agent pattern.
+    // Pop the next queued task
+    let next_task = {
+        let mut queue = agent_state.task_queue.lock();
+        queue.pop_front()
+    };
+
+    let next_task = match next_task {
+        Some(t) => t,
+        None => return, // Nothing in queue
+    };
+
+    // Resolve agent settings for the queued task
+    let (allowed_tools, system_prompt_override, max_writes) =
+        resolve_agent_settings(&next_task, vault_path);
+
+    // Create new abort/pause channels
+    let (abort_tx, abort_rx) = tokio::sync::watch::channel(false);
+    let (pause_tx, pause_rx) = tokio::sync::watch::channel(false);
+    let task_id = uuid::Uuid::new_v4().to_string();
+
+    // Transition to Running
+    {
+        let mut run_state = agent_state.run_state.lock();
+        *run_state = AgentRunState::Running {
+            task_id: task_id.clone(),
+            kind: next_task.kind.clone(),
+            abort_tx,
+            pause_tx,
+        };
+    }
+
+    // Emit progress event so frontend knows a queued task started
+    let _ = app.emit(
+        "agent-progress",
+        serde_json::json!({
+            "task_id": task_id,
+            "status": "planning",
+            "message": format!("Running queued task: {}", next_task.kind),
+        }),
+    );
+
+    // Clone everything for the spawned task
+    let agent_state_c = Arc::clone(agent_state);
+    let config_c = config.clone();
+    let vault_path_c = vault_path.clone();
+    let db_c = Arc::clone(db);
+    let read_db_c = Arc::clone(read_db);
+    let chat_db_c = Arc::clone(chat_db);
+    let app_c = app.clone();
+    let task_id_c = task_id.clone();
+
+    tokio::spawn(async move {
+        let result = runtime::run_agent(
+            next_task,
+            &config_c,
+            &vault_path_c,
+            db_c.clone(),
+            read_db_c.clone(),
+            &app_c,
+            abort_rx,
+            pause_rx,
+            allowed_tools,
+            system_prompt_override,
+            max_writes,
+            task_id_c,
+        )
+        .await;
+
+        let mut run_state = agent_state_c.run_state.lock();
+        match result {
+            Ok(task_result) => {
+                let _ = history::save_agent_run(&chat_db_c, &task_result);
+
+                if task_result.status == AgentStatus::WaitingApproval {
+                    *run_state = AgentRunState::WaitingApproval(task_result);
+                } else {
+                    *run_state = AgentRunState::Idle;
+                    // Continue draining
+                    drain_queued_tasks(
+                        &agent_state_c, &config_c, &vault_path_c,
+                        &db_c, &read_db_c, &chat_db_c, &app_c,
+                    );
+                }
+            }
+            Err(e) => {
+                *run_state = AgentRunState::Idle;
+                let _ = app_c.emit(
+                    "agent-error",
+                    serde_json::json!({ "error": e.to_string() }),
+                );
+                // Continue draining even on error
+                drain_queued_tasks(
+                    &agent_state_c, &config_c, &vault_path_c,
+                    &db_c, &read_db_c, &chat_db_c, &app_c,
+                );
+            }
+        }
+    });
+}
+
+// ── Scheduler commands ──────────────────────────────────────
+
+/// Get the current scheduler configuration.
+#[tauri::command]
+pub async fn agent_scheduler_config(
+    state: State<'_, AppState>,
+) -> Result<super::scheduler::SchedulerConfig, AgentError> {
+    let vault_path = state
+        .vault_path
+        .read()
+        .clone()
+        .ok_or(AgentError::NoVault)?;
+    Ok(super::scheduler::load_config(&vault_path))
+}
+
+/// Update the scheduler configuration.
+#[tauri::command]
+pub async fn agent_scheduler_set_config(
+    config: super::scheduler::SchedulerConfig,
+    state: State<'_, AppState>,
+) -> Result<(), AgentError> {
+    let vault_path = state
+        .vault_path
+        .read()
+        .clone()
+        .ok_or(AgentError::NoVault)?;
+    super::scheduler::save_config(&vault_path, &config)
+        .map_err(|e| AgentError::Internal(e))?;
+
+    // Restart scheduler if config changed
+    let agent_state = Arc::clone(&state.agent_state);
+    let mut handle = agent_state.scheduler_handle.lock();
+    if let Some(h) = handle.take() {
+        h.abort();
+    }
+    if config.enabled {
+        let new_handle =
+            super::scheduler::start_scheduler(Arc::clone(&agent_state), vault_path);
+        *handle = Some(new_handle);
+    }
+    Ok(())
 }

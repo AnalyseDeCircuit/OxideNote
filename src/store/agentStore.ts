@@ -11,6 +11,7 @@ import {
   agentListHistory,
   agentListCustom,
 } from '@/lib/api';
+import { useChatStore } from '@/store/chatStore';
 import type {
   AgentKind,
   AgentStatus,
@@ -305,6 +306,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
       // Refresh status to pick up proposed changes
       get().fetchStatus();
+
+      // Bridge result to chat so users see it in the conversation
+      useChatStore.getState().injectAgentResult(summary, changes_count);
     });
 
     // Error event

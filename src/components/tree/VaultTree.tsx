@@ -16,6 +16,7 @@ import {
   Trash2,
   Layout,
   PenTool,
+  Sparkles,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -35,8 +36,11 @@ import {
   removeBookmark,
   isBookmarked,
   createCanvas,
+  readNote,
+  inlineAiTransform,
   type TreeNode,
 } from '@/lib/api';
+import { useChatStore } from '@/store/chatStore';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -48,6 +52,7 @@ import {
   ContextMenuSubContent,
 } from '@/components/ui/context-menu';
 import { toast } from '@/hooks/useToast';
+import { AiResultDialog } from '@/components/tree/AiResultDialog';
 import { TrashView } from '@/components/tree/TrashView';
 
 export function VaultTree() {
@@ -187,8 +192,30 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
   const [renameValue, setRenameValue] = useState(node.name);
   const [dragOver, setDragOver] = useState(false);
   const [inlineCreate, setInlineCreate] = useState<'note' | 'folder' | null>(null);
+  const [aiResult, setAiResult] = useState<{ result: string; title: string } | null>(null);
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
   const isActive = !node.is_dir && node.path === activeTabPath;
+
+  // Note-level AI operation handler
+  const handleNoteAi = useCallback(async (operation: string) => {
+    try {
+      const note = await readNote(node.path);
+      const config = useChatStore.getState().config;
+      const noteTitle = node.name.replace(/\.md$/, '');
+      const instructionMap: Record<string, string> = {
+        summarize: 'Summarize this note concisely in bullet points.',
+        autoTag: 'Extract relevant tags from this note. Output as a comma-separated list of tags prefixed with #.',
+        translate: 'Translate this note to English if it is in Chinese, or to Chinese if it is in English. Preserve Markdown formatting.',
+        flashcards: 'Create flashcards (Q&A pairs) from the key concepts in this note. Format as a numbered list with Q: and A: prefixes.',
+      };
+      const instruction = instructionMap[operation] || operation;
+      toast({ title: t('noteAi.processing') });
+      const result = await inlineAiTransform(note.content, instruction, '', noteTitle, config);
+      setAiResult({ result, title: t(`noteAi.${operation}Title`, { name: noteTitle }) });
+    } catch (err) {
+      toast({ title: t('noteAi.failed'), description: String(err), variant: 'error' });
+    }
+  }, [node.path, node.name, t]);
 
   const handleClick = useCallback(() => {
     if (node.is_dir) {
@@ -309,6 +336,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
     : '';
 
   return (
+    <>
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div>
@@ -475,12 +503,46 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
             {t('bookmarks.add')}
           </ContextMenuItem>
         )}
+        {/* AI operations submenu — only for .md files */}
+        {!node.is_dir && node.name.endsWith('.md') && (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <Sparkles size={14} className="mr-2" />
+              {t('noteAi.title')}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              <ContextMenuItem onClick={() => handleNoteAi('summarize')}>
+                {t('noteAi.summarize')}
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => handleNoteAi('autoTag')}>
+                {t('noteAi.autoTag')}
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => handleNoteAi('translate')}>
+                {t('noteAi.translate')}
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => handleNoteAi('flashcards')}>
+                {t('noteAi.flashcards')}
+              </ContextMenuItem>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={handleDelete} className="text-red-400">
           {t('sidebar.delete')}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+
+    {/* AI result dialog — portaled outside context menu */}
+    {aiResult && (
+      <AiResultDialog
+        result={aiResult.result}
+        title={aiResult.title}
+        notePath={node.path}
+        onClose={() => setAiResult(null)}
+      />
+    )}
+    </>
   );
 });
 

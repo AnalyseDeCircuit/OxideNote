@@ -780,6 +780,36 @@ export async function saveChatImage(
   return invoke<string>('save_chat_image', { sessionId, dataBase64, mediaType });
 }
 
+// ─── AI Memory ──────────────────────────────────────────────
+
+export interface AiMemory {
+  id: number;
+  content: string;
+  category: string;
+  created_at: number;
+  pinned: boolean;
+}
+
+/** List all AI memories, pinned first, then by recency. */
+export async function listAiMemories(): Promise<AiMemory[]> {
+  return invoke<AiMemory[]>('list_ai_memories');
+}
+
+/** Add a new AI memory entry. */
+export async function addAiMemory(content: string, category: string): Promise<AiMemory> {
+  return invoke<AiMemory>('add_ai_memory', { content, category });
+}
+
+/** Delete an AI memory by ID. */
+export async function deleteAiMemory(id: number): Promise<void> {
+  return invoke<void>('delete_ai_memory', { id });
+}
+
+/** Toggle pinned state of an AI memory. */
+export async function toggleAiMemoryPin(id: number): Promise<void> {
+  return invoke<void>('toggle_ai_memory_pin', { id });
+}
+
 // ─── Vault stats ────────────────────────────────────────────
 
 export interface VaultStats {
@@ -871,6 +901,7 @@ export interface AgentStatusResponse {
   task_id: string | null;
   kind: string | null;
   result: TaskResult | null;
+  queue_count: number;
 }
 
 export interface AgentRunSummary {
@@ -944,4 +975,91 @@ export async function agentListHistory(limit?: number): Promise<AgentRunSummary[
 /** List available custom agent definitions. */
 export async function agentListCustom(): Promise<CustomAgentDef[]> {
   return invoke<CustomAgentDef[]>('agent_list_custom');
+}
+
+// ── Agent scheduler ─────────────────────────────────────────
+
+export interface SchedulerConfig {
+  enabled: boolean;
+  daily_review?: {
+    enabled: boolean;
+    hour: number;
+    output_folder: string;
+    template: string;
+  };
+  graph_maintenance?: {
+    enabled: boolean;
+    interval_hours: number;
+  };
+}
+
+/** Get current scheduler configuration. */
+export async function agentSchedulerConfig(): Promise<SchedulerConfig> {
+  return invoke<SchedulerConfig>('agent_scheduler_config');
+}
+
+/** Update scheduler configuration. */
+export async function agentSchedulerSetConfig(config: SchedulerConfig): Promise<void> {
+  return invoke<void>('agent_scheduler_set_config', { config });
+}
+
+// ── Inline AI ───────────────────────────────────────────────
+
+/** Transform selected text with a given instruction (rewrite, translate, etc.). */
+export async function inlineAiTransform(
+  text: string,
+  instruction: string,
+  context: string,
+  noteTitle: string,
+  config: ChatConfig,
+): Promise<string> {
+  return invoke<string>('inline_ai_transform', {
+    text,
+    instruction,
+    context,
+    noteTitle,
+    config,
+  });
+}
+
+/** Continue writing from the cursor position. */
+export async function inlineAiContinue(
+  precedingText: string,
+  noteTitle: string,
+  config: ChatConfig,
+): Promise<string> {
+  return invoke<string>('inline_ai_continue', {
+    precedingText,
+    noteTitle,
+    config,
+  });
+}
+
+/** Analyze knowledge graph structure with LLM — returns Markdown analysis. */
+export async function analyzeGraph(
+  nodes: string[],
+  edges: [string, string][],
+  config: ChatConfig,
+): Promise<string> {
+  return invoke<string>('analyze_graph', { nodes, edges, config });
+}
+
+/** Suggest tags for a note based on its content and existing vault tags. */
+export async function suggestTags(
+  content: string,
+  noteTitle: string,
+  existingTags: string[],
+  config: ChatConfig,
+): Promise<string[]> {
+  return invoke<string[]>('suggest_tags', { content, noteTitle, existingTags, config });
+}
+
+/** Suggest links to other notes based on content similarity. */
+export async function suggestLinks(
+  content: string,
+  noteTitle: string,
+  allTitles: string[],
+  config: ChatConfig,
+): Promise<string[]> {
+  return invoke<string[]>('suggest_links', { content, noteTitle, allTitles, config });
 }
