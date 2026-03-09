@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -15,6 +16,9 @@ pub struct AppState {
     /// Read-only connection — used by search/backlink/graph queries,
     /// separate from write path to avoid read starvation under WAL mode
     pub read_db: Arc<Mutex<Option<Connection>>>,
+    /// Cancel senders for in-flight chat streams, keyed by request_id.
+    /// Arc-wrapped so spawned tasks can access it after command returns.
+    pub abort_senders: Arc<std::sync::Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
 }
 
 impl AppState {
@@ -24,6 +28,7 @@ impl AppState {
             watcher: Mutex::new(None),
             db: Arc::new(Mutex::new(None)),
             read_db: Arc::new(Mutex::new(None)),
+            abort_senders: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 }

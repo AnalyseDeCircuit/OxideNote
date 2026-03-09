@@ -18,7 +18,9 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore, flushAllPendingSaves } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, type EmbeddingConfig, type EmbeddingStatus } from '@/lib/api';
+import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, listModels, type EmbeddingConfig, type EmbeddingStatus, type ChatProvider, type ThinkingMode } from '@/lib/api';
+import { useChatStore, PROVIDER_DEFAULTS } from '@/store/chatStore';
+import { ModelSelector } from '@/components/chat/ModelSelector';
 import { toast } from '@/hooks/useToast';
 
 interface ThemeDef {
@@ -840,6 +842,195 @@ function AITab() {
             className="px-4 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover disabled:opacity-50 transition-colors"
           >
             {rebuilding ? t('ai.rebuilding') : t('ai.rebuild')}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* ── Chat Provider Config ──────────────────────────── */}
+      <ChatConfigSection />
+    </>
+  );
+}
+
+/** Chat provider configuration section in AI settings */
+function ChatConfigSection() {
+  const { t } = useTranslation();
+  const chatConfig = useChatStore((s) => s.config);
+  const tokenStats = useChatStore((s) => s.tokenStats);
+  const updateConfig = useChatStore((s) => s.updateConfig);
+  const [testing, setTesting] = useState(false);
+
+  const providers: ChatProvider[] = [
+    'openai', 'claude', 'ollama', 'deepseek', 'gemini', 'moonshot', 'groq', 'openrouter', 'custom',
+  ];
+
+  const thinkingModes: { value: ThinkingMode; label: string }[] = [
+    { value: 'auto', label: t('chat.configThinkingAuto') },
+    { value: 'thinking', label: t('chat.configThinkingOn') },
+    { value: 'instant', label: t('chat.configThinkingInstant') },
+  ];
+
+  // Auto-fill URL on provider change
+  const handleProviderChange = (provider: ChatProvider) => {
+    const defaults = PROVIDER_DEFAULTS[provider];
+    updateConfig({ provider, api_url: defaults.url });
+  };
+
+  // Test connection by listing models
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      await listModels(chatConfig);
+      toast({ title: t('chat.configTestSuccess'), variant: 'default' });
+    } catch (e) {
+      toast({ title: t('chat.configTestFail', { error: String(e) }), variant: 'error' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleResetLifetime = () => {
+    useChatStore.getState().resetLifetimeTokens();
+    toast({ title: t('chat.tokenReset'), variant: 'default' });
+  };
+
+  return (
+    <>
+      <SettingsCard title={t('chat.configProvider')}>
+        {/* Provider select */}
+        <SettingRow label={t('chat.configProvider')}>
+          <Select value={chatConfig.provider} onValueChange={(v) => handleProviderChange(v as ChatProvider)}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {providers.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+
+        {/* API URL */}
+        <SettingRow label={t('chat.configApiUrl')}>
+          <input
+            type="text"
+            value={chatConfig.api_url}
+            onChange={(e) => updateConfig({ api_url: e.target.value })}
+            placeholder={PROVIDER_DEFAULTS[chatConfig.provider].url || 'https://...'}
+            className="w-[300px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        {/* API Key */}
+        <SettingRow label={t('chat.configApiKey')}>
+          <input
+            type="password"
+            value={chatConfig.api_key}
+            onChange={(e) => updateConfig({ api_key: e.target.value })}
+            placeholder={PROVIDER_DEFAULTS[chatConfig.provider].placeholder}
+            className="w-[300px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        {/* Model selector */}
+        <SettingRow label={t('chat.configModel')}>
+          <div className="w-[300px]">
+            <ModelSelector />
+          </div>
+        </SettingRow>
+
+        {/* Thinking mode */}
+        <SettingRow label={t('chat.configThinkingMode')}>
+          <Select value={chatConfig.thinking_mode} onValueChange={(v) => updateConfig({ thinking_mode: v as ThinkingMode })}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {thinkingModes.map((m) => (
+                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+
+        {/* Temperature */}
+        <SettingRow label={t('chat.configTemperature')}>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={chatConfig.temperature !== null && chatConfig.temperature !== undefined ? chatConfig.temperature * 100 : 70}
+              onChange={(e) => updateConfig({ temperature: Number(e.target.value) / 100 })}
+              className="w-32"
+            />
+            <span className="text-sm text-muted-foreground w-10">
+              {chatConfig.temperature !== null && chatConfig.temperature !== undefined
+                ? chatConfig.temperature.toFixed(1)
+                : t('chat.configThinkingAuto')}
+            </span>
+          </div>
+        </SettingRow>
+
+        {/* Max tokens */}
+        <SettingRow label={t('chat.configMaxTokens')}>
+          <input
+            type="number"
+            value={chatConfig.max_tokens}
+            onChange={(e) => updateConfig({ max_tokens: Number(e.target.value) })}
+            min={256}
+            max={128000}
+            className="w-24 px-2 py-1 text-sm text-center rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        {/* System prompt */}
+        <SettingRow label={t('chat.configSystemPrompt')}>
+          <textarea
+            value={chatConfig.system_prompt}
+            onChange={(e) => updateConfig({ system_prompt: e.target.value })}
+            rows={3}
+            className="w-[300px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent resize-y"
+          />
+        </SettingRow>
+
+        {/* Action buttons */}
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className="px-4 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover disabled:opacity-50 transition-colors"
+          >
+            {testing ? t('chat.configModelLoading') : t('chat.configTestConnection')}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* Token usage summary */}
+      <SettingsCard title={t('chat.tokenLifetime')}>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t('chat.tokenSession')}</span>
+            <span className="text-foreground">
+              {tokenStats.sessionPrompt.toLocaleString()} / {tokenStats.sessionCompletion.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t('chat.tokenLifetime')}</span>
+            <span className="text-foreground">
+              {(tokenStats.lifetimePrompt + tokenStats.lifetimeCompletion).toLocaleString()}
+            </span>
+          </div>
+        </div>
+        <div className="flex justify-end mt-2">
+          <button
+            onClick={handleResetLifetime}
+            className="px-4 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover transition-colors"
+          >
+            {t('chat.tokenReset')}
           </button>
         </div>
       </SettingsCard>

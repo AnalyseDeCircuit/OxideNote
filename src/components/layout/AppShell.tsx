@@ -15,6 +15,7 @@ import { TagPanel } from '@/components/editor/TagPanel';
 import { TaskPanel } from '@/components/editor/TaskPanel';
 import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
 import { HistoryPanel } from '@/components/editor/HistoryPanel';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 import { GraphView } from '@/components/graph/GraphView';
 import { FlashcardView } from '@/components/flashcard/FlashcardView';
 import { VideoPanel } from '@/components/video/VideoPanel';
@@ -229,6 +230,11 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
           onClick={() => setSidePanelTab('history')}
           label={t('history.title')}
         />
+        <TabButton
+          active={activeTab === 'chat'}
+          onClick={() => setSidePanelTab('chat')}
+          label={t('chat.title')}
+        />
       </div>
       <div className="flex-1 min-h-0">
         {activeTab === 'backlinks' && <BacklinksPanel />}
@@ -237,6 +243,7 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
         {activeTab === 'tasks' && <TaskPanel onClose={() => useUIStore.getState().toggleSidePanel()} />}
         {activeTab === 'properties' && <PropertiesPanel />}
         {activeTab === 'history' && <HistoryPanel />}
+        {activeTab === 'chat' && <ChatPanel />}
       </div>
     </div>
   );

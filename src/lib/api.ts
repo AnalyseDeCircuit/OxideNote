@@ -515,3 +515,115 @@ export async function saveEmbeddingConfig(config: EmbeddingConfig): Promise<void
 export async function loadEmbeddingConfig(): Promise<EmbeddingConfig | null> {
   return invoke<EmbeddingConfig | null>('load_embedding_config');
 }
+
+// ─── Chat types ─────────────────────────────────────────────
+
+export type ChatProvider =
+  | 'openai'
+  | 'claude'
+  | 'ollama'
+  | 'deepseek'
+  | 'gemini'
+  | 'moonshot'
+  | 'groq'
+  | 'openrouter'
+  | 'custom';
+
+export type ThinkingMode = 'auto' | 'thinking' | 'instant';
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  reasoning?: string;
+  images?: ImageAttachment[];
+}
+
+export interface ImageAttachment {
+  data: string;
+  mediaType: string;
+}
+
+export interface ChatConfig {
+  provider: ChatProvider;
+  api_url: string;
+  api_key: string;
+  model: string;
+  temperature: number | null;
+  max_tokens: number;
+  system_prompt: string;
+  context_window?: number | null;
+  thinking_mode: ThinkingMode;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  context_window: number | null;
+  supports_vision: boolean;
+  supports_thinking: boolean;
+}
+
+export interface ChatContext {
+  current_note: { path: string; title: string; content: string };
+  backlink_summaries: { path: string; title: string; summary: string }[];
+  semantic_snippets: { source: string; text: string; score: number }[];
+  referenced_notes: { path: string; title: string; content: string }[];
+  is_compact: boolean;
+  context_window: number;
+  rag_budget_tokens: number;
+}
+
+export interface StreamChunk {
+  request_id: string;
+  content: string;
+  reasoning: string;
+  done: boolean;
+  error: string | null;
+  usage: TokenUsage | null;
+}
+
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+// ─── Chat commands ──────────────────────────────────────────
+
+/** List available models from provider API */
+export async function listModels(config: ChatConfig): Promise<ModelInfo[]> {
+  return invoke<ModelInfo[]>('list_models', { config });
+}
+
+/** Build RAG context for chat (current note + backlinks + semantic search) */
+export async function buildChatContext(
+  notePath: string,
+  query: string,
+  provider: ChatProvider,
+  apiUrl: string,
+  model: string,
+  contextWindowOverride: number | null,
+  maxTokens: number,
+  referencedPaths: string[],
+  historyTokenEstimate: number,
+): Promise<ChatContext> {
+  return invoke<ChatContext>('build_chat_context', {
+    notePath, query, provider, apiUrl, model,
+    contextWindowOverride, maxTokens,
+    referencedPaths, historyTokenEstimate,
+  });
+}
+
+/** Start a chat stream. Results arrive via "chat-stream-chunk" Tauri events. */
+export async function chatStream(
+  requestId: string,
+  messages: ChatMessage[],
+  config: ChatConfig,
+): Promise<void> {
+  return invoke<void>('chat_stream', { requestId, messages, config });
+}
+
+/** Abort an in-progress chat stream */
+export async function chatAbort(requestId: string): Promise<void> {
+  return invoke<void>('chat_abort', { requestId });
+}
