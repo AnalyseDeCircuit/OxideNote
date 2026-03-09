@@ -804,3 +804,118 @@ export async function listNotesSummary(limit?: number, offset?: number): Promise
     offset: offset ?? 0,
   });
 }
+
+// ─── Agent commands ──────────────────────────────────────────
+
+export type AgentKind =
+  | 'duplicate_detector'
+  | 'outline_extractor'
+  | 'index_generator'
+  | 'daily_review'
+  | 'graph_maintainer'
+  | { custom: string };
+
+export type AgentStatus =
+  | 'planning'
+  | 'executing'
+  | 'waiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'aborted';
+
+export interface PlanStep {
+  index: number;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  output: string | null;
+}
+
+export interface ProposedChange {
+  path: string;
+  action: 'create' | 'modify' | 'merge' | 'add_link';
+  content: string | null;
+  diff: string | null;
+  description: string;
+}
+
+export interface TaskResult {
+  task_id: string;
+  kind: AgentKind;
+  status: AgentStatus;
+  plan_steps: PlanStep[];
+  proposed_changes: ProposedChange[];
+  summary: string;
+  started_at: string;
+  completed_at: string | null;
+  token_usage: { prompt_tokens: number; completion_tokens: number } | null;
+}
+
+export interface AgentStatusResponse {
+  state: 'idle' | 'running' | 'waiting_approval';
+  task_id: string | null;
+  kind: string | null;
+  result: TaskResult | null;
+}
+
+export interface AgentRunSummary {
+  id: string;
+  kind: string;
+  status: string;
+  scope: string | null;
+  summary: string;
+  token_prompt: number;
+  token_completion: number;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface CustomAgentDef {
+  name: string;
+  title: string;
+  tools: string[];
+  scope: string;
+  auto_apply: boolean;
+  max_writes: number;
+}
+
+export interface AgentTask {
+  kind: AgentKind;
+  scope?: string;
+  params?: Record<string, unknown>;
+  auto_apply?: boolean;
+}
+
+/** Start an agent task. Returns task_id or "queued". */
+export async function agentRun(task: AgentTask, config: ChatConfig): Promise<string> {
+  return invoke<string>('agent_run', { task, config });
+}
+
+/** Abort the currently running agent. */
+export async function agentAbort(): Promise<void> {
+  return invoke<void>('agent_abort');
+}
+
+/** Get current agent status. */
+export async function agentStatus(): Promise<AgentStatusResponse> {
+  return invoke<AgentStatusResponse>('agent_status');
+}
+
+/** Apply selected proposed changes. */
+export async function agentApplyChanges(taskId: string, indices: number[]): Promise<void> {
+  return invoke<void>('agent_apply_changes', { taskId, indices });
+}
+
+/** Dismiss pending changes without applying. */
+export async function agentDismissChanges(): Promise<void> {
+  return invoke<void>('agent_dismiss_changes');
+}
+
+/** List past agent runs. */
+export async function agentListHistory(limit?: number): Promise<AgentRunSummary[]> {
+  return invoke<AgentRunSummary[]>('agent_list_history', { limit: limit ?? 20 });
+}
+
+/** List available custom agent definitions. */
+export async function agentListCustom(): Promise<CustomAgentDef[]> {
+  return invoke<CustomAgentDef[]>('agent_list_custom');
+}

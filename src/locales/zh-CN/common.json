@@ -667,5 +667,53 @@
   },
   "diagram": {
     "title": "绘图板"
+  },
+  "agent": {
+    "title": "智能工作流",
+    "run": "运行智能体",
+    "abort": "终止",
+    "status": "状态",
+    "noVault": "请先打开知识库",
+    "setupRequired": "需要配置 AI",
+    "setupDescription": "请在设置中配置 AI 提供商以使用智能工作流。",
+    "setupButton": "打开设置",
+    "selectAgent": "智能体类型",
+    "scopeLabel": "作用范围",
+    "duplicateDetector": "重复检测",
+    "outlineExtractor": "大纲提取",
+    "indexGenerator": "索引生成",
+    "dailyReview": "每日回顾",
+    "graphMaintainer": "图谱维护",
+    "custom": "自定义智能体",
+    "scope": {
+      "currentNote": "当前笔记",
+      "currentFolder": "当前文件夹",
+      "entireVault": "整个知识库"
+    },
+    "progress": {
+      "planning": "规划中...",
+      "executing": "执行中...",
+      "complete": "已完成",
+      "error": "错误",
+      "aborted": "已终止"
+    },
+    "changes": {
+      "title": "变更建议",
+      "accept": "接受",
+      "reject": "拒绝",
+      "acceptAll": "全部接受",
+      "dismiss": "忽略"
+    },
+    "action": {
+      "create": "创建",
+      "modify": "修改",
+      "merge": "合并",
+      "add_link": "添加链接"
+    },
+    "history": {
+      "title": "智能体历史",
+      "empty": "暂无运行记录"
+    },
+    "doomLoop": "智能体已停止：检测到重复执行相同操作"
   }
 }

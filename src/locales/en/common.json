@@ -667,5 +667,53 @@
   },
   "diagram": {
     "title": "Sketch Pad"
+  },
+  "agent": {
+    "title": "Agent Workflow",
+    "run": "Run Agent",
+    "abort": "Abort",
+    "status": "Status",
+    "noVault": "Open a vault to use agents",
+    "setupRequired": "AI Configuration Required",
+    "setupDescription": "Configure your AI provider in Settings to use agent workflows.",
+    "setupButton": "Open Settings",
+    "selectAgent": "Agent Type",
+    "scopeLabel": "Scope",
+    "duplicateDetector": "Duplicate Detector",
+    "outlineExtractor": "Outline Extractor",
+    "indexGenerator": "Index Generator",
+    "dailyReview": "Daily Review",
+    "graphMaintainer": "Graph Maintainer",
+    "custom": "Custom Agent",
+    "scope": {
+      "currentNote": "Current Note",
+      "currentFolder": "Current Folder",
+      "entireVault": "Entire Vault"
+    },
+    "progress": {
+      "planning": "Planning...",
+      "executing": "Executing...",
+      "complete": "Complete",
+      "error": "Error",
+      "aborted": "Aborted"
+    },
+    "changes": {
+      "title": "Proposed Changes",
+      "accept": "Accept",
+      "reject": "Reject",
+      "acceptAll": "Accept All",
+      "dismiss": "Dismiss"
+    },
+    "action": {
+      "create": "Create",
+      "modify": "Modify",
+      "merge": "Merge",
+      "add_link": "Add Link"
+    },
+    "history": {
+      "title": "Agent History",
+      "empty": "No agent runs yet"
+    },
+    "doomLoop": "Agent stopped: repeated identical actions detected"
   }
 }

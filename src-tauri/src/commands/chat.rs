@@ -7,6 +7,9 @@
 //!
 //! Also provides RAG context building (backlinks + semantic search) and
 //! dynamic model listing via provider APIs.
+//!
+//! Shared LLM types and HTTP logic are in `crate::llm` — this module
+//! is a thin wrapper adding streaming and Tauri event emission.
 
 use std::sync::Arc;
 
@@ -15,7 +18,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::indexing::{db, embeddings};
+use crate::llm::client::{fallback_context_window, truncate_chars, LlmError};
 use crate::state::AppState;
+
+// Re-export shared types so existing frontend API stays compatible
+pub use crate::llm::types::{
+    ChatConfig, ChatMessage, ChatProvider, ModelInfo, StreamChunk, TokenUsage,
+};
 
 // ── Error type ──────────────────────────────────────────────
 
@@ -49,104 +58,15 @@ impl From<reqwest::Error> for ChatError {
     }
 }
 
-// ── Data structures ─────────────────────────────────────────
-
-/// Supported LLM provider variants
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ChatProvider {
-    OpenAI,
-    Claude,
-    Ollama,
-    DeepSeek,
-    Gemini,
-    Moonshot,
-    Groq,
-    OpenRouter,
-    Custom,
-}
-
-/// A single message in the conversation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub images: Option<Vec<ImageAttachment>>,
-}
-
-/// Base64-encoded image for multimodal input
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageAttachment {
-    pub data: String,
-    pub media_type: String,
-}
-
-/// Controls reasoning/thinking behaviour
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ThinkingMode {
-    Auto,
-    Thinking,
-    Instant,
-}
-
-/// Chat configuration sent from the frontend
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatConfig {
-    pub provider: ChatProvider,
-    pub api_url: String,
-    #[serde(default)]
-    pub api_key: String,
-    pub model: String,
-    #[serde(default)]
-    pub temperature: Option<f64>,
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: u32,
-    #[serde(default)]
-    pub system_prompt: String,
-    #[serde(default)]
-    pub context_window: Option<u32>,
-    #[serde(default = "default_thinking_mode")]
-    pub thinking_mode: ThinkingMode,
-}
-
-fn default_max_tokens() -> u32 {
-    4096
-}
-fn default_thinking_mode() -> ThinkingMode {
-    ThinkingMode::Auto
-}
-
-/// A single streamed chunk emitted to the frontend
-#[derive(Debug, Clone, Serialize)]
-pub struct StreamChunk {
-    pub request_id: String,
-    pub content: String,
-    pub reasoning: String,
-    pub done: bool,
-    pub error: Option<String>,
-    pub usage: Option<TokenUsage>,
-}
-
-/// Token usage statistics from the LLM response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenUsage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-}
-
-/// Information about a single model from provider API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelInfo {
-    pub id: String,
-    pub name: String,
-    pub context_window: Option<u32>,
-    pub supports_vision: bool,
-    pub supports_thinking: bool,
+impl From<LlmError> for ChatError {
+    fn from(e: LlmError) -> Self {
+        match e {
+            LlmError::Network(s) => ChatError::Network(s),
+            LlmError::Provider(s) => ChatError::Provider(s),
+            LlmError::Aborted => ChatError::Aborted,
+            LlmError::Parse(s) => ChatError::Internal(s),
+        }
+    }
 }
 
 // ── Chat stream command ─────────────────────────────────────
@@ -222,7 +142,7 @@ async fn execute_stream(
     app: &AppHandle,
     mut abort_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), ChatError> {
-    let response = send_with_retry(messages, config).await?;
+    let response = crate::llm::send_with_retry(messages, config).await?;
 
     match config.provider {
         ChatProvider::Ollama => {
@@ -236,263 +156,6 @@ async fn execute_stream(
             parse_openai_sse(request_id, response, config, app, &mut abort_rx).await
         }
     }
-}
-
-/// Send HTTP request with retry logic (max 2 retries for 5xx/429)
-async fn send_with_retry(
-    messages: &[ChatMessage],
-    config: &ChatConfig,
-) -> Result<reqwest::Response, ChatError> {
-    let client = reqwest::Client::new();
-    let max_retries = 2u32;
-
-    for attempt in 0..=max_retries {
-        let request = build_request(&client, messages, config)?;
-        match request.send().await {
-            Ok(resp) => {
-                let status = resp.status();
-                if status.is_success() {
-                    return Ok(resp);
-                }
-                // Retry on 5xx or 429 (rate limit)
-                if (status.is_server_error() || status.as_u16() == 429) && attempt < max_retries {
-                    // Check for Retry-After header
-                    let delay = resp
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .map(|s| std::time::Duration::from_secs(s.min(10)))
-                        .unwrap_or(std::time::Duration::from_secs(1));
-                    tokio::time::sleep(delay).await;
-                    continue;
-                }
-                // Non-retryable error
-                let body = resp.text().await.unwrap_or_default();
-                return Err(ChatError::Provider(format!("HTTP {}: {}", status.as_u16(), body)));
-            }
-            Err(e) => {
-                if attempt < max_retries {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    continue;
-                }
-                return Err(ChatError::Network(e.to_string()));
-            }
-        }
-    }
-    unreachable!()
-}
-
-// ── Request building ────────────────────────────────────────
-
-/// Build the HTTP request based on the provider type
-fn build_request(
-    client: &reqwest::Client,
-    messages: &[ChatMessage],
-    config: &ChatConfig,
-) -> Result<reqwest::RequestBuilder, ChatError> {
-    match config.provider {
-        ChatProvider::Claude => build_claude_request(client, messages, config),
-        ChatProvider::Ollama => build_ollama_request(client, messages, config),
-        _ => build_openai_request(client, messages, config),
-    }
-}
-
-/// Build an OpenAI-compatible request (used by OpenAI, DeepSeek, Gemini, Moonshot, Groq, OpenRouter, Custom)
-fn build_openai_request(
-    client: &reqwest::Client,
-    messages: &[ChatMessage],
-    config: &ChatConfig,
-) -> Result<reqwest::RequestBuilder, ChatError> {
-    let url = format!("{}/chat/completions", config.api_url.trim_end_matches('/'));
-    let temperature = resolve_temperature(config);
-
-    // Build messages array with provider-specific content format
-    let api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .map(|m| {
-            let content = build_openai_content(m);
-            serde_json::json!({
-                "role": m.role,
-                "content": content,
-            })
-        })
-        .collect();
-
-    let mut body = serde_json::json!({
-        "model": &config.model,
-        "messages": api_messages,
-        "stream": true,
-        "stream_options": { "include_usage": true },
-    });
-
-    // Temperature: some models have constraints
-    if let Some(temp) = temperature {
-        body["temperature"] = serde_json::json!(temp);
-    }
-
-    // Max tokens
-    body["max_tokens"] = serde_json::json!(config.max_tokens);
-
-    // Apply thinking mode patches per provider
-    apply_thinking_patch(&mut body, config);
-
-    let mut req = client.post(&url).json(&body);
-
-    // Auth header
-    if !config.api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", config.api_key));
-    }
-
-    Ok(req)
-}
-
-/// Build a Claude (Anthropic) request with separated system prompt
-fn build_claude_request(
-    client: &reqwest::Client,
-    messages: &[ChatMessage],
-    config: &ChatConfig,
-) -> Result<reqwest::RequestBuilder, ChatError> {
-    let url = format!("{}/v1/messages", config.api_url.trim_end_matches('/'));
-    let temperature = resolve_temperature(config);
-
-    // Claude: system prompt is top-level, not in messages
-    let system_text = messages
-        .iter()
-        .find(|m| m.role == "system")
-        .map(|m| m.content.clone())
-        .unwrap_or_default();
-
-    let api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .filter(|m| m.role != "system")
-        .map(|m| {
-            let content = build_claude_content(m);
-            serde_json::json!({
-                "role": m.role,
-                "content": content,
-            })
-        })
-        .collect();
-
-    let mut body = serde_json::json!({
-        "model": &config.model,
-        "messages": api_messages,
-        "max_tokens": config.max_tokens,
-        "stream": true,
-    });
-
-    if !system_text.is_empty() {
-        body["system"] = serde_json::json!(system_text);
-    }
-
-    if let Some(temp) = temperature {
-        body["temperature"] = serde_json::json!(temp);
-    }
-
-    // Claude thinking mode
-    if should_enable_thinking(config) {
-        body["thinking"] = serde_json::json!({
-            "type": "enabled",
-            "budget_tokens": config.max_tokens.max(1024)
-        });
-    }
-
-    let req = client
-        .post(&url)
-        .header("x-api-key", &config.api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body);
-
-    Ok(req)
-}
-
-/// Build an Ollama request (JSON lines streaming)
-fn build_ollama_request(
-    client: &reqwest::Client,
-    messages: &[ChatMessage],
-    config: &ChatConfig,
-) -> Result<reqwest::RequestBuilder, ChatError> {
-    let url = format!("{}/api/chat", config.api_url.trim_end_matches('/'));
-    let temperature = resolve_temperature(config);
-
-    let api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .map(|m| build_ollama_message(m))
-        .collect();
-
-    let mut body = serde_json::json!({
-        "model": &config.model,
-        "messages": api_messages,
-        "stream": true,
-    });
-
-    if let Some(temp) = temperature {
-        body["options"] = serde_json::json!({ "temperature": temp });
-    }
-
-    // Ollama thinking mode
-    if should_enable_thinking(config) {
-        body["think"] = serde_json::json!(true);
-    }
-
-    let req = client.post(&url).json(&body);
-    Ok(req)
-}
-
-// ── Multimodal content builders ─────────────────────────────
-
-/// Build OpenAI `content` field — text or multimodal array
-fn build_openai_content(msg: &ChatMessage) -> serde_json::Value {
-    if let Some(images) = &msg.images {
-        if !images.is_empty() {
-            let mut parts = vec![serde_json::json!({"type": "text", "text": &msg.content})];
-            for img in images {
-                parts.push(serde_json::json!({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": format!("data:{};base64,{}", img.media_type, img.data)
-                    }
-                }));
-            }
-            return serde_json::json!(parts);
-        }
-    }
-    serde_json::json!(&msg.content)
-}
-
-/// Build Claude `content` field — text or multimodal array
-fn build_claude_content(msg: &ChatMessage) -> serde_json::Value {
-    if let Some(images) = &msg.images {
-        if !images.is_empty() {
-            let mut parts = vec![serde_json::json!({"type": "text", "text": &msg.content})];
-            for img in images {
-                parts.push(serde_json::json!({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": &img.media_type,
-                        "data": &img.data
-                    }
-                }));
-            }
-            return serde_json::json!(parts);
-        }
-    }
-    serde_json::json!(&msg.content)
-}
-
-/// Build Ollama message object — includes base64 images array
-fn build_ollama_message(msg: &ChatMessage) -> serde_json::Value {
-    let mut obj = serde_json::json!({"role": &msg.role, "content": &msg.content});
-    if let Some(images) = &msg.images {
-        if !images.is_empty() {
-            let b64_list: Vec<&str> = images.iter().map(|i| i.data.as_str()).collect();
-            obj["images"] = serde_json::json!(b64_list);
-        }
-    }
-    obj
 }
 
 // ── SSE / JSON-lines parsing ────────────────────────────────
@@ -849,85 +512,6 @@ async fn parse_ollama_stream(
     }
 }
 
-// ── Temperature & thinking mode helpers ─────────────────────
-
-/// Resolve temperature: user override > model-aware default
-fn resolve_temperature(config: &ChatConfig) -> Option<f64> {
-    if let Some(temp) = config.temperature {
-        return Some(temp);
-    }
-
-    let model = config.model.to_lowercase();
-
-    // Moonshot K2.5 requires fixed temperature=1.0
-    if contains_any(&model, &["k2.5", "kimi"]) && config.provider == ChatProvider::Moonshot {
-        return Some(1.0);
-    }
-
-    // Reasoning models default to 1.0
-    if contains_any(&model, &["o1", "o3", "o4", "deepseek-reasoner", "r1"]) {
-        return Some(1.0);
-    }
-
-    // Code models lower temperature
-    if contains_any(&model, &["code", "codestral", "starcoder"]) {
-        return Some(0.2);
-    }
-
-    // Flash/mini models
-    if contains_any(&model, &["flash", "mini", "haiku"]) {
-        return Some(0.6);
-    }
-
-    // Default: let the provider decide (do not send temperature)
-    None
-}
-
-/// Whether thinking/reasoning mode should be enabled
-fn should_enable_thinking(config: &ChatConfig) -> bool {
-    match config.thinking_mode {
-        ThinkingMode::Thinking => true,
-        ThinkingMode::Instant => false,
-        ThinkingMode::Auto => {
-            let model = config.model.to_lowercase();
-            // Auto-detect reasoning-capable models
-            contains_any(&model, &["o1", "o3", "o4", "r1", "reasoner", "k2.5", "thinking", "think"])
-        }
-    }
-}
-
-/// Apply provider-specific thinking mode patches to the request body
-fn apply_thinking_patch(body: &mut serde_json::Value, config: &ChatConfig) {
-    if !should_enable_thinking(config) {
-        return;
-    }
-
-    match config.provider {
-        ChatProvider::Moonshot => {
-            // Moonshot K2.5: toggle thinking via "thinking" param,
-            // requires temperature=1.0 and top_p=0.95
-            body["thinking"] = serde_json::json!(true);
-            body["temperature"] = serde_json::json!(1.0);
-            body["top_p"] = serde_json::json!(0.95);
-        }
-        ChatProvider::DeepSeek => {
-            // DeepSeek: reasoning_content appears automatically in R1 models,
-            // no explicit toggle needed — the model name drives it
-        }
-        ChatProvider::OpenRouter => {
-            // OpenRouter: reasoning field appears based on model
-        }
-        _ => {
-            // Generic OpenAI-compatible: no standard thinking toggle
-        }
-    }
-}
-
-/// Check if a string contains any of the given patterns
-fn contains_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|n| haystack.contains(n))
-}
-
 // ── RAG context building ────────────────────────────────────
 
 /// Context about the current note
@@ -1270,72 +854,4 @@ async fn get_ollama_context_window(base_url: &str, model: &str) -> Option<u32> {
         .and_then(|d| d.context_window)
 }
 
-// ── Context window fallback ─────────────────────────────────
-
-/// Static fallback table for providers that don't expose context window via API.
-/// Ollama always uses /api/show to get the real value — this is only for cloud
-/// providers (OpenAI, Anthropic, etc.) where no context window API exists.
-fn fallback_context_window(model: &str) -> u32 {
-    let m = model.to_lowercase();
-    match () {
-        // OpenAI
-        _ if m.starts_with("gpt-5") => 400_000,
-        _ if m.starts_with("gpt-4.1") || m.starts_with("gpt-4-1") => 1_047_576,
-        _ if m.starts_with("gpt-4o") || m.starts_with("gpt-4-turbo") => 128_000,
-        _ if m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4") => 200_000,
-        // Anthropic Claude
-        _ if m.contains("claude") => 200_000,
-        // DeepSeek
-        _ if m.contains("deepseek") => 128_000,
-        // Gemini
-        _ if m.contains("gemini-3") || m.contains("gemini-2") => 1_000_000,
-        _ if m.contains("gemini-1.5") => 1_048_576,
-        _ if m.contains("gemini") => 32_768,
-        // Moonshot / Kimi
-        _ if m.contains("k2.5") || m.contains("kimi") => 256_000,
-        _ if m.contains("moonshot") => 128_000,
-        // Common open-source (Ollama fallback if /api/show fails)
-        _ if m.contains("llama-4") || m.contains("llama4") => 131_072,
-        _ if m.contains("llama-3") || m.contains("llama3") => 128_000,
-        _ if m.contains("qwen3") || m.contains("qwen-3") => 131_072,
-        _ if m.contains("qwen2") || m.contains("qwen-2") => 131_072,
-        _ if m.contains("mistral") || m.contains("mixtral") => 128_000,
-        _ if m.contains("phi-4") || m.contains("phi4") => 128_000,
-        _ if m.contains("command-r") => 128_000,
-        // Fallback
-        _ => 8_192,
-    }
-}
-
-// ── Token estimation ────────────────────────────────────────
-
-/// Rough token estimate: ~1 token per 3.5 chars for English,
-/// ~1 token per 1.5 chars for CJK. Uses a blended heuristic.
-pub fn estimate_tokens(text: &str) -> u32 {
-    let cjk_count = text.chars().filter(|c| is_cjk(*c)).count();
-    let other_count = text.chars().count() - cjk_count;
-    ((cjk_count as f64 / 1.5) + (other_count as f64 / 3.5)).ceil() as u32
-}
-
-/// Check if a character is CJK (Chinese/Japanese/Korean)
-fn is_cjk(c: char) -> bool {
-    matches!(c,
-        '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
-        | '\u{3400}'..='\u{4DBF}' // CJK Extension A
-        | '\u{3000}'..='\u{303F}' // CJK Symbols
-        | '\u{FF00}'..='\u{FFEF}' // Fullwidth Forms
-        | '\u{AC00}'..='\u{D7AF}' // Hangul
-    )
-}
-
-// ── Utility ─────────────────────────────────────────────────
-
-/// Truncate a string to at most `max_chars` characters (char-safe)
-fn truncate_chars(text: &str, max_chars: usize) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max_chars {
-        text.to_string()
-    } else {
-        chars[..max_chars].iter().collect()
-    }
-}
+// Temperature/thinking/token/utility functions are in crate::llm::client

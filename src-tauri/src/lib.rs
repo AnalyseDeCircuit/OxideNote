@@ -2,6 +2,8 @@
 
 mod commands;
 mod indexing;
+pub mod llm;
+mod agent;
 mod state;
 mod watcher;
 
@@ -110,6 +112,13 @@ pub fn run() {
             commands::chat_db::save_chat_image,
             commands::stats::get_vault_stats,
             commands::stats::list_notes_summary,
+            agent::commands::agent_run,
+            agent::commands::agent_abort,
+            agent::commands::agent_status,
+            agent::commands::agent_apply_changes,
+            agent::commands::agent_dismiss_changes,
+            agent::commands::agent_list_history,
+            agent::commands::agent_list_custom,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

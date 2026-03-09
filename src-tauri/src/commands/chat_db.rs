@@ -167,6 +167,22 @@ fn create_chat_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         INSERT OR IGNORE INTO token_stats (key, value) VALUES ('lifetime_prompt', 0);
         INSERT OR IGNORE INTO token_stats (key, value) VALUES ('lifetime_completion', 0);
+
+        -- Agent run history
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id               TEXT PRIMARY KEY,
+            kind             TEXT NOT NULL,
+            status           TEXT NOT NULL,
+            scope            TEXT,
+            summary          TEXT,
+            plan_json        TEXT,
+            changes_json     TEXT,
+            token_prompt     INTEGER NOT NULL DEFAULT 0,
+            token_completion INTEGER NOT NULL DEFAULT 0,
+            started_at       TEXT NOT NULL,
+            completed_at     TEXT,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
     Ok(())

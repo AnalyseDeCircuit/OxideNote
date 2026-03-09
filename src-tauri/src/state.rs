@@ -7,6 +7,8 @@ use notify_debouncer_mini::Debouncer;
 use parking_lot::{Mutex, RwLock};
 use rusqlite::Connection;
 
+use crate::agent::commands::AgentState;
+
 /// Global application state shared across Tauri commands.
 pub struct AppState {
     pub vault_path: RwLock<Option<PathBuf>>,
@@ -21,6 +23,8 @@ pub struct AppState {
     pub abort_senders: Arc<std::sync::Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
     /// Chat persistence database — separate from index.db because chat data is not rebuildable
     pub chat_db: Arc<Mutex<Option<Connection>>>,
+    /// Agent workflow execution state
+    pub agent_state: Arc<AgentState>,
 }
 
 impl AppState {
@@ -32,6 +36,7 @@ impl AppState {
             read_db: Arc::new(Mutex::new(None)),
             abort_senders: Arc::new(std::sync::Mutex::new(HashMap::new())),
             chat_db: Arc::new(Mutex::new(None)),
+            agent_state: Arc::new(AgentState::new()),
         }
     }
 }

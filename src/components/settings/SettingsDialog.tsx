@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -137,6 +138,7 @@ export function SettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-[780px] h-[600px] overflow-hidden flex p-0 gap-0 bg-surface border-theme-border text-foreground">
+        <DialogTitle className="sr-only">{t('settings.title', '设置')}</DialogTitle>
         {/* Sidebar */}
         <div className="w-48 shrink-0 border-r border-theme-border bg-background p-4 flex flex-col gap-1">
           <h2 className="text-sm font-semibold text-foreground px-3 mb-3">{t('settings.title', '设置')}</h2>

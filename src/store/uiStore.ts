@@ -4,7 +4,7 @@ import { create } from 'zustand';
 export type EditorMode = 'edit' | 'preview' | 'split';
 
 // ── 右侧面板标签 ────────────────────────────────────────────
-export type SidePanelTab = 'backlinks' | 'outline' | 'tags' | 'tasks' | 'properties' | 'history' | 'chat' | 'dashboard';
+export type SidePanelTab = 'backlinks' | 'outline' | 'tags' | 'tasks' | 'properties' | 'history' | 'chat' | 'dashboard' | 'agent';
 
 interface UIState {
   sidebarVisible: boolean;

@@ -5,7 +5,7 @@ import {
   Sparkles, Search, Link2, Settings, MoreHorizontal,
   Share2, Layers, Monitor, Video, Globe,
   AlignLeft, Tag, CheckSquare, FileText, Clock,
-  PanelLeft, LayoutDashboard, LayoutGrid, PenTool,
+  PanelLeft, LayoutDashboard, LayoutGrid, PenTool, Bot,
 } from 'lucide-react';
 import { useUIStore, type EditorMode, type SidePanelTab } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -23,6 +23,7 @@ import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
 import { HistoryPanel } from '@/components/editor/HistoryPanel';
 import { DashboardPanel } from '@/components/editor/DashboardPanel';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { AgentPanel } from '@/components/agent/AgentPanel';
 import { GraphView } from '@/components/graph/GraphView';
 import { CardFlowView } from '@/components/graph/CardFlowView';
 import { DiagramEditor } from '@/components/editor/DiagramEditor';
@@ -239,6 +240,7 @@ const SIDE_PANEL_TABS: { id: SidePanelTab; icon: React.ReactNode; labelKey: stri
   { id: 'history',    icon: <Clock size={15} />,        labelKey: 'history.title' },
   { id: 'tasks',      icon: <CheckSquare size={15} />,  labelKey: 'tasks.title' },
   { id: 'dashboard',  icon: <LayoutDashboard size={15} />, labelKey: 'dashboard.title' },
+  { id: 'agent',      icon: <Bot size={15} />,             labelKey: 'agent.title' },
 ];
 
 function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
@@ -278,6 +280,7 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
         {activeTab === 'history' && <HistoryPanel />}
         {activeTab === 'tasks' && <TaskPanel onClose={() => useUIStore.getState().toggleSidePanel()} />}
         {activeTab === 'dashboard' && <DashboardPanel />}
+        {activeTab === 'agent' && <AgentPanel />}
       </div>
     </div>
   );

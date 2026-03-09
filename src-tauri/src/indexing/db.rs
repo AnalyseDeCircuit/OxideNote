@@ -252,6 +252,20 @@ pub fn get_backlinks(conn: &Connection, target_path: &str) -> Result<Vec<Backlin
 }
 
 /// Extract a short snippet around the wikilink reference to `target` in `content`.
+/// Query outlinks: paths that the given note links TO.
+pub fn get_outlinks(conn: &Connection, source_path: &str) -> Result<Vec<String>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT l.target_path FROM links l
+         JOIN notes n ON n.id = l.source_id
+         WHERE n.path = ?1
+         ORDER BY l.target_path"
+    )?;
+    let results = stmt.query_map(params![source_path], |row| {
+        row.get::<_, String>(0)
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
 fn extract_backlink_snippet(content: &str, target: &str) -> String {
     // Build search patterns: [[target]] and [[target|...
     let stem = std::path::Path::new(target)
