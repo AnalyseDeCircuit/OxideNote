@@ -682,6 +682,9 @@
     "title": "Agent Workflow",
     "run": "Run Agent",
     "abort": "Abort",
+    "pause": "Pause",
+    "pausing": "Pausing...",
+    "resume": "Resume",
     "status": "Status",
     "noVault": "Open a vault to use agents",
     "setupRequired": "AI Configuration Required",
@@ -703,6 +706,7 @@
     "progress": {
       "planning": "Planning...",
       "executing": "Executing...",
+      "paused": "Paused",
       "complete": "Complete",
       "error": "Error",
       "aborted": "Aborted"

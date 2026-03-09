@@ -115,6 +115,8 @@ pub fn run() {
             commands::stats::list_notes_summary,
             agent::commands::agent_run,
             agent::commands::agent_abort,
+            agent::commands::agent_pause,
+            agent::commands::agent_resume,
             agent::commands::agent_status,
             agent::commands::agent_apply_changes,
             agent::commands::agent_dismiss_changes,

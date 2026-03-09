@@ -186,14 +186,18 @@ pub async fn clip_webpage(
     Ok(rel_path)
 }
 
-/// Extract <title> text from raw HTML
+/// Extract <title> text from raw HTML.
+/// Operates entirely on the lowercased copy to avoid byte-index mismatch
+/// between `to_lowercase()` output and the original (which can differ in
+/// length for certain Unicode codepoints like İ, ß, etc.).
 fn extract_title(html: &str) -> Option<String> {
     let lower = html.to_lowercase();
     let start = lower.find("<title")?;
     let tag_end = lower[start..].find('>')?;
     let content_start = start + tag_end + 1;
     let end = lower[content_start..].find("</title>")?;
-    let title = &html[content_start..content_start + end];
+    // Slice from `lower` — not `html` — so indices stay consistent
+    let title = &lower[content_start..content_start + end];
     let trimmed = title.trim();
     if trimmed.is_empty() {
         None

@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Bot, Play, Square, Check, X, ChevronDown, ChevronRight,
-  FileText, FolderOpen, Globe, Clock, Settings,
+  FileText, FolderOpen, Globe, Clock, Settings, Pause,
 } from 'lucide-react';
 
 import { useAgentStore } from '@/store/agentStore';
@@ -22,6 +22,7 @@ import type { AgentKind, AgentStatus, AgentTask, PlanStep, ProposedChange } from
 const STATUS_I18N: Record<AgentStatus, string> = {
   planning: 'agent.progress.planning',
   executing: 'agent.progress.executing',
+  paused: 'agent.progress.paused',
   waiting_approval: 'agent.progress.complete',
   completed: 'agent.progress.complete',
   failed: 'agent.progress.error',
@@ -55,6 +56,7 @@ export function AgentPanel() {
 
   // Agent store state
   const isRunning = useAgentStore((s) => s.isRunning);
+  const pauseRequested = useAgentStore((s) => s.pauseRequested);
   const status = useAgentStore((s) => s.status);
   const planSteps = useAgentStore((s) => s.planSteps);
   const progress = useAgentStore((s) => s.progress);
@@ -64,6 +66,8 @@ export function AgentPanel() {
   const customAgents = useAgentStore((s) => s.customAgents);
   const runAgent = useAgentStore((s) => s.runAgent);
   const abortAgent = useAgentStore((s) => s.abortAgent);
+  const pauseAgent = useAgentStore((s) => s.pauseAgent);
+  const resumeAgent = useAgentStore((s) => s.resumeAgent);
   const applyChanges = useAgentStore((s) => s.applyChanges);
   const dismissChanges = useAgentStore((s) => s.dismissChanges);
   const initListeners = useAgentStore((s) => s.initListeners);
@@ -162,17 +166,40 @@ export function AgentPanel() {
               disabled={isRunning}
             />
 
-            {/* Run / Abort button */}
+            {/* Run / Pause / Resume / Abort buttons */}
             <div className="flex gap-2">
               {isRunning ? (
-                <button
-                  onClick={abortAgent}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm
-                    bg-red-500/15 text-red-500 hover:bg-red-500/25 transition-colors"
-                >
-                  <Square size={14} />
-                  {t('agent.abort')}
-                </button>
+                <>
+                  {status === 'paused' ? (
+                    <button
+                      onClick={resumeAgent}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm
+                        bg-theme-accent/15 text-theme-accent hover:bg-theme-accent/25 transition-colors"
+                    >
+                      <Play size={14} />
+                      {t('agent.resume')}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={pauseAgent}
+                      disabled={status === 'planning' || pauseRequested}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm
+                        bg-yellow-500/15 text-yellow-500 hover:bg-yellow-500/25
+                        disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Pause size={14} />
+                      {pauseRequested ? t('agent.pausing') : t('agent.pause')}
+                    </button>
+                  )}
+                  <button
+                    onClick={abortAgent}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm
+                      bg-red-500/15 text-red-500 hover:bg-red-500/25 transition-colors"
+                  >
+                    <Square size={14} />
+                    {t('agent.abort')}
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={handleRun}

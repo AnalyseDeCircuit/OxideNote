@@ -833,6 +833,7 @@ export type AgentKind =
 export type AgentStatus =
   | 'planning'
   | 'executing'
+  | 'paused'
   | 'waiting_approval'
   | 'completed'
   | 'failed'
@@ -866,7 +867,7 @@ export interface TaskResult {
 }
 
 export interface AgentStatusResponse {
-  state: 'idle' | 'running' | 'waiting_approval';
+  state: 'idle' | 'running' | 'paused' | 'waiting_approval';
   task_id: string | null;
   kind: string | null;
   result: TaskResult | null;
@@ -908,6 +909,16 @@ export async function agentRun(task: AgentTask, config: ChatConfig): Promise<str
 /** Abort the currently running agent. */
 export async function agentAbort(): Promise<void> {
   return invoke<void>('agent_abort');
+}
+
+/** Pause the currently running agent at the next step boundary. */
+export async function agentPause(): Promise<void> {
+  return invoke<void>('agent_pause');
+}
+
+/** Resume a paused agent. */
+export async function agentResume(): Promise<void> {
+  return invoke<void>('agent_resume');
 }
 
 /** Get current agent status. */

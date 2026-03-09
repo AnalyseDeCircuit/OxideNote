@@ -41,6 +41,7 @@ impl std::fmt::Display for AgentKind {
 pub enum AgentStatus {
     Planning,
     Executing,
+    Paused,
     WaitingApproval,
     Completed,
     Failed,

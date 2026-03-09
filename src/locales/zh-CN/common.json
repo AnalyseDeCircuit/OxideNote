@@ -681,6 +681,9 @@
     "title": "智能工作流",
     "run": "运行智能体",
     "abort": "终止",
+    "pause": "暂停",
+    "pausing": "暂停请求中...",
+    "resume": "继续",
     "status": "状态",
     "noVault": "请先打开知识库",
     "setupRequired": "需要配置 AI",
@@ -702,6 +705,7 @@
     "progress": {
       "planning": "规划中...",
       "executing": "执行中...",
+      "paused": "已暂停",
       "complete": "已完成",
       "error": "错误",
       "aborted": "已终止"

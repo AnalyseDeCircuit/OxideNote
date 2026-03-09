@@ -28,6 +28,8 @@ pub enum AgentRunState {
         task_id: String,
         kind: AgentKind,
         abort_tx: tokio::sync::watch::Sender<bool>,
+        /// true = paused, false = running. Runtime checks at step boundaries.
+        pause_tx: tokio::sync::watch::Sender<bool>,
     },
     WaitingApproval(TaskResult),
 }
@@ -95,8 +97,9 @@ pub async fn agent_run(
         }
     }
 
-    // Create abort channel
+    // Create abort and pause channels
     let (abort_tx, abort_rx) = tokio::sync::watch::channel(false);
+    let (pause_tx, pause_rx) = tokio::sync::watch::channel(false);
     let task_id = uuid::Uuid::new_v4().to_string();
     let task_id_ret = task_id.clone();
 
@@ -107,11 +110,13 @@ pub async fn agent_run(
             task_id: task_id.clone(),
             kind: task.kind.clone(),
             abort_tx,
+            pause_tx,
         };
     }
 
     // Spawn the agent task
     let agent_state_clone = Arc::clone(&agent_state);
+    let task_id_spawn = task_id_ret.clone();
     tokio::spawn(async move {
         let result = runtime::run_agent(
             task,
@@ -121,9 +126,11 @@ pub async fn agent_run(
             read_db,
             &app,
             abort_rx,
+            pause_rx,
             allowed_tools,
             system_prompt_override,
             max_writes,
+            task_id_spawn,
         )
         .await;
 
@@ -170,6 +177,39 @@ pub async fn agent_abort(state: State<'_, AppState>) -> Result<(), AgentError> {
     }
 }
 
+/// Pause the currently running agent task. The runtime will halt at the
+/// next step boundary and wait until resumed or aborted.
+#[tauri::command]
+pub async fn agent_pause(
+    state: State<'_, AppState>,
+) -> Result<(), AgentError> {
+    let agent_state = &state.agent_state;
+    let run_state = agent_state.run_state.lock();
+    match &*run_state {
+        AgentRunState::Running { pause_tx, .. } => {
+            let _ = pause_tx.send(true);
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Resume a paused agent task.
+#[tauri::command]
+pub async fn agent_resume(
+    state: State<'_, AppState>,
+) -> Result<(), AgentError> {
+    let agent_state = &state.agent_state;
+    let run_state = agent_state.run_state.lock();
+    match &*run_state {
+        AgentRunState::Running { pause_tx, .. } => {
+            let _ = pause_tx.send(false);
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Get current agent status (idle, running, waiting approval).
 #[tauri::command]
 pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusResponse, AgentError> {
@@ -182,12 +222,25 @@ pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusRespo
             kind: None,
             result: None,
         }),
-        AgentRunState::Running { task_id, kind, .. } => Ok(AgentStatusResponse {
-            state: "running".into(),
-            task_id: Some(task_id.clone()),
-            kind: Some(kind.to_string()),
-            result: None,
-        }),
+        AgentRunState::Running {
+            task_id,
+            kind,
+            pause_tx,
+            ..
+        } => {
+            // Report "paused" when the pause signal is active
+            let state_str = if *pause_tx.borrow() {
+                "paused"
+            } else {
+                "running"
+            };
+            Ok(AgentStatusResponse {
+                state: state_str.into(),
+                task_id: Some(task_id.clone()),
+                kind: Some(kind.to_string()),
+                result: None,
+            })
+        }
         AgentRunState::WaitingApproval(result) => Ok(AgentStatusResponse {
             state: "waiting_approval".into(),
             task_id: Some(result.task_id.clone()),

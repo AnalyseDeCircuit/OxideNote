@@ -112,10 +112,12 @@ fn strip_frontmatter(content: &str) -> &str {
         return content;
     }
     // Find the closing ---
+    // SAFETY: all offsets derive from ASCII-only delimiters ("---", "\n---")
+    // so the computed byte index always lands on a char boundary.
     if let Some(end) = content[3..].find("\n---") {
         let after = end + 3 + 4; // skip past "\n---"
-        if after < content.len() {
-            return &content[after..];
+        if let Some(rest) = content.get(after..) {
+            return rest;
         }
     }
     content

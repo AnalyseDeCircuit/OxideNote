@@ -90,6 +90,45 @@ fn emit_step_progress(app: &AppHandle, task_id: &str, step: &PlanStep) {
 
 // ── Main runtime loop ───────────────────────────────────────
 
+/// Block execution while the pause signal is active.
+/// Uses `tokio::select!` to concurrently await both pause and abort
+/// channels, preventing deadlock if abort is signaled while paused.
+async fn wait_if_paused(
+    pause_rx: &mut tokio::sync::watch::Receiver<bool>,
+    abort_rx: &mut tokio::sync::watch::Receiver<bool>,
+    app: &AppHandle,
+    task_id: &str,
+) -> Result<(), AgentError> {
+    if !*pause_rx.borrow() {
+        return Ok(());
+    }
+    emit_progress(app, task_id, &AgentStatus::Paused, "Paused");
+    loop {
+        if *abort_rx.borrow() {
+            return Err(AgentError::Aborted);
+        }
+        // Wait for either channel to change
+        tokio::select! {
+            res = pause_rx.changed() => {
+                if res.is_err() {
+                    // Sender dropped — treat as abort
+                    return Err(AgentError::Aborted);
+                }
+                if !*pause_rx.borrow() {
+                    emit_progress(app, task_id, &AgentStatus::Executing, "Resumed");
+                    return Ok(());
+                }
+                // Still paused — continue loop
+            }
+            res = abort_rx.changed() => {
+                if res.is_err() || *abort_rx.borrow() {
+                    return Err(AgentError::Aborted);
+                }
+            }
+        }
+    }
+}
+
 /// Core agent execution loop.
 ///
 /// Follows the plan→execute→verify pattern:
@@ -106,11 +145,12 @@ pub async fn run_agent(
     read_db: Arc<Mutex<Option<Connection>>>,
     app: &AppHandle,
     mut abort_rx: tokio::sync::watch::Receiver<bool>,
+    mut pause_rx: tokio::sync::watch::Receiver<bool>,
     allowed_tools: Vec<String>,
     system_prompt_override: Option<String>,
     max_writes: u8,
+    task_id: String,
 ) -> Result<TaskResult, AgentError> {
-    let task_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now();
     let mut total_usage = TokenUsage::default();
 
@@ -185,6 +225,9 @@ pub async fn run_agent(
                 total_usage,
             ));
         }
+
+        // Wait if paused (also checks abort while waiting)
+        wait_if_paused(&mut pause_rx, &mut abort_rx, app, &task_id).await?;
 
         step.status = StepStatus::InProgress;
         emit_step_progress(app, &task_id, step);

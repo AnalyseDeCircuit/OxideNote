@@ -3,6 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import {
   agentRun,
   agentAbort,
+  agentPause,
+  agentResume,
   agentApplyChanges,
   agentDismissChanges,
   agentStatus,
@@ -47,6 +49,7 @@ interface AgentErrorEvent {
 interface AgentState {
   // Current run state
   isRunning: boolean;
+  pauseRequested: boolean;
   currentTaskId: string | null;
   currentKind: AgentKind | null;
   status: AgentStatus | null;
@@ -66,6 +69,8 @@ interface AgentState {
   // Actions
   runAgent: (task: AgentTask, config: ChatConfig) => Promise<void>;
   abortAgent: () => Promise<void>;
+  pauseAgent: () => Promise<void>;
+  resumeAgent: () => Promise<void>;
   applyChanges: (indices: number[]) => Promise<void>;
   dismissChanges: () => Promise<void>;
   loadHistory: () => Promise<void>;
@@ -80,6 +85,7 @@ interface AgentState {
 export const useAgentStore = create<AgentState>((set, get) => ({
   // ── Initial state ───────────────────────────────────────
   isRunning: false,
+  pauseRequested: false,
   currentTaskId: null,
   currentKind: null,
   status: null,
@@ -102,6 +108,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
       set({
         isRunning: true,
+        pauseRequested: false,
         currentTaskId: taskId,
         currentKind: task.kind,
         status: 'planning',
@@ -120,11 +127,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       await agentAbort();
       set({
         isRunning: false,
+        pauseRequested: false,
         status: 'aborted',
         progress: 'Agent aborted',
+        currentTaskId: null,
+        currentKind: null,
       });
     } catch (e) {
       console.warn('Agent abort failed:', e);
+    }
+  },
+
+  pauseAgent: async () => {
+    const { isRunning, status, pauseRequested } = get();
+    if (!isRunning || status === 'paused' || pauseRequested) return;
+    try {
+      await agentPause();
+      set({
+        pauseRequested: true,
+        progress: 'Pause requested. Agent will pause after the current step.',
+      });
+    } catch (e) {
+      console.warn('Agent pause failed:', e);
+    }
+  },
+
+  resumeAgent: async () => {
+    if (!get().isRunning) return;
+    try {
+      await agentResume();
+      set({
+        pauseRequested: false,
+        status: 'executing',
+        progress: 'Agent resumed',
+      });
+    } catch (e) {
+      console.warn('Agent resume failed:', e);
     }
   },
 
@@ -185,12 +223,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (resp.state === 'running') {
         set({
           isRunning: true,
+          pauseRequested: false,
           currentTaskId: resp.task_id,
           status: 'executing',
+        });
+      } else if (resp.state === 'paused') {
+        set({
+          isRunning: true,
+          pauseRequested: false,
+          currentTaskId: resp.task_id,
+          status: 'paused',
         });
       } else if (resp.state === 'waiting_approval' && resp.result) {
         set({
           isRunning: false,
+          pauseRequested: false,
           currentTaskId: resp.task_id,
           status: 'waiting_approval',
           planSteps: resp.result.plan_steps,
@@ -198,7 +245,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           summary: resp.result.summary,
         });
       } else {
-        set({ isRunning: false, currentTaskId: null, status: null });
+        set({ isRunning: false, pauseRequested: false, currentTaskId: null, status: null });
       }
     } catch (e) {
       console.warn('Fetch agent status failed:', e);
@@ -221,6 +268,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         }
         if (payload.status) {
           updates.status = payload.status as AgentStatus;
+          if (payload.status === 'paused') {
+            updates.pauseRequested = false;
+          }
         }
         // Update plan step status if provided
         if (payload.step_index !== undefined && payload.step_description) {
@@ -247,6 +297,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const { summary, changes_count } = event.payload;
       set({
         isRunning: false,
+        pauseRequested: false,
         currentKind: null,
         progress: 'Agent completed',
         summary,
@@ -260,6 +311,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     listen<AgentErrorEvent>('agent-error', (event) => {
       set({
         isRunning: false,
+        pauseRequested: false,
         currentKind: null,
         status: 'failed',
         progress: `Error: ${event.payload.error}`,
