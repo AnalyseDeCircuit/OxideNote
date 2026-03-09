@@ -193,7 +193,13 @@
     "localGraph": "局部图谱",
     "globalGraph": "全局图谱",
     "depth": "深度",
-    "centerNote": "中心: {{title}}"
+    "centerNote": "中心: {{title}}",
+    "nodes": "节点",
+    "links": "连接",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "zoomFit": "适应窗口",
+    "refresh": "刷新"
   },
   "dailyNote": {
     "today": "今天",

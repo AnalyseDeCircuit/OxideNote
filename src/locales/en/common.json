@@ -193,7 +193,13 @@
     "localGraph": "Local Graph",
     "globalGraph": "Global Graph",
     "depth": "Depth",
-    "centerNote": "Center: {{title}}"
+    "centerNote": "Center: {{title}}",
+    "nodes": "nodes",
+    "links": "links",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "zoomFit": "Fit to view",
+    "refresh": "Refresh"
   },
   "dailyNote": {
     "today": "Today",
