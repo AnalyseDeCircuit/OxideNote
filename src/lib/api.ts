@@ -536,6 +536,8 @@ export interface ChatMessage {
   content: string;
   reasoning?: string;
   images?: ImageAttachment[];
+  /** Database row ID — populated after loading from or saving to DB */
+  dbId?: number;
 }
 
 export interface ImageAttachment {
@@ -718,6 +720,10 @@ export async function saveChatMessage(
     images: images ?? null,
     usage: usage ?? null,
   });
+}
+
+export async function deleteChatMessage(messageId: number): Promise<void> {
+  return invoke<void>('delete_chat_message', { messageId });
 }
 
 export async function searchChatMessages(

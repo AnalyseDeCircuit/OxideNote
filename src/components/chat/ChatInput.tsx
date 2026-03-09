@@ -6,6 +6,7 @@ import { useChatStore } from '@/store/chatStore';
 import { useNoteStore } from '@/store/noteStore';
 import { searchNotes } from '@/lib/api';
 import { getEditorView } from '@/lib/editorViewRef';
+import { toast } from '@/hooks/useToast';
 import type { ImageAttachment, SearchResult } from '@/lib/api';
 
 /** Chat input area with @mention, quick actions, and image attachment */
@@ -27,8 +28,14 @@ export function ChatInput() {
   // ── Image handling ────────────────────────────────────────
 
   const addImage = useCallback((file: File) => {
-    if (file.size > 10 * 1024 * 1024) return; // 10MB limit
-    if (images.length >= 4) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: t('chat.imageLimit'), variant: 'warning' });
+      return;
+    }
+    if (images.length >= 4) {
+      toast({ title: t('chat.imageTooMany'), variant: 'warning' });
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -39,7 +46,7 @@ export function ChatInput() {
       }
     };
     reader.readAsDataURL(file);
-  }, [images.length]);
+  }, [images.length, t]);
 
   const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData.items;

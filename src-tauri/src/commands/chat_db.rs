@@ -586,6 +586,18 @@ pub async fn migrate_chat_from_json(
     })
 }
 
+/// Delete a single message by its database ID.
+#[tauri::command]
+pub async fn delete_chat_message(
+    message_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), ChatDbError> {
+    with_chat_db(&state.chat_db, |conn| {
+        conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+        Ok(())
+    })
+}
+
 /// Save a chat image from base64 data, returning the relative path.
 /// Uses spawn_blocking to avoid holding the async runtime with I/O.
 #[tauri::command]

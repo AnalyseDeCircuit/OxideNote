@@ -589,6 +589,13 @@
     "deleteConfirm": "Delete this session?",
     "noModels": "No models found",
     "sessionDefault": "New Chat",
+    "renameSession": "Rename Session",
+    "deleteMessage": "Delete Message",
+    "searchMessages": "Search chat history",
+    "noSearchResults": "No matching messages found",
+    "setupRequired": "AI Service Not Configured",
+    "setupDescription": "Configure an API key and provider in Settings to start chatting.",
+    "setupButton": "Go to Settings",
     "continuePrompt": "Please continue writing the next paragraph naturally based on the context. Maintain the same style and tone as the existing content.\nThe cursor is near line {{lineNum}}.\n\nContext excerpt:\n---\n{{surrounding}}\n---",
     "rewritePrompt": "Please rewrite the following selected text to make it clearer, more fluent, and professional.\nKeep the original meaning, only improve the expression.\n\nSelected text:\n> {{selection}}\n\nUse <edit> format to return the suggested changes.",
     "summarizePrompt": "Please summarize the key points and essential information from the following content.\nOutput as a concise Markdown bullet-point list, one point per line.\n\nContent:\n---\n{{content}}\n---"

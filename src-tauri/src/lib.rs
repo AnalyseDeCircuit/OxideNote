@@ -100,6 +100,7 @@ pub fn run() {
             commands::chat_db::update_chat_session_title,
             commands::chat_db::delete_chat_session,
             commands::chat_db::save_chat_message,
+            commands::chat_db::delete_chat_message,
             commands::chat_db::search_chat_messages,
             commands::chat_db::get_token_stats,
             commands::chat_db::update_token_stats,

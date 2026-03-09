@@ -5,7 +5,8 @@ src-tauri/target
 snazzy-purring-forest.md
 devdocs
 .github/copilot-instructions.md
-.github/agents/reviewer.agent.md
+.github/agents/
 .github/instructions/
 debugdocs/
 CLAUDE.md
+

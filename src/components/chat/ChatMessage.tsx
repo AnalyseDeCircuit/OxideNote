@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, FileInput, ChevronRight, ChevronDown } from 'lucide-react';
+import { Copy, FileInput, ChevronRight, ChevronDown, RotateCcw, Trash2 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
@@ -21,12 +21,12 @@ export function ChatMessage({ message, index, isLatest }: Props) {
   const pendingEdits = useChatStore((s) => s.pendingEdits);
 
   if (message.role === 'user') {
-    return <UserMessage message={message} />;
+    return <UserMessage message={message} index={index} />;
   }
 
   if (message.role === 'assistant') {
     const edits = isLatest ? pendingEdits : [];
-    return <AssistantMessage message={message} edits={edits} />;
+    return <AssistantMessage message={message} edits={edits} index={index} />;
   }
 
   return null;
@@ -34,10 +34,13 @@ export function ChatMessage({ message, index, isLatest }: Props) {
 
 // ── User message ────────────────────────────────────────────
 
-function UserMessage({ message }: { message: ChatMessageType }) {
+function UserMessage({ message, index }: { message: ChatMessageType; index: number }) {
+  const { t } = useTranslation();
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-xl px-3 py-2 bg-theme-accent/15 text-sm text-foreground">
+    <div className="flex justify-end group">
+      <div className="max-w-[85%] rounded-xl px-3 py-2 bg-theme-accent/15 text-sm text-foreground relative">
         <div className="whitespace-pre-wrap break-words">{message.content}</div>
         {message.images && message.images.length > 0 && (
           <div className="flex gap-1.5 mt-2">
@@ -51,6 +54,15 @@ function UserMessage({ message }: { message: ChatMessageType }) {
             ))}
           </div>
         )}
+        {/* Delete button — visible on hover */}
+        <button
+          className="absolute -left-7 top-1 p-0.5 rounded opacity-0 group-hover:opacity-100
+            hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-all"
+          onClick={() => deleteMessage(index)}
+          title={t('chat.deleteMessage')}
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
       </div>
     </div>
   );
@@ -58,8 +70,15 @@ function UserMessage({ message }: { message: ChatMessageType }) {
 
 // ── Assistant message ───────────────────────────────────────
 
-function AssistantMessage({ message, edits }: { message: ChatMessageType; edits: EditSuggestion[] }) {
+function AssistantMessage({ message, edits, index }: { message: ChatMessageType; edits: EditSuggestion[]; index: number }) {
   const { t } = useTranslation();
+  const retryLastMessage = useChatStore((s) => s.retryLastMessage);
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+  const messageCount = useChatStore((s) => s.messages.length);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+
+  // Check if this is the last assistant message for retry button
+  const isLastAssistant = index === messageCount - 1 && message.role === 'assistant';
 
   // Strip <edit> XML before rendering Markdown
   const cleanContent = useMemo(() => {
@@ -123,6 +142,22 @@ function AssistantMessage({ message, edits }: { message: ChatMessageType; edits:
             title={t('chat.insertToEditor')}
           >
             <FileInput className="w-3.5 h-3.5" />
+          </button>
+          {isLastAssistant && !isStreaming && (
+            <button
+              className="p-1 rounded hover:bg-theme-hover text-muted-foreground hover:text-foreground transition-colors"
+              onClick={retryLastMessage}
+              title={t('chat.retry')}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            className="p-1 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-500 transition-colors ml-auto"
+            onClick={() => deleteMessage(index)}
+            title={t('chat.deleteMessage')}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

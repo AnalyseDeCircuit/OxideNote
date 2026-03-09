@@ -589,6 +589,13 @@
     "deleteConfirm": "确定删除该会话？",
     "noModels": "未找到可用模型",
     "sessionDefault": "新对话",
+    "renameSession": "重命名会话",
+    "deleteMessage": "删除消息",
+    "searchMessages": "搜索聊天记录",
+    "noSearchResults": "未找到匹配的消息",
+    "setupRequired": "需要配置 AI 服务",
+    "setupDescription": "请先在设置中配置 API 密钥和服务商，然后即可开始对话。",
+    "setupButton": "前往设置",
     "continuePrompt": "请根据上下文，自然地继续写下一段。保持与已有内容一致的风格和语气。\n当前光标位于第 {{lineNum}} 行附近。\n\n上下文片段：\n---\n{{surrounding}}\n---",
     "rewritePrompt": "请改写以下选中内容，使其更加清晰、流畅和专业。\n保持原意不变，仅优化表达方式。\n\n选中内容：\n> {{selection}}\n\n使用 <edit> 格式返回修改建议。",
     "summarizePrompt": "请总结以下内容的核心要点和关键信息。\n输出为简洁的 Markdown 要点列表，每个要点一行。\n\n内容：\n---\n{{content}}\n---"

@@ -13,6 +13,7 @@ import {
   updateChatSessionTitle,
   deleteChatSession,
   saveChatMessage,
+  deleteChatMessage,
   getTokenStats,
   updateTokenStats,
   resetLifetimeTokensDb,
@@ -28,6 +29,8 @@ import {
   type ChatSessionInfo,
 } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
+import { toast } from '@/hooks/useToast';
+import i18n from '@/i18n';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -114,6 +117,8 @@ interface ChatState {
   removeReferencedFile: (path: string) => void;
   applyEdit: (index: number) => void;
   rejectEdit: (index: number) => void;
+  deleteMessage: (index: number) => void;
+  retryLastMessage: () => Promise<void>;
   fetchModels: () => Promise<void>;
   updateConfig: (partial: Partial<ChatConfig>) => void;
   resetSessionTokens: () => void;
@@ -235,6 +240,7 @@ function rowToMessage(row: import('@/lib/api').ChatMessageRow): ChatMessage {
   const msg: ChatMessage = {
     role: row.role as ChatMessage['role'],
     content: row.content,
+    dbId: row.id,
   };
   if (row.reasoning) msg.reasoning = row.reasoning;
   if (row.images) {
@@ -336,7 +342,11 @@ export const useChatStore = create<ChatState>()(
         if (chunk.done) {
           // Stream finished — check for errors
           if (chunk.error) {
-            console.warn('Chat stream error:', chunk.error);
+            toast({
+              title: i18n.t('chat.error'),
+              description: chunk.error,
+              variant: 'error',
+            });
             set({
               isStreaming: false,
               streamingContent: '',
@@ -386,7 +396,7 @@ export const useChatStore = create<ChatState>()(
             tokenStats: newStats,
           });
 
-          // Persist assistant message to DB (fire-and-forget)
+          // Persist assistant message to DB and capture its ID
           if (state.currentSessionId) {
             saveChatMessage(
               state.currentSessionId,
@@ -395,7 +405,18 @@ export const useChatStore = create<ChatState>()(
               state.streamingReasoning || null,
               null,
               chunk.usage ? JSON.stringify(chunk.usage) : null,
-            ).catch((err) => console.warn('Failed to save assistant message:', err));
+            )
+              .then((dbId) => {
+                // Attach dbId to the last assistant message
+                set((s) => ({
+                  messages: s.messages.map((m, i) =>
+                    i === s.messages.length - 1 && m.role === 'assistant' && !m.dbId
+                      ? { ...m, dbId }
+                      : m,
+                  ),
+                }));
+              })
+              .catch((err) => console.warn('Failed to save assistant message:', err));
 
             // Update token stats in DB
             if (chunk.usage) {
@@ -487,10 +508,20 @@ export const useChatStore = create<ChatState>()(
         pendingEdits: [],
       });
 
-      // Persist user message to DB (fire-and-forget)
+      // Persist user message to DB and capture its ID
       if (sessionId) {
         const imagesJson = images?.length ? JSON.stringify(images) : null;
         saveChatMessage(sessionId, 'user', content, null, imagesJson, null)
+          .then((dbId) => {
+            // Attach dbId to the last user message
+            set((s) => ({
+              messages: s.messages.map((m, i) =>
+                i === s.messages.length - 1 && m.role === 'user' && !m.dbId
+                  ? { ...m, dbId }
+                  : m,
+              ),
+            }));
+          })
           .catch((err) => console.warn('Failed to save user message:', err));
         if (autoTitle) {
           updateChatSessionTitle(sessionId, autoTitle)
@@ -552,7 +583,11 @@ export const useChatStore = create<ChatState>()(
           isStreaming: false,
           currentRequestId: null,
         });
-        console.warn('Chat send failed:', err);
+        toast({
+          title: i18n.t('chat.error'),
+          description: String(err),
+          variant: 'error',
+        });
       }
     },
 
@@ -692,6 +727,68 @@ export const useChatStore = create<ChatState>()(
           i === index ? { ...e, status: 'rejected' as const } : e,
         ),
       }));
+    },
+
+    // ── Message-level operations ────────────────────────────
+
+    deleteMessage: (index) => {
+      const { messages } = get();
+      const msg = messages[index];
+      if (!msg) return;
+
+      // Remove from state
+      set((s) => ({
+        messages: s.messages.filter((_, i) => i !== index),
+      }));
+
+      // Delete from DB if we have a dbId
+      if (msg.dbId) {
+        deleteChatMessage(msg.dbId)
+          .catch((err) => console.warn('Failed to delete message from DB:', err));
+      }
+    },
+
+    retryLastMessage: async () => {
+      const { messages, isStreaming } = get();
+      if (isStreaming) return;
+      if (messages.length < 2) return;
+
+      // Find the last assistant message and the user message before it
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.role !== 'assistant') return;
+
+      const userMsg = messages[messages.length - 2];
+      if (userMsg.role !== 'user') return;
+
+      // Capture content before removing
+      const userContent = userMsg.content;
+      const userImages = userMsg.images;
+
+      // Remove both the assistant and user messages from state
+      const assistantDbId = lastMsg.dbId;
+      const userDbId = userMsg.dbId;
+      set((s) => ({
+        messages: s.messages.slice(0, -2),
+        pendingEdits: [],
+      }));
+
+      // Delete from DB
+      if (assistantDbId) {
+        deleteChatMessage(assistantDbId)
+          .catch((err) => console.warn('Failed to delete message from DB:', err));
+      }
+      if (userDbId) {
+        deleteChatMessage(userDbId)
+          .catch((err) => console.warn('Failed to delete message from DB:', err));
+      }
+
+      // Re-send the user message (this re-adds it to state and DB)
+      const notePath = useNoteStore.getState().activeTabPath;
+      try {
+        await get().sendMessage(userContent, notePath ?? undefined, userImages);
+      } catch {
+        // sendMessage already shows toast on error
+      }
     },
 
     // ── Model fetching ──────────────────────────────────────
