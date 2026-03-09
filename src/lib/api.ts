@@ -492,8 +492,18 @@ export interface EmbeddingStatus {
 
 export interface RebuildResult {
   embedded: number;
+  skipped: number;
   chunks: number;
   errors: string[];
+}
+
+/** Progress event payload emitted per-batch during embedding rebuild */
+export interface EmbeddingProgressEvent {
+  current: number;
+  total: number;
+  path: string;
+  chunks_done: number;
+  error_count: number;
 }
 
 /** Semantic search by natural language query */
@@ -501,9 +511,9 @@ export async function semanticSearch(query: string): Promise<SemanticSearchResul
   return invoke<SemanticSearchResult[]>('semantic_search', { query });
 }
 
-/** Rebuild the entire embedding index */
-export async function rebuildEmbeddings(): Promise<RebuildResult> {
-  return invoke<RebuildResult>('rebuild_embeddings');
+/** Rebuild the embedding index. force=true for full rebuild, false for incremental (resume). */
+export async function rebuildEmbeddings(force?: boolean): Promise<RebuildResult> {
+  return invoke<RebuildResult>('rebuild_embeddings', { force: force ?? false });
 }
 
 /** Get embedding index status */
@@ -519,6 +529,11 @@ export async function saveEmbeddingConfig(config: EmbeddingConfig): Promise<void
 /** Load embedding provider configuration */
 export async function loadEmbeddingConfig(): Promise<EmbeddingConfig | null> {
   return invoke<EmbeddingConfig | null>('load_embedding_config');
+}
+
+/** Clear all embedding data from the index. Returns number of deleted chunks. */
+export async function clearEmbeddings(): Promise<number> {
+  return invoke<number>('clear_embeddings');
 }
 
 // ─── Chat types ─────────────────────────────────────────────

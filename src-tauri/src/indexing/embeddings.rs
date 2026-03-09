@@ -180,6 +180,9 @@ fn split_sentences(text: &str) -> Vec<String> {
 struct EmbeddingRequest {
     model: String,
     input: Vec<String>,
+    /// Output embedding dimensions (supported by text-embedding-3-* models)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dimensions: Option<usize>,
 }
 
 /// OpenAI embedding response format
@@ -191,6 +194,8 @@ struct EmbeddingResponse {
 #[derive(Deserialize)]
 struct EmbeddingData {
     embedding: Vec<f32>,
+    /// Position index corresponding to the input array order
+    index: usize,
 }
 
 /// Ollama embedding request format
@@ -208,6 +213,13 @@ struct OllamaEmbedResponse {
 
 /// Generate embeddings for a batch of text chunks via API.
 /// Supports both OpenAI-compatible and Ollama endpoints.
+///
+/// URL normalization:
+/// - If URL ends with `/api/embed` or `/api/embeddings` → Ollama path
+/// - If URL contains `localhost:11434` or `127.0.0.1:11434` and has no
+///   `/v1/` segment → auto-append `/api/embed` and use Ollama path
+/// - Otherwise → OpenAI-compatible path; auto-append `/v1/embeddings`
+///   if the URL has no path or ends with a bare port/host
 pub async fn embed_texts(
     config: &EmbeddingConfig,
     texts: &[String],
@@ -222,89 +234,165 @@ pub async fn embed_texts(
     }
 
     let client = reqwest::Client::new();
+    let url = config.api_url.trim_end_matches('/');
 
-    // Detect Ollama by URL pattern
-    let is_ollama = config.api_url.contains("/api/embed")
-        || config.api_url.contains("localhost:11434")
-        || config.api_url.contains("127.0.0.1:11434");
+    // Parse URL to inspect path component safely (avoids substring false-positives)
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| format!("Invalid API URL: {}", e))?;
+    let path = parsed.path();
+
+    // Detect Ollama by explicit endpoint path
+    let has_ollama_path =
+        path.ends_with("/api/embed") || path.ends_with("/api/embeddings");
+
+    // Heuristic: bare Ollama host (default port) without an OpenAI-style /v1/ segment
+    let is_bare_ollama_host = !path.contains("/v1")
+        && parsed.port() == Some(11434)
+        && matches!(parsed.host_str(), Some("localhost") | Some("127.0.0.1"));
+
+    let is_ollama = has_ollama_path || is_bare_ollama_host;
+
+    // Build resolved URL: only auto-append the endpoint suffix when the URL
+    // has no meaningful path (root "/" or empty). If the user already provided
+    // a specific path, trust it as-is to avoid mangling proxy/custom URLs.
+    let resolved_url = if is_ollama {
+        if has_ollama_path {
+            url.to_string()
+        } else {
+            // Bare Ollama host → append /api/embed
+            format!("{}/api/embed", url)
+        }
+    } else if path == "/" || path.is_empty() {
+        // Bare base URL (e.g. https://api.openai.com) → append full path
+        format!("{}/v1/embeddings", url)
+    } else if path.ends_with("/v1") {
+        // User typed https://api.openai.com/v1 → just add /embeddings
+        format!("{}/embeddings", url)
+    } else {
+        // URL already has a non-trivial path — use as-is
+        url.to_string()
+    };
 
     if is_ollama {
-        embed_via_ollama(&client, config, texts).await
+        embed_via_ollama(&client, config, texts, &resolved_url).await
     } else {
-        embed_via_openai(&client, config, texts).await
+        embed_via_openai(&client, config, texts, &resolved_url).await
     }
 }
 
-/// OpenAI-compatible embedding API call
+/// Maximum number of input texts per single API call.
+/// Alibaba DashScope (Qwen) limits v3/v4 to 10 inputs per request;
+/// OpenAI allows up to 2048. We use a provider-aware cap.
+const MAX_INPUTS_QWEN: usize = 10;
+const MAX_INPUTS_DEFAULT: usize = 256;
+
+/// OpenAI-compatible embedding API call.
+/// Automatically sub-batches if `texts` exceeds the per-request limit.
 async fn embed_via_openai(
     client: &reqwest::Client,
     config: &EmbeddingConfig,
     texts: &[String],
+    url: &str,
 ) -> Result<Vec<Vec<f32>>, String> {
-    let body = EmbeddingRequest {
-        model: config.model.clone(),
-        input: texts.to_vec(),
+    // Determine whether to send the `dimensions` param.
+    // Supported by: OpenAI text-embedding-3-*, Qwen text-embedding-v3/v4
+    let is_qwen = config.model.starts_with("text-embedding-v3")
+        || config.model.starts_with("text-embedding-v4");
+    let dimensions = if config.model.starts_with("text-embedding-3") || is_qwen {
+        Some(config.dimensions)
+    } else {
+        None
     };
 
-    let mut req = client
-        .post(&config.api_url)
-        .header("Content-Type", "application/json");
+    // Provider-aware batch size: Qwen v3/v4 cap at 10, others much higher
+    let max_per_call = if is_qwen { MAX_INPUTS_QWEN } else { MAX_INPUTS_DEFAULT };
 
-    if !config.api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", config.api_key));
+    let mut all_embeddings = Vec::with_capacity(texts.len());
+
+    // Sub-batch to stay within per-request input limits
+    for sub_batch in texts.chunks(max_per_call) {
+        let body = EmbeddingRequest {
+            model: config.model.clone(),
+            input: sub_batch.to_vec(),
+            dimensions,
+        };
+
+        let mut req = client
+            .post(url)
+            .header("Content-Type", "application/json");
+
+        if !config.api_key.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", config.api_key));
+        }
+
+        let resp = req
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("API request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("API error {}: {}", status, text));
+        }
+
+        let data: EmbeddingResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse API response: {}", e))?;
+
+        // Sort by index to guarantee input-order alignment
+        // (API spec permits out-of-order responses)
+        let mut items = data.data;
+        items.sort_by_key(|d| d.index);
+        all_embeddings.extend(items.into_iter().map(|d| d.embedding));
     }
 
-    let resp = req
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("API request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, text));
-    }
-
-    let data: EmbeddingResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse API response: {}", e))?;
-
-    Ok(data.data.into_iter().map(|d| d.embedding).collect())
+    Ok(all_embeddings)
 }
 
-/// Ollama embedding API call
+/// Ollama embedding API call.
+/// Ollama has no strict per-request input limit, but we sub-batch
+/// to keep memory usage bounded for large vaults.
 async fn embed_via_ollama(
     client: &reqwest::Client,
     config: &EmbeddingConfig,
     texts: &[String],
+    url: &str,
 ) -> Result<Vec<Vec<f32>>, String> {
-    let body = OllamaEmbedRequest {
-        model: config.model.clone(),
-        input: texts.to_vec(),
-    };
+    let mut all_embeddings = Vec::with_capacity(texts.len());
 
-    let resp = client
-        .post(&config.api_url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Ollama request failed: {}", e))?;
+    // Ollama can handle batches but we cap at a reasonable size
+    for sub_batch in texts.chunks(MAX_INPUTS_DEFAULT) {
+        let body = OllamaEmbedRequest {
+            model: config.model.clone(),
+            input: sub_batch.to_vec(),
+        };
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Ollama error {}: {}", status, text));
+        let resp = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("Ollama error {}: {}", status, text));
+        }
+
+        let data: OllamaEmbedResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
+
+        all_embeddings.extend(data.embeddings);
     }
 
-    let data: OllamaEmbedResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
-
-    Ok(data.embeddings)
+    Ok(all_embeddings)
 }
 
 #[cfg(test)]

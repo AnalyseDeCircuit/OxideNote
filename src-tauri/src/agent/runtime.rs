@@ -231,7 +231,8 @@ pub async fn run_agent(
                 Ok(result) => {
                     // Cap individual tool results to prevent context explosion
                     let capped = if result.len() > 2000 {
-                        format!("{}... (truncated)", &result[..2000])
+                        let boundary = result.floor_char_boundary(2000);
+                        format!("{}... (truncated)", &result[..boundary])
                     } else {
                         result
                     };
@@ -248,15 +249,16 @@ pub async fn run_agent(
         // Compact accumulated context if it exceeds budget (8000 chars)
         // Drop oldest entries to stay within budget
         if accumulated_context.len() > 8000 {
-            let excess = accumulated_context.len() - 6000;
+            let excess = accumulated_context.floor_char_boundary(accumulated_context.len() - 6000);
             if let Some(pos) = accumulated_context[excess..].find("\n[Tool:") {
                 accumulated_context = format!(
                     "(earlier context compacted)\n{}",
                     &accumulated_context[excess + pos..]
                 );
             } else {
-                // Fallback: simple truncation from the end of preserved content
-                accumulated_context.truncate(8000);
+                // Fallback: simple truncation at a safe char boundary
+                let safe_end = accumulated_context.floor_char_boundary(8000);
+                accumulated_context.truncate(safe_end);
             }
         }
 

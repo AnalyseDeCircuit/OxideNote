@@ -1,12 +1,13 @@
 //! Tauri commands for semantic search (embedding-based).
 //!
-//! Provides three commands:
+//! Commands:
 //!   - `semantic_search`      — embed a query string, then cosine-search the index
-//!   - `rebuild_embeddings`   — re-embed all notes in the vault
+//!   - `rebuild_embeddings`   — embed notes (incremental or full), with real-time progress events
 //!   - `get_embedding_status` — return indexing statistics for the frontend
+//!   - `clear_embeddings`     — delete all embedding data from the index
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::indexing::{db, embeddings};
 use crate::state::AppState;
@@ -147,20 +148,42 @@ pub async fn semantic_search(
 
 // ── Tauri command: rebuild_embeddings ────────────────────────
 
+/// Progress event payload emitted per-file during embedding rebuild
+#[derive(Debug, Clone, Serialize)]
+pub struct EmbeddingProgressEvent {
+    /// Current file index (0-based)
+    pub current: usize,
+    /// Total number of files to process
+    pub total: usize,
+    /// Path of the file currently being processed
+    pub path: String,
+    /// Number of chunks embedded so far
+    pub chunks_done: usize,
+    /// Number of errors encountered so far
+    pub error_count: usize,
+}
+
 /// Rebuild result summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RebuildResult {
     pub embedded: usize,
+    pub skipped: usize,
     pub chunks: usize,
     pub errors: Vec<String>,
 }
 
-/// Re-embed all notes in the vault. Processes notes in batches.
-/// This is a blocking operation — the frontend should show progress.
+/// Embed notes in the vault. Supports two modes:
+/// - `force = false` (default): incremental — skip notes already in the index
+/// - `force = true`: full rebuild — re-embed everything from scratch
+///
+/// Emits `embedding:progress` events so the frontend can show real-time progress.
 #[tauri::command]
 pub async fn rebuild_embeddings(
+    force: Option<bool>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RebuildResult, EmbeddingError> {
+    let force = force.unwrap_or(false);
     let vault_path = state.vault_path.read().clone();
     let vault = vault_path.as_ref().ok_or(EmbeddingError::NoVault)?;
 
@@ -170,22 +193,57 @@ pub async fn rebuild_embeddings(
     }
 
     // Collect all .md files from the vault
-    let files = collect_md_files(vault).map_err(EmbeddingError::Internal)?;
+    let all_files = collect_md_files(vault).map_err(EmbeddingError::Internal)?;
+
+    // For incremental mode, query which notes are already embedded
+    // Use the write connection (state.db) to ensure we see our own recent writes
+    let already_embedded = if !force {
+        let db_guard = state.db.lock();
+        match db_guard.as_ref() {
+            Some(conn) => db::get_embedded_note_paths(conn)
+                .map_err(|e| EmbeddingError::Internal(e.to_string()))?,
+            None => std::collections::HashSet::new(),
+        }
+    } else {
+        std::collections::HashSet::new()
+    };
+
+    // Filter to only files that need embedding
+    let vault_ref = vault;
+    let files_to_process: Vec<&std::path::PathBuf> = all_files
+        .iter()
+        .filter(|f| {
+            if force {
+                return true;
+            }
+            let rel = f
+                .strip_prefix(vault_ref)
+                .unwrap_or(f)
+                .to_string_lossy()
+                .to_string();
+            !already_embedded.contains(&rel)
+        })
+        .collect();
+
+    let skipped = all_files.len() - files_to_process.len();
+    let total = files_to_process.len();
 
     let mut total_embedded = 0usize;
     let mut total_chunks = 0usize;
     let mut errors = Vec::new();
+    // Running count of files processed so far (for progress events)
+    let mut files_done = 0usize;
 
     // Process files in batches to limit API calls
     const BATCH_SIZE: usize = 10;
 
-    for batch in files.chunks(BATCH_SIZE) {
+    for batch in files_to_process.chunks(BATCH_SIZE) {
         // Read content and chunk each file
         let mut batch_entries: Vec<(String, Vec<String>)> = Vec::new();
 
         for file_path in batch {
             let rel_path = file_path
-                .strip_prefix(vault)
+                .strip_prefix(vault_ref)
                 .unwrap_or(file_path)
                 .to_string_lossy()
                 .to_string();
@@ -207,7 +265,7 @@ pub async fn rebuild_embeddings(
             continue;
         }
 
-        // Flatten all chunks for one API call
+        // Flatten all chunks for API call
         let all_chunks: Vec<String> = batch_entries
             .iter()
             .flat_map(|(_, chunks)| chunks.iter().cloned())
@@ -230,7 +288,7 @@ pub async fn rebuild_embeddings(
                         }
                     };
 
-                    // Clear old embeddings for this note
+                    // Clear old embeddings for this note before re-embedding
                     if let Err(e) = db::delete_note_embeddings(conn, rel_path) {
                         errors.push(format!("{}: {}", rel_path, e));
                         emb_idx += chunks.len();
@@ -238,6 +296,7 @@ pub async fn rebuild_embeddings(
                         continue;
                     }
 
+                    let mut file_chunks_ok = 0usize;
                     for (chunk_i, chunk_text) in chunks.iter().enumerate() {
                         if emb_idx >= all_embeddings.len() {
                             break;
@@ -255,23 +314,55 @@ pub async fn rebuild_embeddings(
                             errors.push(format!("{} chunk {}: {}", rel_path, chunk_i, e));
                         } else {
                             total_chunks += 1;
+                            file_chunks_ok += 1;
                         }
                         emb_idx += 1;
                     }
-                    total_embedded += 1;
+                    // Only count as embedded if at least one chunk succeeded
+                    if file_chunks_ok > 0 {
+                        total_embedded += 1;
+                    }
                     // db_guard dropped here — lock released between files
+
+                    // Emit per-file progress for smooth UI updates
+                    files_done += 1;
+                    let _ = app.emit(
+                        "embedding:progress",
+                        EmbeddingProgressEvent {
+                            current: files_done,
+                            total,
+                            path: rel_path.clone(),
+                            chunks_done: total_chunks,
+                            error_count: errors.len(),
+                        },
+                    );
                 }
             }
             Err(e) => {
                 for (path, _) in &batch_entries {
                     errors.push(format!("{}: {}", path, e));
                 }
+                // Advance file counter even on API error so progress stays accurate
+                files_done += batch_entries.len();
             }
         }
     }
 
+    // Emit final "done" progress event
+    let _ = app.emit(
+        "embedding:progress",
+        EmbeddingProgressEvent {
+            current: total,
+            total,
+            path: String::new(),
+            chunks_done: total_chunks,
+            error_count: errors.len(),
+        },
+    );
+
     Ok(RebuildResult {
         embedded: total_embedded,
+        skipped,
         chunks: total_chunks,
         errors,
     })
@@ -314,6 +405,23 @@ pub async fn get_embedding_status(
         model_name: status.model_name,
         configured,
     })
+}
+
+// ── Tauri command: clear_embeddings ─────────────────────────
+
+/// Delete all embedding data from the index. Returns the number of deleted chunks.
+#[tauri::command]
+pub async fn clear_embeddings(
+    state: State<'_, AppState>,
+) -> Result<usize, EmbeddingError> {
+    // Ensure a vault is open before accessing DB
+    let vault_path = state.vault_path.read().clone();
+    let _vault = vault_path.as_ref().ok_or(EmbeddingError::NoVault)?;
+
+    let db_guard = state.db.lock();
+    let conn = db_guard.as_ref().ok_or(EmbeddingError::NoIndex)?;
+    db::clear_all_embeddings(conn)
+        .map_err(|e| EmbeddingError::Internal(e.to_string()))
 }
 
 // ── Helper: collect .md files ───────────────────────────────

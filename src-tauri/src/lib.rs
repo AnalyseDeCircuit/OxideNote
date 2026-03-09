@@ -93,6 +93,7 @@ pub fn run() {
             commands::embedding::get_embedding_status,
             commands::embedding::save_embedding_config,
             commands::embedding::load_embedding_config,
+            commands::embedding::clear_embeddings,
             commands::chat::chat_stream,
             commands::chat::chat_abort,
             commands::chat::build_chat_context,

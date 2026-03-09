@@ -155,7 +155,8 @@ async fn build_relevant_notes(
                             .unwrap_or_default();
                         // Truncate to 2000 chars per note for context budget
                         let truncated = if content.len() > 2000 {
-                            format!("{}...", &content[..2000])
+                            let boundary = content.floor_char_boundary(2000);
+                            format!("{}...", &content[..boundary])
                         } else {
                             content
                         };

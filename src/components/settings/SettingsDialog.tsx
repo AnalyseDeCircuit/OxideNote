@@ -12,17 +12,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard, Brain, User, RotateCcw, Copy } from 'lucide-react';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard, Brain, User, RotateCcw, Copy, Play } from 'lucide-react';
 import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate, type ActionId, DEFAULT_KEYBINDINGS } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore, flushAllPendingSaves } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, listModels, type EmbeddingConfig, type EmbeddingStatus, type ChatProvider, type ThinkingMode } from '@/lib/api';
+import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, clearEmbeddings, listModels, type EmbeddingConfig, type EmbeddingStatus, type EmbeddingProgressEvent, type ChatProvider, type ThinkingMode } from '@/lib/api';
 import { useChatStore, PROVIDER_DEFAULTS } from '@/store/chatStore';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { toast } from '@/hooks/useToast';
+import { listen } from '@tauri-apps/api/event';
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 interface ThemeDef {
   id: ThemeId;
@@ -869,16 +871,38 @@ function AITab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  // Real-time progress from embedding:progress events
+  const [progress, setProgress] = useState<EmbeddingProgressEvent | null>(null);
 
-  // Load config + status on mount
+  // Load config and status independently so one failure doesn't block the other
   useEffect(() => {
-    Promise.all([loadEmbeddingConfig(), getEmbeddingStatus()])
-      .then(([cfg, st]) => {
-        if (cfg) setConfig(cfg);
-        setStatus(st);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    let mounted = true;
+    async function load() {
+      try {
+        const cfg = await loadEmbeddingConfig();
+        if (mounted && cfg) setConfig(cfg);
+      } catch (e) {
+        console.warn('Failed to load embedding config:', e);
+      }
+      try {
+        const st = await getEmbeddingStatus();
+        if (mounted) setStatus(st);
+      } catch (e) {
+        console.warn('Failed to load embedding status:', e);
+      }
+      if (mounted) setLoading(false);
+    }
+    load();
+    return () => { mounted = false; };
+  }, []);
+
+  // Listen for real-time progress events during embedding rebuild
+  useEffect(() => {
+    const unlisten = listen<EmbeddingProgressEvent>('embedding:progress', (event) => {
+      setProgress(event.payload);
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -893,28 +917,66 @@ function AITab() {
     }
   }, [config, t]);
 
-  const handleRebuild = useCallback(async () => {
+  // Shared rebuild handler — force=true for full rebuild, false for incremental (resume)
+  const handleRebuild = useCallback(async (force: boolean) => {
     setRebuilding(true);
+    setProgress(null);
     try {
-      const result = await rebuildEmbeddings();
+      const result = await rebuildEmbeddings(force);
+      const errDetail = result.errors.length > 0
+        ? `\n${result.errors[0]}${result.errors.length > 1 ? ` (+${result.errors.length - 1})` : ''}`
+        : '';
+      const skippedInfo = result.skipped > 0 ? ` (${t('ai.skippedNotes', { count: result.skipped })})` : '';
       toast({
         title: t('ai.rebuildDone'),
-        description: `${result.embedded} notes, ${result.chunks} chunks${result.errors.length > 0 ? `, ${result.errors.length} errors` : ''}`,
+        description: `${result.embedded} notes, ${result.chunks} chunks${skippedInfo}${errDetail}`,
         variant: result.errors.length > 0 ? 'warning' : 'default',
       });
-      // Refresh status
-      const st = await getEmbeddingStatus();
-      setStatus(st);
+      try {
+        const st = await getEmbeddingStatus();
+        setStatus(st);
+      } catch {
+        console.warn('Failed to refresh embedding status after rebuild');
+      }
     } catch (e) {
       toast({ title: String(e), variant: 'error' });
     } finally {
       setRebuilding(false);
+      setProgress(null);
+    }
+  }, [t]);
+
+  // Clear all embedding data from the index
+  const handleClear = useCallback(async () => {
+    const confirmed = await confirm(t('ai.clearConfirm'), { title: 'OxideNote', kind: 'warning' });
+    if (!confirmed) return;
+    setClearing(true);
+    try {
+      const deleted = await clearEmbeddings();
+      toast({
+        title: t('ai.clearDone'),
+        description: t('ai.clearDoneDesc', { count: deleted }),
+        variant: 'default',
+      });
+      try {
+        const st = await getEmbeddingStatus();
+        setStatus(st);
+      } catch {
+        console.warn('Failed to refresh embedding status after clear');
+      }
+    } catch (e) {
+      toast({ title: String(e), variant: 'error' });
+    } finally {
+      setClearing(false);
     }
   }, [t]);
 
   if (loading) {
     return <div className="text-sm text-muted-foreground p-4">{t('ai.loading')}</div>;
   }
+
+  // Whether any background operation is running
+  const busy = rebuilding || clearing;
 
   return (
     <>
@@ -944,7 +1006,7 @@ function AITab() {
             type="text"
             value={config.model}
             onChange={(e) => setConfig({ ...config, model: e.target.value })}
-            placeholder="text-embedding-3-small"
+            placeholder="text-embedding-3-small / text-embedding-v4"
             className="w-[200px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
           />
         </SettingRow>
@@ -988,7 +1050,7 @@ function AITab() {
                 <span className="text-foreground font-mono text-xs">{status.model_name}</span>
               </div>
             )}
-            {/* Progress bar */}
+            {/* Static progress bar — overall embedding coverage */}
             <div className="w-full h-1.5 rounded-full bg-background border border-theme-border overflow-hidden mt-2">
               <div
                 className="h-full bg-theme-accent transition-all duration-300"
@@ -998,12 +1060,66 @@ function AITab() {
           </div>
         )}
 
-        <div className="flex justify-end mt-2">
+        {/* Real-time progress panel — visible only during rebuild */}
+        {rebuilding && progress && (
+          <div className="mt-3 p-3 rounded border border-theme-border bg-background space-y-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{t('ai.progressLabel')}</span>
+              <span>{progress.current} / {progress.total}</span>
+            </div>
+            {/* Animated progress bar */}
+            <div className="w-full h-2 rounded-full bg-surface overflow-hidden">
+              <div
+                className="h-full bg-theme-accent transition-[width] duration-200"
+                style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
+              />
+            </div>
+            {/* Current file path */}
+            {progress.path && (
+              <div className="text-xs text-muted-foreground truncate" title={progress.path}>
+                {progress.path}
+              </div>
+            )}
+            {/* Chunk/error counters */}
+            <div className="flex gap-4 text-xs text-muted-foreground">
+              <span>{t('ai.totalChunks')}: {progress.chunks_done}</span>
+              {progress.error_count > 0 && (
+                <span className="text-red-500">{t('ai.errorCount', { count: progress.error_count })}</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons: continue / rebuild / clear */}
+        <div className="flex justify-end gap-2 mt-2">
+          {/* Clear index */}
           <button
-            onClick={handleRebuild}
-            disabled={rebuilding || !config.api_url}
-            className="px-4 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover disabled:opacity-50 transition-colors"
+            onClick={handleClear}
+            disabled={busy || !status || status.total_chunks === 0}
+            title={t('ai.clearIndex')}
+            className="px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
           >
+            <Trash2 className="w-3.5 h-3.5" />
+            {clearing ? t('ai.clearing') : t('ai.clearIndex')}
+          </button>
+          {/* Continue indexing (incremental) — only shown when there are un-embedded notes */}
+          {status && status.embedded_notes < status.total_notes && (
+            <button
+              onClick={() => handleRebuild(false)}
+              disabled={busy || !config.api_url}
+              className="px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
+            >
+              <Play className="w-3.5 h-3.5" />
+              {t('ai.continueIndex')}
+            </button>
+          )}
+          {/* Full rebuild */}
+          <button
+            onClick={() => handleRebuild(true)}
+            disabled={busy || !config.api_url}
+            className="px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground hover:bg-theme-hover disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
             {rebuilding ? t('ai.rebuilding') : t('ai.rebuild')}
           </button>
         </div>

@@ -894,3 +894,26 @@ pub fn get_embedding_status(conn: &Connection) -> Result<EmbeddingStatus, rusqli
         model_name,
     })
 }
+
+/// Delete all embedding data from the index
+pub fn clear_all_embeddings(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    let deleted = conn.execute("DELETE FROM embeddings", [])?;
+    Ok(deleted)
+}
+
+/// Return the set of note paths that already have embeddings stored.
+/// Used for incremental indexing (skip notes already embedded).
+pub fn get_embedded_note_paths(conn: &Connection) -> Result<std::collections::HashSet<String>, rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT DISTINCT note_path FROM embeddings")?;
+    let paths = stmt.query_map([], |row| {
+        let path: String = row.get(0)?;
+        Ok(path)
+    })?;
+    let mut set = std::collections::HashSet::new();
+    for p in paths {
+        if let Ok(path) = p {
+            set.insert(path);
+        }
+    }
+    Ok(set)
+}
