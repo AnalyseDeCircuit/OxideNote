@@ -1,0 +1,31 @@
+# cargo-deny configuration for OxideNote
+# Run: cargo deny check (requires cargo-deny installed)
+
+[advisories]
+version = 2
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "Unlicense",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Apache-2.0 WITH LLVM-exception",
+    "LicenseRef-PolyForm-Noncommercial-1.0.0",
+    "MPL-2.0",
+    "OpenSSL",
+]
+
+# OxideNote uses PolyForm Noncommercial 1.0.0
+[[licenses.clarify]]
+name = "oxidenote"
+expression = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = []

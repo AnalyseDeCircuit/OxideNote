@@ -8,7 +8,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "stats": "node scripts/project-stats.cjs",
+    "stats:dir": "node scripts/project-stats.cjs --by-dir",
+    "stats:json": "node scripts/project-stats.cjs --json",
+    "licenses": "node scripts/generate-third-party-notices.cjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
