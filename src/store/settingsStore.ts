@@ -112,6 +112,11 @@ interface SettingsState {
   customCSS: string;
   // Custom keybindings (overrides per action)
   keybindings: Record<ActionId, string>;
+  // Profile
+  displayName: string;
+  avatarPath: string | null;
+  // Theme customization overrides (CSS variable → value)
+  customThemeOverrides: Record<string, string>;
 
   // Actions
   setTheme: (theme: ThemeId) => void;
@@ -130,6 +135,9 @@ interface SettingsState {
   setCustomCSS: (css: string) => void;
   setKeybinding: (action: ActionId, key: string) => void;
   resetKeybindings: () => void;
+  setDisplayName: (name: string) => void;
+  setAvatarPath: (path: string | null) => void;
+  setCustomThemeOverrides: (overrides: Record<string, string>) => void;
 }
 
 const STORAGE_KEY = 'oxidenote-settings';
@@ -163,6 +171,9 @@ function persistSettings(state: SettingsState) {
     noteTemplates: state.noteTemplates,
     customCSS: state.customCSS,
     keybindings: state.keybindings,
+    displayName: state.displayName,
+    avatarPath: state.avatarPath,
+    customThemeOverrides: state.customThemeOverrides,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -188,6 +199,9 @@ export const useSettingsStore = create<SettingsState>()(
   noteTemplates: persisted.noteTemplates ?? [],
   customCSS: persisted.customCSS ?? '',
   keybindings: { ...DEFAULT_KEYBINDINGS, ...(persisted.keybindings as Partial<Record<ActionId, string>> ?? {}) },
+  displayName: persisted.displayName ?? '',
+  avatarPath: persisted.avatarPath ?? null,
+  customThemeOverrides: persisted.customThemeOverrides ?? {},
 
   setTheme: (theme) => set({ theme }),
   setSortMode: (mode) => set({ sortMode: mode }),
@@ -212,6 +226,9 @@ export const useSettingsStore = create<SettingsState>()(
       keybindings: { ...state.keybindings, [action]: key },
     })),
   resetKeybindings: () => set({ keybindings: { ...DEFAULT_KEYBINDINGS } }),
+  setDisplayName: (name) => set({ displayName: name }),
+  setAvatarPath: (path) => set({ avatarPath: path }),
+  setCustomThemeOverrides: (overrides) => set({ customThemeOverrides: overrides }),
 })));
 
 // ─── Side-effect subscriptions ─────────────────────────────
@@ -260,6 +277,24 @@ useSettingsStore.subscribe(
       document.head.appendChild(el);
     }
     el.textContent = css;
+  },
+  { fireImmediately: true },
+);
+
+// Theme overrides → apply CSS custom properties to :root
+useSettingsStore.subscribe(
+  (state) => state.customThemeOverrides,
+  (overrides) => {
+    const root = document.documentElement;
+    // Clear previously applied overrides before setting new ones
+    const managed = ['--theme-bg', '--theme-bg-panel', '--theme-bg-hover', '--theme-border',
+      '--theme-text', '--theme-text-muted', '--theme-accent', '--theme-accent-hover'];
+    for (const prop of managed) {
+      if (!(prop in overrides)) root.style.removeProperty(prop);
+    }
+    for (const [prop, value] of Object.entries(overrides)) {
+      if (value) root.style.setProperty(prop, value);
+    }
   },
   { fireImmediately: true },
 );

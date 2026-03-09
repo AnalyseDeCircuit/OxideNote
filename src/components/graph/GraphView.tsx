@@ -44,11 +44,11 @@ interface ForceGraphInstance {
 }
 type ForceGraphFactory = (el: HTMLElement) => ForceGraphInstance;
 const createForceGraph = ForceGraph as unknown as () => ForceGraphFactory;
-import { getGraphData, type GraphData, type GraphNode } from '@/lib/api';
+import { getGraphData, getLocalGraph, type GraphData, type GraphNode } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { useTranslation } from 'react-i18next';
-import { X, Clock, Boxes } from 'lucide-react';
+import { X, Clock, Boxes, Globe, Focus } from 'lucide-react';
 
 // ── 时间轴工具函数 ──────────────────────────────────────────
 
@@ -107,17 +107,25 @@ export function GraphView() {
   // ── 块级节点开关 ─────────────────────────────────────────
   const [includeBlocks, setIncludeBlocks] = useState(false);
 
+  // ── 局部/全局图谱模式 ───────────────────────────────────
+  const [localMode, setLocalMode] = useState(false);
+  const [localDepth, setLocalDepth] = useState(2);
+  const currentNotePath = useNoteStore((s) => s.activeTabPath ?? '');
+
   // ── 加载图谱数据 ─────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
-    getGraphData(includeBlocks)
+    const loadPromise = localMode && currentNotePath
+      ? getLocalGraph(currentNotePath, localDepth)
+      : getGraphData(includeBlocks);
+    loadPromise
       .then(setGraphData)
       .catch((err) => {
         console.warn('[graph] Failed to load graph data:', err);
         setGraphData({ nodes: [], links: [] });
       })
       .finally(() => setLoading(false));
-  }, [includeBlocks]);
+  }, [includeBlocks, localMode, localDepth, currentNotePath]);
 
   // ── 计算时间范围 ─────────────────────────────────────────
   const timeRange = useMemo(() => {
@@ -378,6 +386,31 @@ export function GraphView() {
           )}
         </span>
         <div className="flex items-center gap-2">
+          {/* Local / Global toggle */}
+          <button
+            onClick={() => setLocalMode((v) => !v)}
+            className={`p-1.5 rounded transition-colors ${
+              localMode
+                ? 'bg-theme-accent/20 text-theme-accent'
+                : 'hover:bg-theme-hover text-muted-foreground'
+            }`}
+            title={localMode ? t('graph.globalGraph') : t('graph.localGraph')}
+          >
+            {localMode ? <Focus size={16} /> : <Globe size={16} />}
+          </button>
+          {/* Depth selector (only in local mode) */}
+          {localMode && (
+            <select
+              value={localDepth}
+              onChange={(e) => setLocalDepth(Number(e.target.value))}
+              className="text-xs bg-background border border-theme-border rounded px-1.5 py-1 text-foreground"
+              title={t('graph.depth')}
+            >
+              {[1, 2, 3, 4, 5].map((d) => (
+                <option key={d} value={d}>{t('graph.depth')}: {d}</option>
+              ))}
+            </select>
+          )}
           {/* Block nodes toggle */}
           <button
             onClick={() => setIncludeBlocks((v) => !v)}

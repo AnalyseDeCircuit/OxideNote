@@ -329,6 +329,76 @@ pub async fn get_graph_data(
     Ok(GraphData { nodes, links })
 }
 
+/// Build a local knowledge graph centered on a specific note.
+/// Returns only nodes within `depth` hops of the center note.
+#[tauri::command]
+pub async fn get_local_graph(
+    center_path: String,
+    depth: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<GraphData, SearchError> {
+    // Start with the full graph (without blocks for performance)
+    let full = get_graph_data(Some(false), state).await?;
+    let max_depth = depth.unwrap_or(2).min(5);
+
+    // Build adjacency index (bidirectional) using owned Strings for BFS
+    let mut adjacency: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for link in &full.links {
+        adjacency.entry(link.source.clone()).or_default().push(link.target.clone());
+        adjacency.entry(link.target.clone()).or_default().push(link.source.clone());
+    }
+
+    // Resolve center: try exact path first, then stem match
+    let center_id = if full.nodes.iter().any(|n| n.id == center_path) {
+        center_path.clone()
+    } else {
+        let stem = std::path::Path::new(&center_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or(center_path.clone());
+        full.nodes
+            .iter()
+            .find(|n| {
+                std::path::Path::new(&n.id)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+                    == stem
+            })
+            .map(|n| n.id.clone())
+            .unwrap_or(center_path)
+    };
+
+    // BFS to collect reachable node ids within max_depth (owned Strings)
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<(String, u32)> = std::collections::VecDeque::new();
+    visited.insert(center_id.clone());
+    queue.push_back((center_id, 0));
+
+    while let Some((node_id, d)) = queue.pop_front() {
+        if d >= max_depth {
+            continue;
+        }
+        if let Some(neighbors) = adjacency.get(&node_id) {
+            for neighbor in neighbors {
+                if visited.insert(neighbor.clone()) {
+                    queue.push_back((neighbor.clone(), d + 1));
+                }
+            }
+        }
+    }
+
+    // Filter nodes and links to the visited set
+    let nodes: Vec<GraphNode> = full.nodes.into_iter().filter(|n| visited.contains(&n.id)).collect();
+    let links: Vec<GraphLink> = full.links
+        .into_iter()
+        .filter(|l| visited.contains(&l.source) && visited.contains(&l.target))
+        .collect();
+
+    Ok(GraphData { nodes, links })
+}
+
 /// List all tags with note counts.
 #[tauri::command]
 pub async fn list_all_tags(

@@ -4,7 +4,7 @@ import { create } from 'zustand';
 export type EditorMode = 'edit' | 'preview' | 'split';
 
 // ── 右侧面板标签 ────────────────────────────────────────────
-export type SidePanelTab = 'backlinks' | 'outline' | 'tags' | 'tasks' | 'properties' | 'history' | 'chat';
+export type SidePanelTab = 'backlinks' | 'outline' | 'tags' | 'tasks' | 'properties' | 'history' | 'chat' | 'dashboard';
 
 interface UIState {
   sidebarVisible: boolean;
@@ -34,6 +34,9 @@ interface UIState {
   presentationMode: boolean;
   /** Current slide index (0-based) */
   currentSlide: number;
+  /** Card flow overlay */
+  cardFlowOpen: boolean;
+  diagramEditorOpen: boolean;
 
   toggleSidebar: () => void;
   toggleSidePanel: () => void;
@@ -54,6 +57,8 @@ interface UIState {
   toggleFocusMode: () => void;
   setPresentationMode: (v: boolean) => void;
   setCurrentSlide: (n: number) => void;
+  setCardFlowOpen: (v: boolean) => void;
+  setDiagramEditorOpen: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -73,6 +78,8 @@ export const useUIStore = create<UIState>((set) => ({
   focusMode: false,
   presentationMode: false,
   currentSlide: 0,
+  cardFlowOpen: false,
+  diagramEditorOpen: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
@@ -93,4 +100,6 @@ export const useUIStore = create<UIState>((set) => ({
   toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode })),
   setPresentationMode: (v) => set(v ? { presentationMode: true, currentSlide: 0 } : { presentationMode: false }),
   setCurrentSlide: (n) => set({ currentSlide: n }),
+  setCardFlowOpen: (v) => set({ cardFlowOpen: v }),
+  setDiagramEditorOpen: (v) => set({ diagramEditorOpen: v }),
 }));

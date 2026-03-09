@@ -43,6 +43,7 @@ pub fn run() {
             commands::search::get_backlinks,
             commands::search::reindex_note,
             commands::search::get_graph_data,
+            commands::search::get_local_graph,
             commands::search::list_all_tags,
             commands::search::search_by_tag,
             commands::search::list_tasks,
@@ -107,6 +108,8 @@ pub fn run() {
             commands::chat_db::reset_lifetime_tokens,
             commands::chat_db::migrate_chat_from_json,
             commands::chat_db::save_chat_image,
+            commands::stats::get_vault_stats,
+            commands::stats::list_notes_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

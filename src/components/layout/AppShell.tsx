@@ -5,7 +5,7 @@ import {
   Sparkles, Search, Link2, Settings, MoreHorizontal,
   Share2, Layers, Monitor, Video, Globe,
   AlignLeft, Tag, CheckSquare, FileText, Clock,
-  PanelLeft,
+  PanelLeft, LayoutDashboard, LayoutGrid, PenTool,
 } from 'lucide-react';
 import { useUIStore, type EditorMode, type SidePanelTab } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -21,8 +21,12 @@ import { TagPanel } from '@/components/editor/TagPanel';
 import { TaskPanel } from '@/components/editor/TaskPanel';
 import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
 import { HistoryPanel } from '@/components/editor/HistoryPanel';
+import { DashboardPanel } from '@/components/editor/DashboardPanel';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { GraphView } from '@/components/graph/GraphView';
+import { CardFlowView } from '@/components/graph/CardFlowView';
+import { DiagramEditor } from '@/components/editor/DiagramEditor';
+import { getEditorView } from '@/lib/editorViewRef';
 import { FlashcardView } from '@/components/flashcard/FlashcardView';
 import { VideoPanel } from '@/components/video/VideoPanel';
 import { BrowserPanel } from '@/components/browser/BrowserPanel';
@@ -41,6 +45,8 @@ export function AppShell() {
   const sidePanelTab = useUIStore((s) => s.sidePanelTab);
   const graphViewOpen = useUIStore((s) => s.graphViewOpen);
   const flashcardOpen = useUIStore((s) => s.flashcardOpen);
+  const cardFlowOpen = useUIStore((s) => s.cardFlowOpen);
+  const diagramEditorOpen = useUIStore((s) => s.diagramEditorOpen);
   const videoPanelOpen = useUIStore((s) => s.videoPanelOpen);
   const browserPanelOpen = useUIStore((s) => s.browserPanelOpen);
   const presentationMode = useUIStore((s) => s.presentationMode);
@@ -194,6 +200,26 @@ export function AppShell() {
       {/* ── 闪卡复习全屏覆盖层 ──────────────────────────── */}
       {flashcardOpen && <FlashcardView onClose={() => useUIStore.getState().setFlashcardOpen(false)} />}
 
+      {/* ── 卡片流全屏覆盖层 ──────────────────────────── */}
+      {cardFlowOpen && <CardFlowView />}
+
+      {/* ── 绘图板全屏覆盖层 ──────────────────────────── */}
+      {diagramEditorOpen && (
+        <DiagramEditor
+          onSave={(data) => {
+            // Insert diagram data as a code block at cursor position
+            const view = getEditorView();
+            if (view) {
+              const block = `\n\`\`\`oxidenote-diagram\n${data}\n\`\`\`\n`;
+              const pos = view.state.selection.main.head;
+              view.dispatch({ changes: { from: pos, insert: block } });
+            }
+            useUIStore.getState().setDiagramEditorOpen(false);
+          }}
+          onClose={() => useUIStore.getState().setDiagramEditorOpen(false)}
+        />
+      )}
+
       {/* ── 演示模式全屏覆盖层 ──────────────────────────── */}
       {presentationMode && <PresentationView onClose={() => useUIStore.getState().setPresentationMode(false)} />}
     </div>
@@ -212,6 +238,7 @@ const SIDE_PANEL_TABS: { id: SidePanelTab; icon: React.ReactNode; labelKey: stri
   { id: 'properties', icon: <FileText size={15} />,     labelKey: 'properties.title' },
   { id: 'history',    icon: <Clock size={15} />,        labelKey: 'history.title' },
   { id: 'tasks',      icon: <CheckSquare size={15} />,  labelKey: 'tasks.title' },
+  { id: 'dashboard',  icon: <LayoutDashboard size={15} />, labelKey: 'dashboard.title' },
 ];
 
 function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
@@ -250,6 +277,7 @@ function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
         {activeTab === 'properties' && <PropertiesPanel />}
         {activeTab === 'history' && <HistoryPanel />}
         {activeTab === 'tasks' && <TaskPanel onClose={() => useUIStore.getState().toggleSidePanel()} />}
+        {activeTab === 'dashboard' && <DashboardPanel />}
       </div>
     </div>
   );
@@ -391,6 +419,14 @@ function Titlebar() {
           <DropdownMenuItem onClick={() => setBrowserPanelOpen(!useUIStore.getState().browserPanelOpen)}>
             <Globe size={14} className="mr-2" />
             {t('browser.title')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => useUIStore.getState().setCardFlowOpen(true)}>
+            <LayoutGrid size={14} className="mr-2" />
+            {t('cardFlow.title')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => useUIStore.getState().setDiagramEditorOpen(true)}>
+            <PenTool size={14} className="mr-2" />
+            {t('diagram.title')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

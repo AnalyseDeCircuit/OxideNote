@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History, RotateCcw, Diff } from 'lucide-react';
+import { History, RotateCcw, Diff, Columns2 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import {
   listNoteHistory,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import { toast } from '@/hooks/useToast';
 import { confirm } from '@tauri-apps/plugin-dialog';
+import { DiffView } from '@/components/editor/DiffView';
 
 // ── Time formatting helper ──────────────────────────────────
 
@@ -47,6 +48,8 @@ export function HistoryPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [diff, setDiff] = useState<DiffChunk[] | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [sideBySide, setSideBySide] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<HistoryEntry | null>(null);
 
   // Load history list when active note changes
   const loadHistory = useCallback(() => {
@@ -80,6 +83,7 @@ export function HistoryPanel() {
     (entry: HistoryEntry) => {
       if (!activeTabPath) return;
       setSelectedId(entry.id);
+      setSelectedEntry(entry);
       setDiffLoading(true);
       diffWithCurrent(activeTabPath, entry.id)
         .then(setDiff)
@@ -182,26 +186,51 @@ export function HistoryPanel() {
       </div>
 
       {/* Diff viewer */}
-      {diff && (
-        <div className="flex-1 min-h-0 overflow-y-auto p-2 font-mono text-xs leading-relaxed">
-          {diffLoading ? (
-            <div className="p-2 text-sm text-muted-foreground">{t('sidebar.loading')}</div>
-          ) : (
-            diff.map((chunk, i) => (
-              <span
-                key={i}
-                className={
-                  chunk.tag === 'insert'
-                    ? 'bg-green-500/20 text-green-300'
-                    : chunk.tag === 'delete'
-                      ? 'bg-red-500/20 text-red-300 line-through'
-                      : 'text-muted-foreground'
-                }
-              >
-                {chunk.value}
-              </span>
-            ))
-          )}
+      {diff && !sideBySide && (
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Toggle bar */}
+          <div className="flex items-center justify-end px-2 py-1 border-t border-theme-border bg-background shrink-0">
+            <button
+              onClick={() => setSideBySide(true)}
+              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-theme-hover transition-colors"
+              title={t('diffView.sideBySide')}
+            >
+              <Columns2 size={12} />
+              {t('diffView.sideBySide')}
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 font-mono text-xs leading-relaxed">
+            {diffLoading ? (
+              <div className="p-2 text-sm text-muted-foreground">{t('sidebar.loading')}</div>
+            ) : (
+              diff.map((chunk, i) => (
+                <span
+                  key={i}
+                  className={
+                    chunk.tag === 'insert'
+                      ? 'bg-green-500/20 text-green-300'
+                      : chunk.tag === 'delete'
+                        ? 'bg-red-500/20 text-red-300 line-through'
+                        : 'text-muted-foreground'
+                  }
+                >
+                  {chunk.value}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Side-by-side diff view (full panel takeover) */}
+      {diff && sideBySide && selectedEntry && (
+        <div className="flex-1 min-h-0">
+          <DiffView
+            entry={selectedEntry}
+            diff={diff}
+            onBack={() => setSideBySide(false)}
+            onRestore={handleRestore}
+          />
         </div>
       )}
     </div>

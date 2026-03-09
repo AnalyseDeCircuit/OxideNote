@@ -134,6 +134,11 @@ export async function getGraphData(includeBlocks?: boolean): Promise<GraphData> 
   return invoke<GraphData>('get_graph_data', { includeBlocks: includeBlocks ?? false });
 }
 
+/** Fetch a local graph centered on a specific note, limited to `depth` hops. */
+export async function getLocalGraph(centerPath: string, depth?: number): Promise<GraphData> {
+  return invoke<GraphData>('get_local_graph', { centerPath, depth: depth ?? 2 });
+}
+
 // ─── Tag commands ────────────────────────────────────────────
 
 export interface TagCount {
@@ -758,4 +763,44 @@ export async function saveChatImage(
   mediaType: string,
 ): Promise<string> {
   return invoke<string>('save_chat_image', { sessionId, dataBase64, mediaType });
+}
+
+// ─── Vault stats ────────────────────────────────────────────
+
+export interface VaultStats {
+  total_notes: number;
+  total_tags: number;
+  total_links: number;
+  orphan_notes: number;
+  recent_notes: StatsRecentNote[];
+  top_tags: StatsTagCount[];
+  daily_activity: StatsDayActivity[];
+}
+
+export interface StatsRecentNote {
+  path: string;
+  title: string;
+  modified_at: string;
+}
+
+export interface StatsTagCount {
+  tag: string;
+  count: number;
+}
+
+export interface StatsDayActivity {
+  date: string;
+  count: number;
+}
+
+export async function getVaultStats(): Promise<VaultStats> {
+  return invoke<VaultStats>('get_vault_stats');
+}
+
+/** List all notes with basic metadata, paginated. For card flow view. */
+export async function listNotesSummary(limit?: number, offset?: number): Promise<StatsRecentNote[]> {
+  return invoke<StatsRecentNote[]>('list_notes_summary', {
+    limit: limit ?? 50,
+    offset: offset ?? 0,
+  });
 }

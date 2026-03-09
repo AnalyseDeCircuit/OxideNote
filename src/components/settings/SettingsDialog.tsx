@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard, Brain } from 'lucide-react';
+import { Monitor, Type, Palette, Info, FolderOpen, FolderSync, Plus, Trash2, ShieldCheck, Keyboard, Brain, User, RotateCcw, Copy } from 'lucide-react';
 import { useSettingsStore, type ThemeId, type Density, type Language, type NoteTemplate, type ActionId, DEFAULT_KEYBINDINGS } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -72,6 +72,7 @@ const THEMES: ThemeDef[] = [
 ];
 
 const SIDEBAR_TABS = [
+  { id: 'profile', icon: User },
   { id: 'general', icon: Monitor },
   { id: 'editor', icon: Type },
   { id: 'appearance', icon: Palette },
@@ -158,6 +159,7 @@ export function SettingsDialog() {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-2xl space-y-5">
+            {tab === 'profile' && <ProfileTab />}
             {tab === 'general' && <GeneralTab />}
             {tab === 'editor' && <EditorTab />}
             {tab === 'appearance' && <AppearanceTab />}
@@ -168,6 +170,81 @@ export function SettingsDialog() {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ProfileTab() {
+  const displayName = useSettingsStore((s) => s.displayName);
+  const setDisplayName = useSettingsStore((s) => s.setDisplayName);
+  const avatarPath = useSettingsStore((s) => s.avatarPath);
+  const setAvatarPath = useSettingsStore((s) => s.setAvatarPath);
+  const { t } = useTranslation();
+
+  // Pick avatar image via file dialog
+  const handleChangeAvatar = async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    });
+    if (selected) {
+      setAvatarPath(selected);
+    }
+  };
+
+  // First letter of display name for avatar fallback
+  const initial = displayName.trim().charAt(0).toUpperCase() || 'U';
+
+  return (
+    <>
+      <SettingsCard title={t('profile.title')}>
+        <div className="flex items-center gap-5">
+          {/* Avatar */}
+          <div className="relative shrink-0">
+            {avatarPath ? (
+              <img
+                src={`asset://localhost/${avatarPath}`}
+                alt="avatar"
+                className="w-16 h-16 rounded-full object-cover border-2 border-theme-border"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-theme-accent/20 border-2 border-theme-border flex items-center justify-center text-xl font-bold text-theme-accent">
+                {initial}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={handleChangeAvatar}
+              className="text-xs px-3 py-1.5 rounded border border-theme-border text-foreground hover:bg-theme-hover transition-colors"
+            >
+              {t('profile.changeAvatar')}
+            </button>
+            {avatarPath && (
+              <button
+                onClick={() => setAvatarPath(null)}
+                className="text-xs px-3 py-1.5 rounded text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                {t('profile.removeAvatar')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <SettingRow label={t('profile.displayName')} hint={t('profile.displayNameHint')}>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder={t('profile.displayNamePlaceholder')}
+            className="w-[200px] px-3 py-1.5 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+          />
+        </SettingRow>
+
+        <p className="text-xs text-muted-foreground mt-2">
+          {t('profile.localOnly')}
+        </p>
+      </SettingsCard>
+    </>
   );
 }
 
@@ -529,6 +606,8 @@ function AppearanceTab() {
         </div>
       </SettingsCard>
 
+      <ThemeCustomizer />
+
       <SettingsCard title={t('settings.layoutSection', '布局')}>
         <SettingRow label={t('settings.density')} hint={t('settings.densityHint', '调整界面间距密度')}>
           <Select value={density} onValueChange={(v) => setDensity(v as Density)}>
@@ -554,6 +633,87 @@ function AppearanceTab() {
         />
       </SettingsCard>
     </>
+  );
+}
+
+// ── Theme Customizer ─────────────────────────────────────────
+// Allows users to override individual CSS variables for the current theme
+
+/** CSS variable names and their i18n keys */
+const THEME_VARS: { prop: string; labelKey: string }[] = [
+  { prop: '--theme-bg',           labelKey: 'appearance.themeBackground' },
+  { prop: '--theme-bg-panel',     labelKey: 'appearance.themeSurface' },
+  { prop: '--theme-text',         labelKey: 'appearance.themeForeground' },
+  { prop: '--theme-accent',       labelKey: 'appearance.themeAccent' },
+  { prop: '--theme-border',       labelKey: 'appearance.themeBorder' },
+  { prop: '--theme-text-muted',   labelKey: 'appearance.themeMuted' },
+  { prop: '--theme-bg-hover',     labelKey: 'appearance.themeSidebar' },
+  { prop: '--theme-accent-hover', labelKey: 'appearance.themeEditor' },
+];
+
+function ThemeCustomizer() {
+  const { t } = useTranslation();
+  const overrides = useSettingsStore((s) => s.customThemeOverrides);
+  const setOverrides = useSettingsStore((s) => s.setCustomThemeOverrides);
+
+  // Read current computed value for a CSS variable
+  const getComputed = (prop: string): string => {
+    const val = overrides[prop] || getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
+    return val || '#000000';
+  };
+
+  const handleChange = (prop: string, value: string) => {
+    setOverrides({ ...overrides, [prop]: value });
+  };
+
+  const handleReset = () => {
+    setOverrides({});
+  };
+
+  const handleExportCSS = () => {
+    const entries = Object.entries(overrides).filter(([, v]) => v);
+    if (entries.length === 0) return;
+    const css = `:root {\n${entries.map(([k, v]) => `  ${k}: ${v};`).join('\n')}\n}`;
+    navigator.clipboard.writeText(css);
+    toast({ title: t('appearance.exported') });
+  };
+
+  const hasOverrides = Object.values(overrides).some(Boolean);
+
+  return (
+    <SettingsCard title={t('appearance.customizeTheme')}>
+      <div className="grid grid-cols-2 gap-3">
+        {THEME_VARS.map(({ prop, labelKey }) => (
+          <label key={prop} className="flex items-center gap-2 text-xs">
+            <input
+              type="color"
+              value={getComputed(prop)}
+              onChange={(e) => handleChange(prop, e.target.value)}
+              className="w-6 h-6 rounded border border-theme-border cursor-pointer bg-transparent p-0"
+            />
+            <span className="text-muted-foreground">{t(labelKey)}</span>
+          </label>
+        ))}
+      </div>
+      {hasOverrides && (
+        <div className="flex gap-2 mt-2">
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-theme-border text-muted-foreground hover:text-foreground hover:bg-theme-hover transition-colors"
+          >
+            <RotateCcw size={12} />
+            {t('appearance.resetTheme')}
+          </button>
+          <button
+            onClick={handleExportCSS}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-theme-border text-muted-foreground hover:text-foreground hover:bg-theme-hover transition-colors"
+          >
+            <Copy size={12} />
+            {t('appearance.exportCSS')}
+          </button>
+        </div>
+      )}
+    </SettingsCard>
   );
 }
 
@@ -1041,12 +1201,21 @@ function ChatConfigSection() {
 
 function AboutTab() {
   const { t } = useTranslation();
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  // Fetch app version from Tauri core API
+  useEffect(() => {
+    import('@tauri-apps/api/app').then(({ getVersion }) => {
+      getVersion().then(setAppVersion).catch(() => setAppVersion('0.1.0'));
+    });
+  }, []);
+
   return (
     <>
       <SettingsCard>
         <div className="text-center py-4">
           <h2 className="text-2xl font-bold text-foreground mb-1">OxideNote</h2>
-          <p className="text-sm text-muted-foreground">v0.1.0</p>
+          <p className="text-sm text-muted-foreground">v{appVersion || '...'}</p>
           <p className="text-xs text-muted-foreground mt-1">PolyForm Noncommercial 1.0.0</p>
         </div>
       </SettingsCard>

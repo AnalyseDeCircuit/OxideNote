@@ -68,6 +68,7 @@
   },
   "settings": {
     "title": "设置",
+    "profile": "个人资料",
     "general": "通用",
     "editor": "编辑器",
     "appearance": "外观",
@@ -188,7 +189,11 @@
     "timelineSlider": "拖动时间轴查看知识演进",
     "timelineNotes": "篇笔记",
     "timelineOld": "陈年旧账",
-    "timelineNew": "最近热点"
+    "timelineNew": "最近热点",
+    "localGraph": "局部图谱",
+    "globalGraph": "全局图谱",
+    "depth": "深度",
+    "centerNote": "中心: {{title}}"
   },
   "dailyNote": {
     "today": "今天",
@@ -602,5 +607,59 @@
     "continuePrompt": "请根据上下文，自然地继续写下一段。保持与已有内容一致的风格和语气。\n当前光标位于第 {{lineNum}} 行附近。\n\n上下文片段：\n---\n{{surrounding}}\n---",
     "rewritePrompt": "请改写以下选中内容，使其更加清晰、流畅和专业。\n保持原意不变，仅优化表达方式。\n\n选中内容：\n> {{selection}}\n\n使用 <edit> 格式返回修改建议。",
     "summarizePrompt": "请总结以下内容的核心要点和关键信息。\n输出为简洁的 Markdown 要点列表，每个要点一行。\n\n内容：\n---\n{{content}}\n---"
+  },
+  "profile": {
+    "title": "个人资料",
+    "displayName": "显示名称",
+    "displayNameHint": "在应用中显示的名称",
+    "displayNamePlaceholder": "输入你的名称",
+    "avatar": "头像",
+    "changeAvatar": "更换头像",
+    "removeAvatar": "移除头像",
+    "localOnly": "个人资料仅存储在本地设备上"
+  },
+  "dashboard": {
+    "title": "概览",
+    "notes": "笔记",
+    "links": "链接",
+    "tags": "标签",
+    "orphans": "孤立笔记",
+    "activity": "近 30 天活动",
+    "topTags": "热门标签",
+    "recentNotes": "最近编辑",
+    "noData": "打开一个知识库查看统计数据"
+  },
+  "diffView": {
+    "sideBySide": "并排对比",
+    "inline": "行内差异",
+    "oldVersion": "历史版本",
+    "currentVersion": "当前版本",
+    "linesChanged": "{{count}} 行已变更"
+  },
+  "cardFlow": {
+    "title": "卡片流",
+    "sortBy": "排序方式",
+    "sortModified": "修改时间",
+    "sortName": "名称",
+    "filterPlaceholder": "筛选笔记...",
+    "noResults": "没有匹配的笔记",
+    "loadingMore": "加载更多..."
+  },
+  "appearance": {
+    "customizeTheme": "自定义主题",
+    "resetTheme": "恢复默认",
+    "exportCSS": "导出 CSS",
+    "themeBackground": "背景",
+    "themeSurface": "面板",
+    "themeForeground": "前景",
+    "themeAccent": "强调色",
+    "themeBorder": "边框",
+    "themeMuted": "辅助文字",
+    "themeSidebar": "侧栏背景",
+    "themeEditor": "编辑器背景",
+    "exported": "主题 CSS 已复制到剪贴板"
+  },
+  "diagram": {
+    "title": "绘图板"
   }
 }
