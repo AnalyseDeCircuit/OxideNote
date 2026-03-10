@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ViewType, Column, ColumnType, DatabaseSchema } from '@/lib/database';
-import { generateId, addColumn } from '@/lib/database';
+import { generateId, addColumn, exportToCsv } from '@/lib/database';
 
 interface DatabaseToolbarProps {
   view: ViewType;
@@ -140,6 +140,24 @@ export function DatabaseToolbar({ view, onViewChange, onAddRow, schema, onSchema
           </div>
         )}
       </div>
+
+      {/* CSV export */}
+      <button
+        onClick={() => {
+          const csv = exportToCsv(schema);
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'database.csv';
+          link.click();
+          URL.revokeObjectURL(url);
+        }}
+        className="px-2 py-0.5 text-xs rounded hover:bg-theme-hover transition-colors text-muted-foreground border border-theme-border"
+        title={t('database.exportCsv')}
+      >
+        CSV
+      </button>
 
       {/* Sort toggle */}
       <button

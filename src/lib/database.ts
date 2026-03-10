@@ -173,6 +173,44 @@ export function deleteColumn(schema: DatabaseSchema, columnId: string): Database
   return { ...schema, columns, rows };
 }
 
+export function renameColumn(schema: DatabaseSchema, columnId: string, newName: string): DatabaseSchema {
+  return {
+    ...schema,
+    columns: schema.columns.map((c) => (c.id === columnId ? { ...c, name: newName } : c)),
+  };
+}
+
+export function duplicateRow(schema: DatabaseSchema, rowId: string): DatabaseSchema {
+  const sourceRow = schema.rows.find((r) => r.id === rowId);
+  if (!sourceRow) return schema;
+  const newRow = { ...sourceRow, id: generateId() };
+  const idx = schema.rows.findIndex((r) => r.id === rowId);
+  const rows = [...schema.rows];
+  rows.splice(idx + 1, 0, newRow);
+  return { ...schema, rows };
+}
+
+export function reorderColumns(schema: DatabaseSchema, fromIndex: number, toIndex: number): DatabaseSchema {
+  const cols = [...schema.columns];
+  const [moved] = cols.splice(fromIndex, 1);
+  cols.splice(toIndex, 0, moved);
+  return { ...schema, columns: cols };
+}
+
+export function exportToCsv(schema: DatabaseSchema): string {
+  const escape = (val: string) => {
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+  const header = schema.columns.map((c) => escape(c.name)).join(',');
+  const dataRows = schema.rows.map((row) =>
+    schema.columns.map((c) => escape(String(row[c.id] ?? ''))).join(',')
+  );
+  return [header, ...dataRows].join('\n');
+}
+
 export function moveRow(schema: DatabaseSchema, rowId: string, targetColumnValue: string, kanbanColumnId: string): DatabaseSchema {
   return {
     ...schema,

@@ -34,6 +34,7 @@ import {
   Table2,
   FileDown,
   FileCode,
+  FileText,
   Mic,
   MicOff,
   Settings2,
@@ -49,6 +50,7 @@ import { useUIStore } from '@/store/uiStore';
 import { useAgentStore } from '@/store/agentStore';
 import { exportToPdf } from '@/lib/exportPdf';
 import { exportToHtml, createHtmlMarked, buildHtmlDocument } from '@/lib/exportHtml';
+import { exportToDocx } from '@/lib/exportDocx';
 import { printHtml } from '@/lib/api';
 import DOMPurify from 'dompurify';
 import { isSpeechRecognitionSupported, startVoiceInput, stopVoiceInput } from '@/lib/speechRecognition';
@@ -246,6 +248,21 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   };
 
+  // ── DOCX export ───────────────────────────────────────────
+  const handleExportDocx = async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const content = view.state.doc.toString();
+    const activeTab = useNoteStore.getState().activeTabPath;
+    const title = activeTab ? stripNoteExtension(activeTab).split('/').pop() || 'export' : 'export';
+    try {
+      const exported = await exportToDocx(content, title);
+      if (exported) toast({ title: t('export.docxExportSuccess') });
+    } catch (err) {
+      toast({ title: t('export.docxExportFailed'), description: String(err), variant: 'error' });
+    }
+  };
+
   // ── Print via system browser ──────────────────────────────
   // window.print() does not work in Tauri WebView. Instead we
   // render Markdown → sanitized HTML, then call the Rust backend
@@ -408,6 +425,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       <ToolbarGroup>
         <ToolbarBtn icon={<FileDown size={14} />} title={t('pdf.export')} onClick={handleExportPdf} />
         <ToolbarBtn icon={<FileCode size={14} />} title={t('export.htmlExport')} onClick={handleExportHtml} />
+        <ToolbarBtn icon={<FileText size={14} />} title={t('export.docxExport')} onClick={handleExportDocx} />
         <ToolbarBtn icon={<Printer size={14} />} title={t('toolbar.print')} onClick={handlePrint} />
         <ToolbarBtn icon={<Settings2 size={14} />} title={t('typesetting.title')} onClick={() => setTypesettingOpen(true)} />
         <ToolbarBtn

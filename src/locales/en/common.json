@@ -183,6 +183,9 @@
     "compile": "Compile",
     "compileSuccess": "Compiled ({{ms}}ms)"
   },
+  "selectionToolbar": {
+    "highlight": "Highlight"
+  },
   "graph": {
     "title": "Knowledge Graph",
     "noData": "No notes indexed yet",
@@ -332,6 +335,9 @@
     "htmlExport": "Export HTML",
     "htmlExportSuccess": "HTML exported successfully",
     "htmlExportFailed": "HTML export failed",
+    "docxExport": "Export DOCX",
+    "docxExportSuccess": "DOCX exported successfully",
+    "docxExportFailed": "DOCX export failed",
     "bundleExport": "Bundle Export (Markdown + Attachments)"
   },
   "import": {
@@ -399,7 +405,11 @@
     "noData": "No data",
     "createDatabase": "Create Database",
     "kanbanUngrouped": "Ungrouped",
-    "timelineNoDate": "No date column configured"
+    "timelineNoDate": "No date column configured",
+    "renameColumn": "Rename Column",
+    "duplicateRow": "Duplicate Row",
+    "exportCsv": "Export CSV",
+    "rowDetail": "Row Detail"
   },
   "browser": {
     "title": "Browser",

@@ -11,11 +11,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DatabaseSchema, Column, Row } from '@/lib/database';
-import { updateCell, deleteRow, deleteColumn, sortRows, filterRows } from '@/lib/database';
+import { updateCell, deleteRow, deleteColumn, renameColumn, duplicateRow, sortRows, filterRows } from '@/lib/database';
 import { searchByFilename } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { Link2, FileText } from 'lucide-react';
 import { stripNoteExtension } from '@/lib/utils';
+import { RowDetailDialog } from './RowDetailDialog';
 
 interface TableViewProps {
   schema: DatabaseSchema;
@@ -26,6 +27,9 @@ export function TableView({ schema, onSchemaChange }: TableViewProps) {
   const { t } = useTranslation();
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; colId: string } | null>(null);
+  const [renamingColId, setRenamingColId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
 
   // Apply sort and filter to rows
   let displayRows = [...schema.rows];
@@ -62,6 +66,29 @@ export function TableView({ schema, onSchemaChange }: TableViewProps) {
     setContextMenu(null);
   }, [schema, onSchemaChange]);
 
+  // Handle column rename
+  const handleStartRename = useCallback((colId: string) => {
+    const col = schema.columns.find((c) => c.id === colId);
+    if (col) {
+      setRenameValue(col.name);
+      setRenamingColId(colId);
+    }
+    setContextMenu(null);
+  }, [schema.columns]);
+
+  const handleFinishRename = useCallback(() => {
+    if (renamingColId && renameValue.trim()) {
+      onSchemaChange(renameColumn(schema, renamingColId, renameValue.trim()));
+    }
+    setRenamingColId(null);
+    setRenameValue('');
+  }, [renamingColId, renameValue, schema, onSchemaChange]);
+
+  // Handle row duplication
+  const handleDuplicateRow = useCallback((rowId: string) => {
+    onSchemaChange(duplicateRow(schema, rowId));
+  }, [schema, onSchemaChange]);
+
   const handleHeaderContextMenu = useCallback((e: React.MouseEvent, colId: string) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, colId });
@@ -81,14 +108,33 @@ export function TableView({ schema, onSchemaChange }: TableViewProps) {
             <div
               key={col.id}
               className="px-2 py-1.5 text-xs font-medium text-foreground cursor-pointer hover:bg-theme-hover select-none flex items-center gap-1 border-l border-theme-border"
-              onClick={() => handleSort(col.id)}
+              onClick={() => renamingColId !== col.id && handleSort(col.id)}
               onContextMenu={(e) => handleHeaderContextMenu(e, col.id)}
+              onDoubleClick={() => handleStartRename(col.id)}
             >
-              <span className="truncate">{col.name}</span>
-              {schema.sortBy?.column === col.id && (
-                <span className="text-theme-accent text-[10px]">
-                  {schema.sortBy.direction === 'asc' ? '▲' : '▼'}
-                </span>
+              {renamingColId === col.id ? (
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleFinishRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleFinishRename();
+                    if (e.key === 'Escape') { setRenamingColId(null); setRenameValue(''); }
+                  }}
+                  className="w-full px-1 py-0 text-xs bg-background text-foreground border border-theme-accent rounded outline-none"
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <>
+                  <span className="truncate">{col.name}</span>
+                  {schema.sortBy?.column === col.id && (
+                    <span className="text-theme-accent text-[10px]">
+                      {schema.sortBy.direction === 'asc' ? '▲' : '▼'}
+                    </span>
+                  )}
+                </>
               )}
             </div>
           ))}
@@ -106,16 +152,31 @@ export function TableView({ schema, onSchemaChange }: TableViewProps) {
               className="grid border-b border-theme-border hover:bg-theme-hover/50 group"
               style={{ gridTemplateColumns: gridCols }}
             >
-              {/* Row number + delete button */}
+              {/* Row number + action buttons */}
               <div className="px-1 py-1 text-xs text-muted-foreground text-center relative">
-                <span className="group-hover:hidden">{idx + 1}</span>
-                <button
-                  onClick={() => handleDeleteRow(row.id)}
-                  className="hidden group-hover:inline text-red-400 hover:text-red-300 text-xs"
-                  title={t('database.deleteRow')}
+                <span
+                  className="group-hover:hidden cursor-pointer hover:text-theme-accent"
+                  onClick={() => setDetailRowId(row.id)}
+                  title={t('database.rowDetail')}
                 >
-                  ×
-                </button>
+                  {idx + 1}
+                </span>
+                <div className="hidden group-hover:flex items-center justify-center gap-0.5">
+                  <button
+                    onClick={() => handleDuplicateRow(row.id)}
+                    className="text-muted-foreground hover:text-foreground text-xs"
+                    title={t('database.duplicateRow')}
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => handleDeleteRow(row.id)}
+                    className="text-red-400 hover:text-red-300 text-xs"
+                    title={t('database.deleteRow')}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
               {schema.columns.map((col) => (
                 <CellRenderer
@@ -140,11 +201,18 @@ export function TableView({ schema, onSchemaChange }: TableViewProps) {
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
+            onClick={() => handleStartRename(contextMenu.colId)}
+            className="w-full px-3 py-1.5 text-xs text-left hover:bg-theme-hover text-foreground"
+          >
+            {t('database.renameColumn')}
+          </button>
+          <button
             onClick={() => handleSort(contextMenu.colId)}
             className="w-full px-3 py-1.5 text-xs text-left hover:bg-theme-hover text-foreground"
           >
             {t('database.sort')}
           </button>
+          <div className="h-px bg-theme-border my-1 mx-2" />
           <button
             onClick={() => handleDeleteColumn(contextMenu.colId)}
             className="w-full px-3 py-1.5 text-xs text-left hover:bg-theme-hover text-red-400"
@@ -153,6 +221,21 @@ export function TableView({ schema, onSchemaChange }: TableViewProps) {
           </button>
         </div>
       )}
+
+      {/* Row detail dialog — expanded single-row editor */}
+      {detailRowId && (() => {
+        const detailRow = schema.rows.find((r) => r.id === detailRowId);
+        if (!detailRow) return null;
+        return (
+          <RowDetailDialog
+            open
+            onClose={() => setDetailRowId(null)}
+            row={detailRow}
+            schema={schema}
+            onSchemaChange={onSchemaChange}
+          />
+        );
+      })()}
     </div>
   );
 }

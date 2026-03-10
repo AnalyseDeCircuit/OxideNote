@@ -19,6 +19,7 @@ import { TypstPreview } from './TypstPreview';
 import { LaTeXPreview } from './LaTeXPreview';
 import { TagSuggestion } from './TagSuggestion';
 import { SmartLinkSuggestion } from './SmartLinkSuggestion';
+import { SelectionToolbar } from './SelectionToolbar';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -463,11 +464,16 @@ export function NoteEditor() {
         {/* ── CodeMirror 编辑区域 ───────────────────────────── */}
         <div
           ref={containerRef}
-          className={`overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none ${
+          className={`relative overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none ${
             !activeTabPath ? 'hidden' : ''
           } ${showEditor ? (showPreview ? 'w-1/2 border-r border-theme-border' : 'w-full') : 'hidden'}`}
           style={{ height: '100%' }}
-        />
+        >
+          {/* Floating selection toolbar — appears above selected text */}
+          {showEditor && activeTabPath && (
+            <SelectionToolbar viewRef={viewRef} containerRef={containerRef} />
+          )}
+        </div>
 
         {/* ── 预览区域：数据库视图 / Typst 预览 / LaTeX 预览 / Markdown 预览 ── */}
         {activeTabPath && showPreview && (

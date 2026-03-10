@@ -183,6 +183,9 @@
     "compile": "编译",
     "compileSuccess": "编译成功 ({{ms}}ms)"
   },
+  "selectionToolbar": {
+    "highlight": "高亮"
+  },
   "graph": {
     "title": "知识图谱",
     "noData": "暂无索引笔记",
@@ -332,6 +335,9 @@
     "htmlExport": "导出 HTML",
     "htmlExportSuccess": "HTML 导出成功",
     "htmlExportFailed": "HTML 导出失败",
+    "docxExport": "导出 DOCX",
+    "docxExportSuccess": "DOCX 导出成功",
+    "docxExportFailed": "DOCX 导出失败",
     "bundleExport": "打包导出 (Markdown + 附件)"
   },
   "import": {
@@ -399,7 +405,11 @@
     "noData": "暂无数据",
     "createDatabase": "创建数据库",
     "kanbanUngrouped": "未分组",
-    "timelineNoDate": "未设置日期列"
+    "timelineNoDate": "未设置日期列",
+    "renameColumn": "重命名列",
+    "duplicateRow": "复制行",
+    "exportCsv": "导出 CSV",
+    "rowDetail": "行详情"
   },
   "browser": {
     "title": "浏览器",
