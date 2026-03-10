@@ -4,7 +4,9 @@ import { useUIStore } from '@/store/uiStore';
 import { useAgentStore } from '@/store/agentStore';
 import { useTranslation } from 'react-i18next';
 import { Breadcrumb } from '@/components/editor/Breadcrumb';
-import { Loader2, CheckCircle2, XCircle, Sparkles, Bot } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Sparkles, Bot, Play, Clock } from 'lucide-react';
+import { compileTypstToSvg } from '@/lib/api';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -38,6 +40,23 @@ export function StatusBar() {
   // Detect if current file is a compilable document
   const isCompilable = activeTabPath.endsWith('.typ') || activeTabPath.endsWith('.tex');
 
+  // Trigger Typst compilation from status bar
+  const handleCompile = async () => {
+    if (!activeTabPath || !activeTabPath.endsWith('.typ')) return;
+    useUIStore.getState().setCompileStatus('compiling');
+    try {
+      const result = await compileTypstToSvg(activeTabPath);
+      useUIStore.getState().setCompileStatus('success', result.compile_time_ms);
+    } catch {
+      useUIStore.getState().setCompileStatus('error');
+    }
+  };
+
+  // Open history via dashboard section
+  const openHistory = () => {
+    useUIStore.getState().setSidebarSection('dashboard');
+  };
+
   return (
     <div className="h-7 flex items-center px-4 gap-4 border-t border-theme-border bg-surface text-[11px] text-muted-foreground select-none shrink-0">
       <Breadcrumb path={activeTabPath} />
@@ -48,6 +67,23 @@ export function StatusBar() {
       <span>
         {wordCount} {t('statusBar.words')}
       </span>
+
+      {/* Compile trigger button (for .typ/.tex files) */}
+      {isCompilable && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleCompile}
+              className="flex items-center gap-1 hover:text-foreground transition-colors"
+              disabled={compileStatus === 'compiling'}
+            >
+              <Play size={11} />
+              <span>{t('statusBar.compile')}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{t('statusBar.compile')}</TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Compilation status indicator (for .typ/.tex files) */}
       {isCompilable && compileStatus && (
@@ -93,6 +129,21 @@ export function StatusBar() {
       )}
 
       <div className="flex-1" />
+
+      {/* Quick access to note history */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={openHistory}
+            className="flex items-center gap-1 hover:text-foreground transition-colors"
+          >
+            <Clock size={11} />
+            <span>{t('history.title')}</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t('history.title')}</TooltipContent>
+      </Tooltip>
+
       <span>{isDirty ? t('statusBar.unsaved') : t('statusBar.saved')}</span>
     </div>
   );

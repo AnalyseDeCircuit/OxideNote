@@ -81,7 +81,8 @@ function executeAction(action: ActionId) {
       useUIStore.getState().toggleSidebar();
       break;
     case 'toggleSidePanel':
-      useUIStore.getState().toggleSidePanel();
+      // In the new Activity Bar model, this toggles the sidebar content area
+      useUIStore.getState().toggleSidebar();
       break;
     case 'closeTab': {
       const active = useNoteStore.getState().activeTabPath;
@@ -131,13 +132,12 @@ function executeAction(action: ActionId) {
       useUIStore.getState().toggleFocusMode();
       break;
     case 'toggleChat': {
-      // Smart toggle: if chat panel is visible, close it; otherwise open + switch to chat tab
-      const { sidePanelVisible, sidePanelTab, toggleSidePanel, setSidePanelTab } = useUIStore.getState();
-      if (sidePanelVisible && sidePanelTab === 'chat') {
-        toggleSidePanel();
+      // Smart toggle: if chat section is active, collapse; otherwise switch to chat
+      const ui = useUIStore.getState();
+      if (!ui.sidebarCollapsed && ui.activeSidebarSection === 'chat') {
+        ui.toggleSidebar();
       } else {
-        if (!sidePanelVisible) toggleSidePanel();
-        setSidePanelTab('chat');
+        ui.setSidebarSection('chat');
       }
       break;
     }

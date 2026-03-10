@@ -2,28 +2,18 @@ import { useEffect, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { listen } from '@tauri-apps/api/event';
 import {
-  Sparkles, Search, Link2, Settings, MoreHorizontal,
-  Share2, Layers, Monitor, Video, Globe,
-  AlignLeft, Tag, CheckSquare, FileText, Clock,
-  PanelLeft, LayoutDashboard, LayoutGrid, PenTool, Bot,
+  PanelLeft,
+  MoreHorizontal, Share2, Layers, Monitor, Video, Globe,
+  LayoutGrid, PenTool,
 } from 'lucide-react';
-import { useUIStore, type EditorMode, type SidePanelTab } from '@/store/uiStore';
+import { useUIStore, type EditorMode } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { VaultTree } from '@/components/tree/VaultTree';
-import { BookmarkList } from '@/components/tree/BookmarkList';
+import { ActivityBar } from '@/components/layout/ActivityBar';
+import { SidebarContent } from '@/components/layout/SidebarContent';
 import { TabBar } from '@/components/editor/TabBar';
 import { NoteEditor } from '@/components/editor/NoteEditor';
 import { StatusBar } from '@/components/editor/StatusBar';
-import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
-import { OutlinePanel } from '@/components/editor/OutlinePanel';
-import { TagPanel } from '@/components/editor/TagPanel';
-import { TaskPanel } from '@/components/editor/TaskPanel';
-import { PropertiesPanel } from '@/components/editor/PropertiesPanel';
-import { HistoryPanel } from '@/components/editor/HistoryPanel';
-import { DashboardPanel } from '@/components/editor/DashboardPanel';
-import { ChatPanel } from '@/components/chat/ChatPanel';
-import { AgentPanel } from '@/components/agent/AgentPanel';
 import { GraphView } from '@/components/graph/GraphView';
 import { CardFlowView } from '@/components/graph/CardFlowView';
 import { DiagramEditor } from '@/components/editor/DiagramEditor';
@@ -42,9 +32,7 @@ import { initPreviewCacheInvalidation } from '@/lib/previewCache';
 import { useTranslation } from 'react-i18next';
 
 export function AppShell() {
-  const sidebarVisible = useUIStore((s) => s.sidebarVisible);
-  const sidePanelVisible = useUIStore((s) => s.sidePanelVisible);
-  const sidePanelTab = useUIStore((s) => s.sidePanelTab);
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const graphViewOpen = useUIStore((s) => s.graphViewOpen);
   const flashcardOpen = useUIStore((s) => s.flashcardOpen);
   const cardFlowOpen = useUIStore((s) => s.cardFlowOpen);
@@ -135,19 +123,22 @@ export function AppShell() {
   return (
     <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
       <Titlebar />
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 flex">
+        {/* Activity Bar — always visible, fixed 48px */}
+        <ActivityBar />
+
+        {/* Sidebar content — collapsible via ResizablePanel */}
         <Group orientation="horizontal" id="oxidenote-layout">
-          {sidebarVisible && (
+          {!sidebarCollapsed && (
             <>
               <Panel
-                id="sidebar"
+                id="sidebar-content"
                 defaultSize="22%"
                 minSize="15%"
                 maxSize="35%"
                 className="bg-surface"
               >
-                <BookmarkList />
-                <VaultTree />
+                <SidebarContent />
               </Panel>
               <Separator className="w-px bg-theme-border hover:bg-theme-accent transition-colors" />
             </>
@@ -161,20 +152,6 @@ export function AppShell() {
               <StatusBar />
             </div>
           </Panel>
-          {sidePanelVisible && (
-            <>
-              <Separator className="w-px bg-theme-border hover:bg-theme-accent transition-colors" />
-              <Panel
-                id="side-panel"
-                defaultSize="20%"
-                minSize="12%"
-                maxSize="30%"
-                className="bg-surface"
-              >
-                <SidePanelTabs activeTab={sidePanelTab} />
-              </Panel>
-            </>
-          )}
           {videoPanelOpen && (
             <>
               <Separator className="w-px bg-theme-border hover:bg-theme-accent transition-colors" />
@@ -238,97 +215,21 @@ export function AppShell() {
   );
 }
 
-// ── Right-side panel icon-tab strip ─────────────────────────
-// Compact icon tabs with tooltips — ordered by usage frequency
-
-/** Side panel tab metadata: icon, label key, and tab id */
-const SIDE_PANEL_TABS: { id: SidePanelTab; icon: React.ReactNode; labelKey: string }[] = [
-  { id: 'outline',    icon: <AlignLeft size={15} />,    labelKey: 'outline.title' },
-  { id: 'chat',       icon: <Sparkles size={15} />,     labelKey: 'chat.title' },
-  { id: 'backlinks',  icon: <Link2 size={15} />,        labelKey: 'backlinks.title' },
-  { id: 'tags',       icon: <Tag size={15} />,          labelKey: 'tags.title' },
-  { id: 'properties', icon: <FileText size={15} />,     labelKey: 'properties.title' },
-  { id: 'history',    icon: <Clock size={15} />,        labelKey: 'history.title' },
-  { id: 'tasks',      icon: <CheckSquare size={15} />,  labelKey: 'tasks.title' },
-  { id: 'dashboard',  icon: <LayoutDashboard size={15} />, labelKey: 'dashboard.title' },
-  { id: 'agent',      icon: <Bot size={15} />,             labelKey: 'agent.title' },
-];
-
-function SidePanelTabs({ activeTab }: { activeTab: SidePanelTab }) {
-  const { t } = useTranslation();
-  const setSidePanelTab = useUIStore((s) => s.setSidePanelTab);
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Icon tab strip */}
-      <div className="flex items-center border-b border-theme-border shrink-0 px-1">
-        {SIDE_PANEL_TABS.map(({ id, icon, labelKey }) => (
-          <Tooltip key={id}>
-            <TooltipTrigger asChild>
-              <button
-                className={`p-2 rounded-md transition-colors ${
-                  activeTab === id
-                    ? 'text-theme-accent'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-theme-hover'
-                }`}
-                onClick={() => setSidePanelTab(id)}
-                aria-label={t(labelKey)}
-              >
-                {icon}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{t(labelKey)}</TooltipContent>
-          </Tooltip>
-        ))}
-      </div>
-      {/* Active tab content */}
-      <div className="flex-1 min-h-0">
-        {activeTab === 'outline' && <OutlinePanel />}
-        {activeTab === 'chat' && <ChatPanel />}
-        {activeTab === 'backlinks' && <BacklinksPanel />}
-        {activeTab === 'tags' && <TagPanel />}
-        {activeTab === 'properties' && <PropertiesPanel />}
-        {activeTab === 'history' && <HistoryPanel />}
-        {activeTab === 'tasks' && <TaskPanel onClose={() => useUIStore.getState().toggleSidePanel()} />}
-        {activeTab === 'dashboard' && <DashboardPanel />}
-        {activeTab === 'agent' && <AgentPanel />}
-      </div>
-    </div>
-  );
-}
+// ── Simplified Titlebar ─────────────────────────────────────
+// Only: sidebar toggle + brand + mode switch + more tools + drag region
 
 function Titlebar() {
   const { t } = useTranslation();
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
-  const sidebarVisible = useUIStore((s) => s.sidebarVisible);
-  const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
   const editorMode = useUIStore((s) => s.editorMode);
   const setEditorMode = useUIStore((s) => s.setEditorMode);
-  const setGlobalSearchOpen = useUIStore((s) => s.setGlobalSearchOpen);
   const setGraphViewOpen = useUIStore((s) => s.setGraphViewOpen);
   const setFlashcardOpen = useUIStore((s) => s.setFlashcardOpen);
   const setPresentationMode = useUIStore((s) => s.setPresentationMode);
   const setVideoPanelOpen = useUIStore((s) => s.setVideoPanelOpen);
   const setBrowserPanelOpen = useUIStore((s) => s.setBrowserPanelOpen);
-  const sidePanelVisible = useUIStore((s) => s.sidePanelVisible);
-  const sidePanelTab = useUIStore((s) => s.sidePanelTab);
 
-  // Smart toggle: open side panel on a specific tab, or close if already there
-  const smartToggleTab = (tab: SidePanelTab) => {
-    const { toggleSidePanel, setSidePanelTab } = useUIStore.getState();
-    if (sidePanelVisible && sidePanelTab === tab) {
-      toggleSidePanel();
-    } else {
-      if (!sidePanelVisible) toggleSidePanel();
-      setSidePanelTab(tab);
-    }
-  };
-
-  // Active state detection for toggle buttons
-  const isChatActive = sidePanelVisible && sidePanelTab === 'chat';
-  const isBacklinksActive = sidePanelVisible && sidePanelTab === 'backlinks';
-
-  // Base and active button styles
   const btnBase = 'p-1.5 rounded-md transition-colors';
   const btnDefault = `${btnBase} text-muted-foreground hover:text-foreground hover:bg-theme-hover`;
   const btnActive = `${btnBase} text-theme-accent bg-theme-accent/15`;
@@ -338,12 +239,12 @@ function Titlebar() {
       className="h-11 flex items-center px-3 gap-1 border-b border-theme-border bg-surface select-none shrink-0"
       data-tauri-drag-region
     >
-      {/* ── Left: sidebar toggle + brand + mode switch ──── */}
+      {/* Left: sidebar toggle + brand + mode switch */}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             onClick={toggleSidebar}
-            className={sidebarVisible ? btnActive : btnDefault}
+            className={!sidebarCollapsed ? btnActive : btnDefault}
             aria-label={t('actions.toggleSidebar')}
           >
             <PanelLeft size={16} />
@@ -358,51 +259,7 @@ function Titlebar() {
 
       <div className="flex-1" data-tauri-drag-region />
 
-      {/* ── Right: primary actions ─────────────────────── */}
-
-      {/* Search */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setGlobalSearchOpen(true)}
-            className={btnDefault}
-            aria-label={t('actions.search')}
-          >
-            <Search size={16} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" shortcut="⌘⇧F">{t('actions.search')}</TooltipContent>
-      </Tooltip>
-
-      {/* AI Assistant — promoted to titlebar */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => smartToggleTab('chat')}
-            className={isChatActive ? btnActive : btnDefault}
-            aria-label={t('actions.toggleChat')}
-          >
-            <Sparkles size={16} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" shortcut="⌘L">{t('actions.toggleChat')}</TooltipContent>
-      </Tooltip>
-
-      {/* Backlinks */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => smartToggleTab('backlinks')}
-            className={isBacklinksActive ? btnActive : btnDefault}
-            aria-label={t('backlinks.title')}
-          >
-            <Link2 size={16} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" shortcut={'⌘\\'}>{t('backlinks.title')}</TooltipContent>
-      </Tooltip>
-
-      {/* More tools dropdown — low-frequency features */}
+      {/* Right: more tools dropdown (low-frequency features only) */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -444,20 +301,6 @@ function Titlebar() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {/* Settings */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className={btnDefault}
-            aria-label={t('actions.settings')}
-          >
-            <Settings size={16} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" shortcut="⌘,">{t('actions.settings')}</TooltipContent>
-      </Tooltip>
     </div>
   );
 }

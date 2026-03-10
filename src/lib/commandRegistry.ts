@@ -51,7 +51,7 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
       label: t('actions.toggleSidePanel'),
       shortcut: '⌘\\',
       category: layout,
-      action: () => useUIStore.getState().toggleSidePanel(),
+      action: () => useUIStore.getState().toggleSidebar(),
     },
 
     // ── Navigation ──────────────────────────────────────────
@@ -147,12 +147,11 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
       shortcut: '⌘L',
       category: panel,
       action: () => {
-        const { sidePanelVisible, sidePanelTab, toggleSidePanel, setSidePanelTab } = useUIStore.getState();
-        if (sidePanelVisible && sidePanelTab === 'chat') {
-          toggleSidePanel();
+        const ui = useUIStore.getState();
+        if (!ui.sidebarCollapsed && ui.activeSidebarSection === 'chat') {
+          ui.toggleSidebar();
         } else {
-          if (!sidePanelVisible) toggleSidePanel();
-          setSidePanelTab('chat');
+          ui.setSidebarSection('chat');
         }
       },
     },
@@ -374,6 +373,39 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         triggerAiTransform(view, 'Create flashcards (Q&A pairs) from the key concepts. Format as a numbered list with Q: and A: prefixes.', config, title, ext)
           .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
       },
+    },
+
+    // ── Sidebar navigation ─────────────────────────────────
+    {
+      id: 'sidebar-explorer',
+      label: t('sidebar.explorer'),
+      category: panel,
+      action: () => useUIStore.getState().setSidebarSection('explorer'),
+    },
+    {
+      id: 'sidebar-search',
+      label: t('sidebar.search'),
+      shortcut: '⌘⇧F',
+      category: panel,
+      action: () => useUIStore.getState().setSidebarSection('search'),
+    },
+    {
+      id: 'sidebar-backlinks',
+      label: t('sidebar.backlinks'),
+      category: panel,
+      action: () => useUIStore.getState().setSidebarSection('backlinks'),
+    },
+    {
+      id: 'sidebar-dashboard',
+      label: t('sidebar.dashboard'),
+      category: panel,
+      action: () => useUIStore.getState().setSidebarSection('dashboard'),
+    },
+    {
+      id: 'sidebar-agent',
+      label: t('sidebar.agent'),
+      category: panel,
+      action: () => useUIStore.getState().setSidebarSection('agent'),
     },
   ];
 }

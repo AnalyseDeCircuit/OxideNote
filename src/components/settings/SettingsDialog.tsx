@@ -737,7 +737,7 @@ const ACTION_LABELS: Record<ActionId, string> = {
   globalSearch: 'settings.shortcutGlobalSearch',
   settings: 'settings.shortcutSettings',
   toggleSidebar: 'settings.shortcutSidebar',
-  toggleSidePanel: 'settings.shortcutSidePanel',
+  toggleSidePanel: 'settings.shortcutSidebar',
   closeTab: 'settings.shortcutCloseTab',
   prevTab: 'settings.shortcutPrevTab',
   nextTab: 'settings.shortcutNextTab',

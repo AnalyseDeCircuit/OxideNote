@@ -10,7 +10,6 @@ import { setEditorView, getEditorView } from '@/lib/editorViewRef';
 import { EditorView } from '@codemirror/view';
 import { MarkdownPreview } from './MarkdownPreview';
 import { getPreviewScrollTopForSourceLine } from '@/components/editor/scrollSync';
-import { EditorToolbar } from './EditorToolbar';
 import { ConflictDialog } from '@/components/editor/ConflictDialog';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { DatabaseView, isDatabaseNote } from '@/components/database/DatabaseView';
@@ -455,9 +454,6 @@ export function NoteEditor() {
       {isCanvas && activeTabPath && (
         <CanvasEditor canvasPath={activeTabPath} />
       )}
-
-      {/* Markdown editor + toolbar (only for plain text files) */}
-      {!isSpecialFile && activeTabPath && showEditor && <EditorToolbar viewRef={viewRef} />}
 
       {!isSpecialFile && (
       <div className="flex-1 min-h-0 flex" onPaste={handlePaste} onDrop={handleDrop} onDragOver={handleDragOver}>

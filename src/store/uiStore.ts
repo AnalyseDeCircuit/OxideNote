@@ -1,22 +1,32 @@
 import { create } from 'zustand';
 
-// ── 编辑器视图模式 ──────────────────────────────────────────
+// ── Editor view mode ────────────────────────────────────────
 export type EditorMode = 'edit' | 'preview' | 'split';
 
-// ── 右侧面板标签 ────────────────────────────────────────────
-export type SidePanelTab = 'backlinks' | 'outline' | 'tags' | 'tasks' | 'properties' | 'history' | 'chat' | 'dashboard' | 'agent';
+// ── Sidebar section (Activity Bar driven) ───────────────────
+// Each section corresponds to an Activity Bar icon and sidebar content panel
+export type SidebarSection =
+  | 'explorer'    // File tree + bookmarks
+  | 'search'      // Global search inline
+  | 'backlinks'   // Backlinks + outline
+  | 'chat'        // AI chat
+  | 'agent'       // Agent panel
+  | 'dashboard';  // Dashboard (tags, tasks, properties, etc.)
+
+// Backward-compat alias — will be removed after full migration
+export type SidePanelTab = SidebarSection;
 
 interface UIState {
-  sidebarVisible: boolean;
-  sidePanelVisible: boolean;
+  /** Whether the sidebar (Activity Bar content area) is collapsed */
+  sidebarCollapsed: boolean;
+  /** Currently active sidebar section shown in the content area */
+  activeSidebarSection: SidebarSection;
   settingsOpen: boolean;
   quickOpenOpen: boolean;
   globalSearchOpen: boolean;
-  /** 编辑器模式：编辑 / 预览 / 分屏 */
+  /** Editor mode: edit / preview / split */
   editorMode: EditorMode;
-  /** 右侧面板当前标签页 */
-  sidePanelTab: SidePanelTab;
-  /** 知识图谱视图是否打开 */
+  /** Knowledge graph view overlay */
   graphViewOpen: boolean;
   /** Vault health dialog */
   healthOpen: boolean;
@@ -45,15 +55,34 @@ interface UIState {
   /** Whether an inline AI transform is in progress */
   aiGenerating: boolean;
 
+  // ── Sidebar actions ──────────────────────────────────────
+  /** Toggle sidebar collapsed/expanded */
   toggleSidebar: () => void;
+  /** Set sidebar collapsed state directly */
+  setSidebarCollapsed: (v: boolean) => void;
+  /** Switch to a sidebar section — expands if collapsed, collapses if same section */
+  setSidebarSection: (section: SidebarSection) => void;
+
+  // ── Backward-compat aliases (delegates to new model) ─────
+  /** @deprecated Use sidebarCollapsed. Returns !sidebarCollapsed for compat */
+  sidebarVisible: boolean;
+  /** @deprecated Use activeSidebarSection */
+  sidePanelTab: SidePanelTab;
+  /** @deprecated Use sidebarCollapsed */
+  sidePanelVisible: boolean;
+  /** @deprecated Use toggleSidebar */
   toggleSidePanel: () => void;
+  /** @deprecated Use setSidebarCollapsed(!v) */
   setSidebarVisible: (v: boolean) => void;
+  /** @deprecated Use setSidebarCollapsed(!v) */
   setSidePanelVisible: (v: boolean) => void;
+  /** @deprecated Use setSidebarSection */
+  setSidePanelTab: (tab: SidePanelTab) => void;
+
   setSettingsOpen: (v: boolean) => void;
   setQuickOpenOpen: (v: boolean) => void;
   setGlobalSearchOpen: (v: boolean) => void;
   setEditorMode: (mode: EditorMode) => void;
-  setSidePanelTab: (tab: SidePanelTab) => void;
   setGraphViewOpen: (v: boolean) => void;
   setHealthOpen: (v: boolean) => void;
   setFlashcardOpen: (v: boolean) => void;
@@ -70,14 +99,21 @@ interface UIState {
   setAiGenerating: (v: boolean) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  sidebarVisible: true,
-  sidePanelVisible: false,
+export const useUIStore = create<UIState>((set, get) => ({
+  // ── New unified sidebar model ─────────────────────────────
+  sidebarCollapsed: false,
+  activeSidebarSection: 'explorer',
+
+  // ── Backward-compat computed properties ───────────────────
+  // These mirror the old API so existing consumers keep working
+  get sidebarVisible() { return !get().sidebarCollapsed; },
+  get sidePanelVisible() { return !get().sidebarCollapsed; },
+  get sidePanelTab() { return get().activeSidebarSection; },
+
   settingsOpen: false,
   quickOpenOpen: false,
   globalSearchOpen: false,
   editorMode: 'edit',
-  sidePanelTab: 'backlinks',
   graphViewOpen: false,
   healthOpen: false,
   flashcardOpen: false,
@@ -93,15 +129,28 @@ export const useUIStore = create<UIState>((set) => ({
   compileTimeMs: null,
   aiGenerating: false,
 
-  toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
-  toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
-  setSidebarVisible: (v) => set({ sidebarVisible: v }),
-  setSidePanelVisible: (v) => set({ sidePanelVisible: v }),
+  // ── New sidebar actions ───────────────────────────────────
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+  setSidebarSection: (section) => set((s) => {
+    // If clicking the same section while expanded, collapse
+    if (!s.sidebarCollapsed && s.activeSidebarSection === section) {
+      return { sidebarCollapsed: true };
+    }
+    // Otherwise expand and switch
+    return { sidebarCollapsed: false, activeSidebarSection: section };
+  }),
+
+  // ── Backward-compat actions ───────────────────────────────
+  toggleSidePanel: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSidebarVisible: (v) => set({ sidebarCollapsed: !v }),
+  setSidePanelVisible: (v) => set({ sidebarCollapsed: !v }),
+  setSidePanelTab: (tab) => set({ activeSidebarSection: tab, sidebarCollapsed: false }),
+
   setSettingsOpen: (v) => set({ settingsOpen: v }),
   setQuickOpenOpen: (v) => set({ quickOpenOpen: v }),
   setGlobalSearchOpen: (v) => set({ globalSearchOpen: v }),
   setEditorMode: (mode) => set({ editorMode: mode }),
-  setSidePanelTab: (tab) => set({ sidePanelTab: tab }),
   setGraphViewOpen: (v) => set({ graphViewOpen: v }),
   setHealthOpen: (v) => set({ healthOpen: v }),
   setFlashcardOpen: (v) => set({ flashcardOpen: v }),
