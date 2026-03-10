@@ -875,6 +875,7 @@ export type AgentKind =
 export type AgentStatus =
   | 'planning'
   | 'executing'
+  | 'thinking'
   | 'paused'
   | 'waiting_approval'
   | 'completed'

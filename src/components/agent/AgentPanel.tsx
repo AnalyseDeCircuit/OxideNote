@@ -22,6 +22,7 @@ import type { AgentKind, AgentStatus, AgentTask, PlanStep, ProposedChange } from
 
 const STATUS_I18N: Record<AgentStatus, string> = {
   planning: 'agent.progress.planning',
+  thinking: 'agent.progress.thinking',
   executing: 'agent.progress.executing',
   paused: 'agent.progress.paused',
   waiting_approval: 'agent.progress.complete',
@@ -567,7 +568,9 @@ const KIND_I18N: Record<string, string> = {
 /** Map backend status strings to i18n keys */
 const HISTORY_STATUS_I18N: Record<string, string> = {
   planning: 'agent.progress.planning',
+  thinking: 'agent.progress.thinking',
   executing: 'agent.progress.executing',
+  paused: 'agent.progress.paused',
   completed: 'agent.progress.complete',
   waiting_approval: 'agent.progress.complete',
   failed: 'agent.progress.error',

@@ -49,7 +49,7 @@ pub fn build_request_with_tools(
 ) -> Result<reqwest::RequestBuilder, LlmError> {
     match config.provider {
         ChatProvider::Claude => build_claude_request(client, messages, config, stream, tools),
-        ChatProvider::Ollama => build_ollama_request(client, messages, config, stream),
+        ChatProvider::Ollama => build_ollama_request(client, messages, config, stream, tools),
         _ => build_openai_request(client, messages, config, stream, tools),
     }
 }
@@ -214,16 +214,25 @@ fn build_claude_request(
 }
 
 /// Build an Ollama request (JSON lines streaming)
+///
+/// Ollama supports native function calling for compatible models (llama3.1+).
+/// Tool schemas are attached when provided. Additionally, an XML fallback
+/// instruction is injected into the system prompt so that models without
+/// native support can still emit tool calls in `<tool_call>` format.
 fn build_ollama_request(
     client: &reqwest::Client,
     messages: &[ChatMessage],
     config: &ChatConfig,
     stream: bool,
+    tools: Option<&[ToolSchema]>,
 ) -> Result<reqwest::RequestBuilder, LlmError> {
     let url = format!("{}/api/chat", config.api_url.trim_end_matches('/'));
     let temperature = resolve_temperature(config);
 
-    let api_messages: Vec<serde_json::Value> = messages
+    // Inject XML tool-call instructions into the system prompt for fallback.
+    // This ensures models without native function calling can still participate.
+    let patched_messages = inject_ollama_tool_instructions(messages, tools);
+    let api_messages: Vec<serde_json::Value> = patched_messages
         .iter()
         .map(|m| build_ollama_message(m))
         .collect();
@@ -233,6 +242,24 @@ fn build_ollama_request(
         "messages": api_messages,
         "stream": stream,
     });
+
+    // Attach native tool schemas for models that support them
+    if let Some(tool_schemas) = tools {
+        if !tool_schemas.is_empty() {
+            let ollama_tools: Vec<serde_json::Value> = tool_schemas
+                .iter()
+                .map(|ts| serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": &ts.name,
+                        "description": &ts.description,
+                        "parameters": &ts.parameters,
+                    }
+                }))
+                .collect();
+            body["tools"] = serde_json::json!(ollama_tools);
+        }
+    }
 
     if let Some(temp) = temperature {
         body["options"] = serde_json::json!({ "temperature": temp });
@@ -244,6 +271,50 @@ fn build_ollama_request(
 
     let req = client.post(&url).json(&body);
     Ok(req)
+}
+
+/// Append XML tool-call format instructions to the system prompt for Ollama.
+///
+/// If tools are provided and the first message is a system prompt, inject a
+/// fallback section that teaches the model the `<tool_call>` XML format.
+/// This is a no-op when tools is None or empty.
+fn inject_ollama_tool_instructions(
+    messages: &[ChatMessage],
+    tools: Option<&[ToolSchema]>,
+) -> Vec<ChatMessage> {
+    let schemas = match tools {
+        Some(t) if !t.is_empty() => t,
+        _ => return messages.to_vec(),
+    };
+
+    let mut patched = messages.to_vec();
+
+    // Build tool description list for the prompt
+    let tool_list: String = schemas
+        .iter()
+        .map(|ts| format!("- {} — {}", ts.name, ts.description))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let xml_instruction = format!(
+        "\n\n## Tool Calling\n\n\
+         You have access to the following tools:\n{tool_list}\n\n\
+         To call a tool, wrap a JSON object in XML tags like this:\n\
+         <tool_call>\n\
+         {{\"tool\": \"tool_name\", \"args\": {{\"param\": \"value\"}}}}\n\
+         </tool_call>\n\n\
+         You may call multiple tools in a single response. \
+         When you are done and need no more tool calls, respond normally without any <tool_call> tags."
+    );
+
+    // Append to system prompt (first message) if it exists
+    if let Some(first) = patched.first_mut() {
+        if first.role == "system" {
+            first.content.push_str(&xml_instruction);
+        }
+    }
+
+    patched
 }
 
 // ── Message builders (tool-aware) ───────────────────────────
@@ -491,6 +562,10 @@ pub async fn send_with_retry(
 /// Send with retry — full options variant for agents.
 /// `stream`: whether to request streaming.
 /// `tools`: optional tool schemas for function calling.
+///
+/// Retry strategy: exponential backoff with jitter (1s → 2s → 4s).
+/// For HTTP 429 (rate limit), the `retry-after` header is used as
+/// the minimum delay.
 pub async fn send_with_retry_opts(
     messages: &[ChatMessage],
     config: &ChatConfig,
@@ -510,13 +585,29 @@ pub async fn send_with_retry_opts(
                 }
                 // Retry on 5xx or 429 (rate limit)
                 if (status.is_server_error() || status.as_u16() == 429) && attempt < max_retries {
-                    let delay = resp
+                    // Exponential backoff: 1s, 2s, 4s base + deterministic jitter
+                    let base_delay_ms = 1000u64 * 2u64.pow(attempt);
+                    let jitter_ms = (attempt as u64 + 1) * 300; // 300ms, 600ms, 900ms
+                    let backoff = std::time::Duration::from_millis(base_delay_ms + jitter_ms);
+
+                    // For 429, respect `retry-after` header as minimum delay
+                    let retry_after = resp
                         .headers()
                         .get("retry-after")
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.parse::<u64>().ok())
-                        .map(|s| std::time::Duration::from_secs(s.min(10)))
-                        .unwrap_or(std::time::Duration::from_secs(1));
+                        .map(|s| std::time::Duration::from_secs(s.min(30)));
+
+                    let delay = retry_after
+                        .map(|ra| ra.max(backoff))
+                        .unwrap_or(backoff);
+
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        delay_ms = delay.as_millis() as u64,
+                        status = status.as_u16(),
+                        "LLM request failed, retrying with backoff"
+                    );
                     tokio::time::sleep(delay).await;
                     continue;
                 }
@@ -525,7 +616,15 @@ pub async fn send_with_retry_opts(
             }
             Err(e) => {
                 if attempt < max_retries {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    // Network error: exponential backoff
+                    let delay_ms = 1000u64 * 2u64.pow(attempt) + (attempt as u64 + 1) * 300;
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        delay_ms,
+                        error = %e,
+                        "LLM network error, retrying with backoff"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                     continue;
                 }
                 return Err(LlmError::Network(e.to_string()));
@@ -720,8 +819,31 @@ fn parse_ollama_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
         total_tokens: prompt_tokens + completion_tokens,
     };
 
-    // Ollama doesn't support native function calling — XML fallback only
-    let tool_calls = parse_xml_tool_calls(&content);
+    // Try native tool calls first (supported by llama3.1+, mistral, etc.)
+    let mut tool_calls = Vec::new();
+    if let Some(native_calls) = json.pointer("/message/tool_calls").and_then(|v| v.as_array()) {
+        for tc in native_calls {
+            let name = tc.pointer("/function/name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let args = tc.pointer("/function/arguments")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
+            if !name.is_empty() {
+                tool_calls.push(ToolCall {
+                    id: format!("ollama_{}", tool_calls.len()),
+                    tool: name,
+                    args,
+                });
+            }
+        }
+    }
+
+    // Fall back to XML parsing if no native tool calls found
+    if tool_calls.is_empty() {
+        tool_calls = parse_xml_tool_calls(&content);
+    }
 
     Ok(LlmResponse {
         content,
@@ -763,6 +885,12 @@ fn parse_openai_usage(json: &serde_json::Value) -> TokenUsage {
 /// {"tool": "vault_read", "args": {"path": "notes/example.md"}}
 /// </tool_call>
 /// ```
+/// Known agent tool names — only these are accepted from XML fallback parsing
+/// to prevent prompt injection attacks via crafted note content.
+const ALLOWED_TOOLS: &[&str] = &[
+    "vault_read", "vault_search", "vault_list", "vault_link", "vault_write", "typst_compile",
+];
+
 fn parse_xml_tool_calls(content: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();
     let mut remaining = content;
@@ -771,10 +899,20 @@ fn parse_xml_tool_calls(content: &str) -> Vec<ToolCall> {
         let after_tag = &remaining[start + "<tool_call>".len()..];
         if let Some(end) = after_tag.find("</tool_call>") {
             let json_str = after_tag[..end].trim();
-            if let Ok(parsed) = serde_json::from_str::<ToolCall>(json_str) {
-                calls.push(parsed);
-            } else {
-                tracing::warn!("Failed to parse XML tool call: {}", json_str);
+            match serde_json::from_str::<ToolCall>(json_str) {
+                Ok(parsed) => {
+                    if ALLOWED_TOOLS.contains(&parsed.tool.as_str()) {
+                        calls.push(parsed);
+                    } else {
+                        tracing::warn!(
+                            tool = %parsed.tool,
+                            "Rejected XML tool call with unknown tool name"
+                        );
+                    }
+                }
+                Err(_) => {
+                    tracing::warn!("Failed to parse XML tool call: {}", json_str);
+                }
             }
             remaining = &after_tag[end + "</tool_call>".len()..];
         } else {

@@ -738,6 +738,7 @@
     },
     "progress": {
       "planning": "Planning...",
+      "thinking": "Thinking...",
       "executing": "Executing...",
       "paused": "Paused",
       "complete": "Complete",

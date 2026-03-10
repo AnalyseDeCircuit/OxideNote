@@ -21,7 +21,7 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 
 use super::context::build_agent_context;
-use super::tools::execute_tool;
+use super::tools::{execute_tool, ToolError};
 use crate::commands::typst::FontState;
 use super::types::*;
 use crate::llm::client::{call_llm_complete, LlmError};
@@ -206,16 +206,25 @@ async fn run_agent_inner(
     const MAX_ITERATIONS: usize = 30;
     let mut iteration = 0;
 
+    tracing::info!(
+        task_id = %task_id,
+        kind = ?task.kind,
+        max_writes = max_writes,
+        tools = ?allowed_tools,
+        "Agent run started"
+    );
+
     emit_progress(app, &task_id, &AgentStatus::Executing, "Starting agent...");
 
     // ── Phase 3: Agentic tool-calling loop ──────────────────
     loop {
         // Enforce iteration cap
         if iteration >= MAX_ITERATIONS {
-            tracing::warn!("Agent hit iteration cap ({MAX_ITERATIONS})");
+            tracing::warn!(task_id = %task_id, "Agent hit iteration cap ({MAX_ITERATIONS})");
             break;
         }
         iteration += 1;
+        tracing::info!(task_id = %task_id, iteration, "Agent loop iteration start");
 
         // Check abort
         if *abort_rx.borrow() {
@@ -241,6 +250,28 @@ async fn run_agent_inner(
         )
         .await?;
         total_usage += response.usage.clone();
+        tracing::debug!(
+            task_id = %task_id,
+            iteration,
+            prompt_tokens = response.usage.prompt_tokens,
+            completion_tokens = response.usage.completion_tokens,
+            tool_call_count = response.tool_calls.len(),
+            has_reasoning = response.reasoning.is_some(),
+            "LLM response received"
+        );
+
+        // Stream reasoning/thinking content to frontend if present
+        if let Some(ref reasoning) = response.reasoning {
+            if !reasoning.is_empty() {
+                let preview = if reasoning.len() > 500 {
+                    let b = reasoning.floor_char_boundary(500);
+                    format!("{}...", &reasoning[..b])
+                } else {
+                    reasoning.clone()
+                };
+                emit_progress(app, &task_id, &AgentStatus::Thinking, &preview);
+            }
+        }
 
         let tool_calls = &response.tool_calls;
 
@@ -266,6 +297,7 @@ async fn run_agent_inner(
             doom_detector.pop_front();
         }
         if detect_doom_loop(&doom_detector) {
+            tracing::warn!(task_id = %task_id, iteration, "Doom loop detected — aborting agent");
             return Err(AgentError::DoomLoop);
         }
 
@@ -277,8 +309,22 @@ async fn run_agent_inner(
             response.reasoning.clone(),
         ));
 
-        // Execute each tool call and append results as tool messages
-        for tc in tool_calls {
+        // Execute tool calls — read-only tools in parallel, writes sequentially.
+        // Results are always appended in original call order for LLM consistency.
+        let tool_results = execute_tools_partitioned(
+            tool_calls,
+            vault_path,
+            &read_db,
+            &pending_writes,
+            task.auto_apply,
+            &db,
+            max_writes,
+            font_state.clone(),
+            &task_id,
+        )
+        .await;
+
+        for (tc, result) in tool_calls.iter().zip(tool_results.into_iter()) {
             let step_desc = format!("{}({})", tc.tool, summarize_args(&tc.args));
 
             emit_progress(
@@ -287,30 +333,6 @@ async fn run_agent_inner(
                 &AgentStatus::Executing,
                 &format!("Step {} — {}", steps.len() + 1, step_desc),
             );
-
-            let result = match execute_tool(
-                tc,
-                vault_path,
-                &read_db,
-                &pending_writes,
-                task.auto_apply,
-                &db,
-                max_writes,
-                font_state.clone(),
-            )
-            .await
-            {
-                Ok(result) => {
-                    // Cap tool results to prevent context explosion
-                    if result.len() > 4000 {
-                        let boundary = result.floor_char_boundary(4000);
-                        format!("{}... (truncated)", &result[..boundary])
-                    } else {
-                        result
-                    }
-                }
-                Err(e) => format!("Error: {}", e),
-            };
 
             // Append tool result message with the matching call ID
             messages.push(ChatMessage::tool_result(&tc.id, &result));
@@ -331,7 +353,16 @@ async fn run_agent_inner(
 
         // Compact conversation if message count is excessive
         // Keep system prompt + last N messages to stay within context budget
-        compact_messages(&mut messages);
+        let pre_compact_len = messages.len();
+        compact_messages(&mut messages, config.context_window);
+        if messages.len() < pre_compact_len {
+            tracing::info!(
+                task_id = %task_id,
+                removed = pre_compact_len - messages.len(),
+                remaining = messages.len(),
+                "Conversation compacted"
+            );
+        }
     }
 
     // ── Phase 4: Extract proposed changes ───────────────────
@@ -345,6 +376,17 @@ async fn run_agent_inner(
         .unwrap_or_else(|_| "Agent completed.".into());
 
     let auto_applied = !proposed_changes.is_empty() && task.auto_apply;
+
+    tracing::info!(
+        task_id = %task_id,
+        iterations = iteration,
+        steps = steps.len(),
+        proposed_changes = proposed_changes.len(),
+        total_prompt_tokens = total_usage.prompt_tokens,
+        total_completion_tokens = total_usage.completion_tokens,
+        auto_applied,
+        "Agent run completed"
+    );
 
     Ok(TaskResult {
         task_id,
@@ -488,10 +530,20 @@ fn build_task_message(task: &AgentTask, relevant_notes: &str) -> String {
 /// Preserves the system prompt (index 0) and recent messages.
 /// Respects tool-call boundaries: never splits between an assistant
 /// message with tool_calls and its corresponding tool result messages.
-fn compact_messages(messages: &mut Vec<ChatMessage>) {
-    // Character budget for the conversation (rough estimate)
-    const MAX_TOTAL_CHARS: usize = 50_000;
-    const KEEP_RECENT: usize = 12;
+///
+/// The budget is derived from `context_window` (in tokens). If None,
+/// defaults to 8 000 tokens. A rough 3:1 char-to-token ratio is used
+/// since proper tokenization would require a per-model tokenizer.
+fn compact_messages(messages: &mut Vec<ChatMessage>, context_window: Option<u32>) {
+    // Derive character budget from token context window.
+    // Conservative 3 chars/token ratio. Reserve 20% for the next LLM response.
+    let token_budget = context_window.unwrap_or(8_000) as usize;
+    // Cap at 100K tokens worth of chars to avoid excessive memory usage
+    // even for models with very large context windows (e.g. Gemini 1M)
+    let raw_budget = (token_budget * 3).saturating_mul(80) / 100; // 80% utilization
+    let max_total_chars = raw_budget.min(300_000);
+    // Scale KEEP_RECENT: larger context windows can retain more history
+    let keep_recent = (max_total_chars / 5000).clamp(6, 24);
 
     let total_chars: usize = messages.iter().map(|m| {
         let mut size = m.content.len();
@@ -504,7 +556,7 @@ fn compact_messages(messages: &mut Vec<ChatMessage>) {
         size
     }).sum();
 
-    if total_chars <= MAX_TOTAL_CHARS || messages.len() <= KEEP_RECENT + 1 {
+    if total_chars <= max_total_chars || messages.len() <= keep_recent + 1 {
         return;
     }
 
@@ -512,7 +564,7 @@ fn compact_messages(messages: &mut Vec<ChatMessage>) {
     // from the end, but must not split a tool-call sequence.
     // A "safe" cut point is an index where messages[i] is NOT a tool-result
     // message (role != "tool"), meaning we're at a conversation boundary.
-    let keep_from = messages.len().saturating_sub(KEEP_RECENT);
+    let keep_from = messages.len().saturating_sub(keep_recent);
 
     // Walk backwards from keep_from to find a safe boundary
     let mut safe_cut = keep_from;
@@ -568,6 +620,173 @@ fn summarize_args(args: &serde_json::Value) -> String {
         parts.join(", ")
     } else {
         args.to_string()
+    }
+}
+
+// ── Partitioned tool execution ───────────────────────────────
+
+/// Whether a tool is read-only (safe to run in parallel).
+///
+/// SAFETY-CRITICAL: Any tool NOT listed here will execute sequentially.
+/// When adding new tools, verify they perform no mutations (filesystem
+/// writes, DB inserts, pending_writes push) before adding them here.
+fn is_read_only_tool(name: &str) -> bool {
+    matches!(name, "vault_read" | "vault_search" | "vault_list" | "vault_link" | "typst_compile")
+}
+
+/// Process a single tool call result: truncate if needed, format errors
+fn process_tool_result(
+    tool_name: &str,
+    result: Result<String, super::tools::ToolError>,
+    task_id: &str,
+) -> String {
+    match result {
+        Ok(text) => {
+            tracing::debug!(
+                task_id = %task_id,
+                tool = %tool_name,
+                result_len = text.len(),
+                "Tool executed successfully"
+            );
+            if text.len() > 4000 {
+                let boundary = text.floor_char_boundary(4000);
+                format!("{}... (truncated)", &text[..boundary])
+            } else {
+                text
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                task_id = %task_id,
+                tool = %tool_name,
+                error = %e,
+                "Tool execution failed"
+            );
+            format_tool_error(tool_name, &e)
+        }
+    }
+}
+
+/// Execute tool calls with read-only calls in parallel and writes sequentially.
+///
+/// Returns results in the same order as the input `tool_calls` slice.
+#[allow(clippy::too_many_arguments)]
+async fn execute_tools_partitioned(
+    tool_calls: &[crate::llm::types::ToolCall],
+    vault_path: &Path,
+    read_db: &Arc<Mutex<Option<Connection>>>,
+    pending_writes: &Arc<Mutex<Vec<ProposedChange>>>,
+    auto_apply: bool,
+    db: &Arc<Mutex<Option<Connection>>>,
+    max_writes: u8,
+    font_state: Option<Arc<FontState>>,
+    task_id: &str,
+) -> Vec<String> {
+    // Pre-allocate result slots (one per tool call)
+    let mut results: Vec<Option<String>> = vec![None; tool_calls.len()];
+
+    // Collect read-only indices for parallel execution
+    let read_indices: Vec<usize> = tool_calls
+        .iter()
+        .enumerate()
+        .filter(|(_, tc)| is_read_only_tool(&tc.tool))
+        .map(|(i, _)| i)
+        .collect();
+
+    // Execute all read-only tools concurrently
+    if !read_indices.is_empty() {
+        let read_count = read_indices.len();
+        tracing::debug!(
+            task_id = %task_id,
+            count = read_count,
+            "Executing read-only tools in parallel"
+        );
+
+        let futures: Vec<_> = read_indices
+            .iter()
+            .map(|&i| {
+                let tc = &tool_calls[i];
+                execute_tool(
+                    tc,
+                    vault_path,
+                    read_db,
+                    pending_writes,
+                    auto_apply,
+                    db,
+                    max_writes,
+                    font_state.clone(),
+                )
+            })
+            .collect();
+
+        let read_results = futures_util::future::join_all(futures).await;
+
+        for (&idx, raw) in read_indices.iter().zip(read_results.into_iter()) {
+            results[idx] = Some(process_tool_result(
+                &tool_calls[idx].tool,
+                raw,
+                task_id,
+            ));
+        }
+    }
+
+    // Execute write (and any other non-read) tools sequentially
+    for (i, tc) in tool_calls.iter().enumerate() {
+        if results[i].is_some() {
+            continue; // Already handled as read-only
+        }
+        let raw = execute_tool(
+            tc,
+            vault_path,
+            read_db,
+            pending_writes,
+            auto_apply,
+            db,
+            max_writes,
+            font_state.clone(),
+        )
+        .await;
+        results[i] = Some(process_tool_result(&tc.tool, raw, task_id));
+    }
+
+    // Unwrap all results (every slot is guaranteed to be filled)
+    results.into_iter().map(|r| r.unwrap_or_default()).collect()
+}
+
+// ── Structured tool error formatting ─────────────────────────
+
+/// Format a tool error with recovery hints so the LLM can decide whether to retry.
+///
+/// - `[RECOVERABLE]`: the agent should try a different approach
+/// - `[FATAL]`: the error is terminal; do not retry this action
+fn format_tool_error(tool_name: &str, error: &ToolError) -> String {
+    match error {
+        ToolError::AccessDenied(p) => format!(
+            "[RECOVERABLE] Error in {tool_name}: path outside vault ({p}). \
+             Use a vault-relative path without leading '/' or '..'."
+        ),
+        ToolError::MissingArg(arg) => format!(
+            "[RECOVERABLE] Error in {tool_name}: missing required argument '{arg}'. \
+             Check the tool schema and provide all required parameters."
+        ),
+        ToolError::Io(msg) if msg.contains("not found") || msg.contains("No such file") => format!(
+            "[RECOVERABLE] Error in {tool_name}: {msg}. \
+             The file may have been moved or renamed. Use vault_search or vault_list to find it."
+        ),
+        ToolError::Io(msg) => format!(
+            "[RECOVERABLE] Error in {tool_name}: IO error — {msg}"
+        ),
+        ToolError::NoIndex => format!(
+            "[FATAL] Error in {tool_name}: no index available. The vault may not be indexed yet."
+        ),
+        ToolError::WriteLimitExceeded => format!(
+            "[FATAL] Error in {tool_name}: write limit exceeded. \
+             No more vault_write calls are allowed in this run. \
+             Finish with a summary of remaining work instead."
+        ),
+        ToolError::UnknownTool(name) => format!(
+            "[FATAL] Error: unknown tool '{name}'. Use only the tools listed in your system prompt."
+        ),
     }
 }
 

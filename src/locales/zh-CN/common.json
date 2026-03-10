@@ -737,6 +737,7 @@
     },
     "progress": {
       "planning": "规划中...",
+      "thinking": "思考中...",
       "executing": "执行中...",
       "paused": "已暂停",
       "complete": "已完成",
