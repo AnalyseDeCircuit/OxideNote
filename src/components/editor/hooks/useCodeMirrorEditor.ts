@@ -24,11 +24,13 @@ import { typst as typstLanguage } from 'codemirror-lang-typst';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { lintGutter } from '@codemirror/lint';
 import { wikilinkExtension } from '../extensions/wikilink';
 import { blockRefExtension, refreshBlockRefEffect } from '../extensions/blockRef';
 import { wikilinkCompletionSource } from '../extensions/wikilinkCompletion';
 import { tagCompletionSource } from '../extensions/tagCompletion';
 import { slashCommandSource } from '../extensions/slashCommands';
+import { typstCitationSource, latexCitationSource } from '../extensions/citationCompletion';
 import { aiInlineExtension } from '../extensions/aiInline';
 
 export interface UseCodeMirrorOptions {
@@ -52,6 +54,7 @@ const wordWrapCompartment = new Compartment();
 const themeCompartment = new Compartment();
 const languageCompartment = new Compartment();
 const markdownExtensionsCompartment = new Compartment();
+const lintCompartment = new Compartment();
 
 /** Check if a file path refers to a Typst source file */
 function isTypstFile(path: string | null): boolean {
@@ -237,8 +240,10 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         closeBrackets(),
         autocompletion({
           override: isTypstFile(activeTabPath)
-            ? []
-            : [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
+            ? [typstCitationSource]
+            : activeTabPath?.toLowerCase().endsWith('.tex')
+              ? [latexCitationSource]
+              : [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
         }),
         EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
@@ -252,6 +257,9 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         markdownExtensionsCompartment.of(
           markdownExtensionsForPath(activeTabPath, onNavigateRef, () => currentNotePathRef.current)
         ),
+
+        // Lint gutter — shown only for Typst to display compilation diagnostics
+        lintCompartment.of(isTypstFile(activeTabPath) ? lintGutter() : []),
 
         // Theme
         themeCompartment.of(makeOxideTheme(isDarkTheme())),
@@ -386,6 +394,7 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
           markdownExtensionsCompartment.reconfigure(
             markdownExtensionsForPath(activeTabPath, onNavigateRef, () => currentNotePathRef.current)
           ),
+          lintCompartment.reconfigure(nowTypst ? lintGutter() : []),
         ],
       });
     }

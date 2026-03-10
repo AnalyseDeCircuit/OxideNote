@@ -19,7 +19,7 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useNoteStore, flushAllPendingSaves } from '@/store/noteStore';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, clearEmbeddings, listModels, type EmbeddingConfig, type EmbeddingStatus, type EmbeddingProgressEvent, type ChatProvider, type ThinkingMode } from '@/lib/api';
+import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, clearEmbeddings, listModels, agentSchedulerConfig, agentSchedulerSetConfig, type EmbeddingConfig, type EmbeddingStatus, type EmbeddingProgressEvent, type ChatProvider, type ThinkingMode, type SchedulerConfig } from '@/lib/api';
 import { useChatStore, PROVIDER_DEFAULTS } from '@/store/chatStore';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { toast } from '@/hooks/useToast';
@@ -1127,6 +1127,9 @@ function AITab() {
 
       {/* ── Chat Provider Config ──────────────────────────── */}
       <ChatConfigSection />
+
+      {/* ── Agent Scheduler Config ────────────────────────── */}
+      <SchedulerSection />
     </>
   );
 }
@@ -1376,5 +1379,140 @@ function AboutTab() {
         <p>{t('settings.aboutBuiltWith')}</p>
       </div>
     </>
+  );
+}
+
+// ── Agent Scheduler Settings (in AI tab) ────────────────────
+
+function SchedulerSection() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<SchedulerConfig>({
+    enabled: false,
+    daily_review: { enabled: false, hour: 18, output_folder: 'daily', template: 'summary' },
+    graph_maintenance: { enabled: false, interval_hours: 24 },
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Load scheduler config on mount
+  useEffect(() => {
+    let mounted = true;
+    agentSchedulerConfig()
+      .then((cfg) => { if (mounted) setConfig(cfg); })
+      .catch((e) => console.warn('Failed to load scheduler config:', e))
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await agentSchedulerSetConfig(config);
+      toast({ title: t('scheduler.saved') });
+    } catch (e) {
+      toast({ title: String(e), variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }, [config, t]);
+
+  if (loading) return null;
+
+  const dr = config.daily_review ?? { enabled: false, hour: 18, output_folder: 'daily', template: 'summary' };
+  const gm = config.graph_maintenance ?? { enabled: false, interval_hours: 24 };
+
+  return (
+    <SettingsCard title={t('scheduler.title')}>
+      {/* Master toggle */}
+      <SettingRow label={t('scheduler.enabled')} hint={t('scheduler.enabledHint')}>
+        <input
+          type="checkbox"
+          checked={config.enabled}
+          onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
+          className="h-4 w-4 accent-theme-accent"
+        />
+      </SettingRow>
+
+      {config.enabled && (
+        <>
+          {/* Daily Review sub-section */}
+          <div className="pl-4 border-l-2 border-theme-border space-y-3">
+            <SettingRow label={t('scheduler.dailyReview')}>
+              <input
+                type="checkbox"
+                checked={dr.enabled}
+                onChange={(e) => setConfig({ ...config, daily_review: { ...dr, enabled: e.target.checked } })}
+                className="h-4 w-4 accent-theme-accent"
+              />
+            </SettingRow>
+            {dr.enabled && (
+              <>
+                <SettingRow label={t('scheduler.hour')} hint={t('scheduler.hourHint')}>
+                  <input
+                    type="number"
+                    min={0} max={23}
+                    value={dr.hour}
+                    onChange={(e) => setConfig({ ...config, daily_review: { ...dr, hour: Number(e.target.value) } })}
+                    className="w-16 px-2 py-1 text-sm text-center rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+                  />
+                </SettingRow>
+                <SettingRow label={t('scheduler.outputFolder')}>
+                  <input
+                    type="text"
+                    value={dr.output_folder}
+                    onChange={(e) => setConfig({ ...config, daily_review: { ...dr, output_folder: e.target.value } })}
+                    className="w-[120px] px-2 py-1 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+                  />
+                </SettingRow>
+                <SettingRow label={t('scheduler.template')}>
+                  <select
+                    value={dr.template}
+                    onChange={(e) => setConfig({ ...config, daily_review: { ...dr, template: e.target.value } })}
+                    className="px-2 py-1 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+                  >
+                    <option value="summary">{t('scheduler.templateSummary')}</option>
+                    <option value="highlights">{t('scheduler.templateHighlights')}</option>
+                    <option value="full">{t('scheduler.templateFull')}</option>
+                  </select>
+                </SettingRow>
+              </>
+            )}
+          </div>
+
+          {/* Graph Maintenance sub-section */}
+          <div className="pl-4 border-l-2 border-theme-border space-y-3">
+            <SettingRow label={t('scheduler.graphMaintenance')}>
+              <input
+                type="checkbox"
+                checked={gm.enabled}
+                onChange={(e) => setConfig({ ...config, graph_maintenance: { ...gm, enabled: e.target.checked } })}
+                className="h-4 w-4 accent-theme-accent"
+              />
+            </SettingRow>
+            {gm.enabled && (
+              <SettingRow label={t('scheduler.interval')} hint={t('scheduler.intervalHint')}>
+                <input
+                  type="number"
+                  min={1} max={168}
+                  value={gm.interval_hours}
+                  onChange={(e) => setConfig({ ...config, graph_maintenance: { ...gm, interval_hours: Number(e.target.value) } })}
+                  className="w-16 px-2 py-1 text-sm text-center rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
+                />
+              </SettingRow>
+            )}
+          </div>
+        </>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-1.5 text-sm rounded bg-theme-accent text-white hover:bg-theme-accent/90 disabled:opacity-50 transition-colors"
+        >
+          {saving ? t('scheduler.saving') : t('scheduler.save')}
+        </button>
+      </div>
+    </SettingsCard>
   );
 }

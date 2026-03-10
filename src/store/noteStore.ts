@@ -44,6 +44,14 @@ export async function flushAllPendingSaves() {
   return Object.fromEntries(settled) as Record<string, SaveOutcome>;
 }
 
+/** Lightweight diagnostic entry for Typst/LaTeX compile results */
+export interface CompileDiagnostic {
+  line: number;
+  column: number;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
 interface NoteState {
   openTabs: Tab[];
   activeTabPath: string | null;
@@ -53,6 +61,8 @@ interface NoteState {
   /** Cursor position in the active editor */
   cursorLine: number;
   cursorCol: number;
+  /** Last compile diagnostics for the active .typ/.tex file */
+  lastCompileDiagnostics: CompileDiagnostic[];
 
   /** Pending scroll target (e.g. after opening a note from canvas block card) */
   pendingScrollTarget: { blockId: string } | null;
@@ -76,6 +86,7 @@ interface NoteState {
   togglePinTab: (path: string) => void;
   /** Recently opened notes (most recent first, max 20) */
   recentNotes: { path: string; title: string }[];
+  setLastCompileDiagnostics: (diags: CompileDiagnostic[]) => void;
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
@@ -86,8 +97,10 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   cursorLine: 1,
   cursorCol: 1,
   recentNotes: [],
+  lastCompileDiagnostics: [],
   pendingScrollTarget: null,
   setPendingScrollTarget: (target) => set({ pendingScrollTarget: target }),
+  setLastCompileDiagnostics: (diags) => set({ lastCompileDiagnostics: diags }),
 
   openNote: (path, title) => {
     const { openTabs, recentNotes } = get();

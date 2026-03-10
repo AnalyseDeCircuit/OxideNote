@@ -20,7 +20,7 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
 import { useNoteStore } from '@/store/noteStore';
-import { searchByFilename, createNote, readNote, getBlockContent } from '@/lib/api';
+import { searchByFilename, createNote, readNote, getBlockContent, compileTypstContent } from '@/lib/api';
 import { blockRefCache, noteResolveCache, noteEmbedCache, blockRefKey } from '@/lib/previewCache';
 import { ImageLightbox } from '@/components/editor/ImageLightbox';
 import { getSourceLineForPreviewOffset } from '@/components/editor/scrollSync';
@@ -341,6 +341,11 @@ function createMarkedInstance(getTokenLine: (token: object) => number | undefine
           return `<div class="mermaid-container code-line" data-mermaid-id="${id}" data-line="${startLine}">${escapeHtml(token.text)}</div>`;
         }
 
+        // Typst code block → placeholder div, compiled async via backend
+        if (token.lang === 'typst') {
+          return `<div class="typst-block code-line" data-typst="${encodeURIComponent(token.text)}" data-line="${startLine}"><pre><code class="hljs language-typst">${escapeHtml(token.text)}</code></pre></div>`;
+        }
+
         // Standard code block: single data-line on <code> element,
         // full-block highlight (VS Code style — one anchor per block)
         const languageClass = token.lang ? ` language-${escapeAttr(token.lang)}` : '';
@@ -531,6 +536,62 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
         } catch {
           // Mermaid 语法错误 → 保留原始文本
           container.classList.add('mermaid-error');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [blocks]);
+
+  // ── Async Typst code block compilation ────────────────────
+  // Same hydration pattern as Mermaid: query placeholder divs, compile via
+  // backend, replace with sanitized SVG output. Cached by content hash.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const typstBlocks = el.querySelectorAll<HTMLDivElement>('.typst-block[data-typst]');
+    if (typstBlocks.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      for (const container of typstBlocks) {
+        if (cancelled) break;
+        if (container.classList.contains('typst-rendered')) continue;
+
+        const encoded = container.dataset.typst;
+        if (!encoded) continue;
+        const content = decodeURIComponent(encoded);
+        if (!content.trim()) continue;
+
+        try {
+          const result = await compileTypstContent(content);
+          if (cancelled) break;
+
+          if (result.pages.length > 0) {
+            // Render all pages as sanitized SVG
+            const svgHtml = result.pages
+              .map((svg) =>
+                DOMPurify.sanitize(svg, {
+                  USE_PROFILES: { svg: true, svgFilters: true },
+                }),
+              )
+              .join('');
+            container.innerHTML = `<div class="typst-block-output">${svgHtml}</div>`;
+            container.classList.add('typst-rendered');
+          } else if (result.diagnostics.length > 0) {
+            // Show compilation errors inline
+            const errorHtml = result.diagnostics
+              .map((d) => `<div class="typst-error-line">L${d.line}: ${escapeHtml(d.message)}</div>`)
+              .join('');
+            container.innerHTML = `<div class="typst-block-error">${errorHtml}</div>`;
+            container.classList.add('typst-rendered', 'typst-error');
+          }
+        } catch {
+          container.classList.add('typst-error');
         }
       }
     })();

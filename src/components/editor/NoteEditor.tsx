@@ -16,6 +16,8 @@ import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { DatabaseView, isDatabaseNote } from '@/components/database/DatabaseView';
 import { CanvasEditor } from '@/components/canvas/CanvasEditor';
 import { TypstPreview } from './TypstPreview';
+import { TagSuggestion } from './TagSuggestion';
+import { SmartLinkSuggestion } from './SmartLinkSuggestion';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -495,6 +497,20 @@ export function NoteEditor() {
           </div>
         )}
       </div>
+      )}
+
+      {/* ── Tag suggestion pills (AI-powered) ─────────────── */}
+      {activeTabPath && !isSpecialFile && !isTypst && activeTabPath.endsWith('.md') && (
+        <div className="shrink-0 px-3 py-1 border-t border-theme-border flex items-center gap-3">
+          <TagSuggestion
+            path={activeTabPath}
+            title={activeTabPath.replace(/\.md$/, '').split('/').pop() ?? ''}
+          />
+          <SmartLinkSuggestion
+            path={activeTabPath}
+            title={activeTabPath.replace(/\.md$/, '').split('/').pop() ?? ''}
+          />
+        </div>
       )}
 
       {/* ── 文件冲突对话框 ─────────────────────────────────── */}

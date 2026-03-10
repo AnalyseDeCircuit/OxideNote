@@ -193,7 +193,7 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
       action: () => {
         const activeTab = useNoteStore.getState().activeTabPath;
         if (!activeTab) return;
-        const title = activeTab.replace(/\.md$/, '').split('/').pop() || 'export';
+        const title = activeTab.replace(/\.[^.]+$/, '').split('/').pop() || 'export';
         save({
           title: t('export.bundleExport'),
           defaultPath: `${title}.zip`,
@@ -295,8 +295,10 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         const view = getEditorView();
         if (!view) return;
         const config = useChatStore.getState().config;
-        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
-        triggerAiTransform(view, 'Rewrite this text to be clearer and more concise', config, title)
+        const activePath = useNoteStore.getState().activeTabPath || '';
+        const title = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+        const ext = activePath.split('.').pop() || 'md';
+        triggerAiTransform(view, 'Rewrite this text to be clearer and more concise', config, title, ext)
           .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
       },
     },
@@ -308,7 +310,7 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         const view = getEditorView();
         if (!view) return;
         const config = useChatStore.getState().config;
-        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+        const title = useNoteStore.getState().activeTabPath?.replace(/\.[^.]+$/, '').split('/').pop() || '';
         triggerAiContinue(view, config, title)
           .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
       },
@@ -321,8 +323,10 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         const view = getEditorView();
         if (!view) return;
         const config = useChatStore.getState().config;
-        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
-        triggerAiTransform(view, 'Summarize this text into bullet points', config, title)
+        const activePath = useNoteStore.getState().activeTabPath || '';
+        const title = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+        const ext = activePath.split('.').pop() || 'md';
+        triggerAiTransform(view, 'Summarize this text into bullet points', config, title, ext)
           .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
       },
     },
@@ -334,8 +338,40 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         const view = getEditorView();
         if (!view) return;
         const config = useChatStore.getState().config;
-        const title = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
-        triggerAiTransform(view, 'Translate this text to the other language (Chinese↔English)', config, title)
+        const activePath = useNoteStore.getState().activeTabPath || '';
+        const title = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+        const ext = activePath.split('.').pop() || 'md';
+        triggerAiTransform(view, 'Translate this text to the other language (Chinese↔English)', config, title, ext)
+          .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
+      },
+    },
+    {
+      id: 'ai-tags',
+      label: t('inlineAi.generateTags'),
+      category: ai,
+      action: () => {
+        const view = getEditorView();
+        if (!view) return;
+        const config = useChatStore.getState().config;
+        const activePath = useNoteStore.getState().activeTabPath || '';
+        const title = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+        const ext = activePath.split('.').pop() || 'md';
+        triggerAiTransform(view, 'Extract relevant tags from this note. Output as a comma-separated list of tags prefixed with #.', config, title, ext)
+          .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
+      },
+    },
+    {
+      id: 'ai-flashcards',
+      label: t('inlineAi.flashcards'),
+      category: ai,
+      action: () => {
+        const view = getEditorView();
+        if (!view) return;
+        const config = useChatStore.getState().config;
+        const activePath = useNoteStore.getState().activeTabPath || '';
+        const title = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+        const ext = activePath.split('.').pop() || 'md';
+        triggerAiTransform(view, 'Create flashcards (Q&A pairs) from the key concepts. Format as a numbered list with Q: and A: prefixes.', config, title, ext)
           .catch((err) => toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' }));
       },
     },

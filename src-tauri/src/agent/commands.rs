@@ -16,6 +16,7 @@ use super::runtime::{self, AgentError};
 use super::types::*;
 use crate::llm::function_calling::{default_agent_tools, readonly_agent_tools};
 use crate::llm::types::ChatConfig;
+use crate::commands::typst::FontState;
 use crate::state::AppState;
 
 // ── Agent state machine ─────────────────────────────────────
@@ -120,6 +121,8 @@ pub async fn agent_run(
     let agent_state_clone = Arc::clone(&agent_state);
     let task_id_spawn = task_id_ret.clone();
     let read_db_clone = Arc::clone(&read_db);
+    // Lazily init fonts — cached in AppState's OnceCell so cost is only on first call
+    let font_state = Some(state.get_or_init_fonts());
     tokio::spawn(async move {
         let result = runtime::run_agent(
             task,
@@ -134,32 +137,36 @@ pub async fn agent_run(
             system_prompt_override,
             max_writes,
             task_id_spawn,
+            font_state.clone(),
         )
         .await;
 
-        // Update state based on result
-        let mut run_state = agent_state_clone.run_state.lock();
-        match result {
-            Ok(task_result) => {
-                // Persist to history
-                let _ = history::save_agent_run(&chat_db, &task_result);
-
-                if task_result.status == AgentStatus::WaitingApproval {
-                    *run_state = AgentRunState::WaitingApproval(task_result);
-                } else {
+        // Update state based on result — drop lock before draining to avoid deadlock
+        let should_drain = {
+            let mut run_state = agent_state_clone.run_state.lock();
+            match result {
+                Ok(task_result) => {
+                    let _ = history::save_agent_run(&chat_db, &task_result);
+                    if task_result.status == AgentStatus::WaitingApproval {
+                        *run_state = AgentRunState::WaitingApproval(task_result);
+                        false
+                    } else {
+                        *run_state = AgentRunState::Idle;
+                        true
+                    }
+                }
+                Err(e) => {
                     *run_state = AgentRunState::Idle;
-                    // Drain queued tasks
-                    drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app);
+                    let _ = app.emit(
+                        "agent-error",
+                        serde_json::json!({ "error": e.to_string() }),
+                    );
+                    true
                 }
             }
-            Err(e) => {
-                *run_state = AgentRunState::Idle;
-                let _ = app.emit(
-                    "agent-error",
-                    serde_json::json!({ "error": e.to_string() }),
-                );
-                drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app);
-            }
+        }; // run_state guard is dropped here
+        if should_drain {
+            drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app);
         }
     });
 
@@ -439,6 +446,12 @@ fn resolve_agent_settings(
                 (readonly_agent_tools(), None, 10)
             }
         }
+        AgentKind::TypstReviewer => {
+            // Typst reviewer gets read tools + typst_compile
+            let mut tools = readonly_agent_tools();
+            tools.push("typst_compile".to_string());
+            (tools, None, 10)
+        }
         // Built-in agents: full tool access, default max_writes
         _ => (default_agent_tools(), None, 10),
     };
@@ -471,6 +484,13 @@ fn drain_queued_tasks(
     // Resolve agent settings for the queued task
     let (allowed_tools, system_prompt_override, max_writes) =
         resolve_agent_settings(&next_task, vault_path);
+
+    // Build font state lazily if this task needs typst_compile
+    let font_state: Option<Arc<FontState>> = if allowed_tools.iter().any(|t| t == "typst_compile") {
+        Some(Arc::new(FontState::new()))
+    } else {
+        None
+    };
 
     // Create new abort/pause channels
     let (abort_tx, abort_rx) = tokio::sync::watch::channel(false);
@@ -522,37 +542,39 @@ fn drain_queued_tasks(
             system_prompt_override,
             max_writes,
             task_id_c,
+            font_state,
         )
         .await;
 
-        let mut run_state = agent_state_c.run_state.lock();
-        match result {
-            Ok(task_result) => {
-                let _ = history::save_agent_run(&chat_db_c, &task_result);
-
-                if task_result.status == AgentStatus::WaitingApproval {
-                    *run_state = AgentRunState::WaitingApproval(task_result);
-                } else {
+        // Drop lock before calling drain to avoid deadlock
+        let should_drain = {
+            let mut run_state = agent_state_c.run_state.lock();
+            match result {
+                Ok(task_result) => {
+                    let _ = history::save_agent_run(&chat_db_c, &task_result);
+                    if task_result.status == AgentStatus::WaitingApproval {
+                        *run_state = AgentRunState::WaitingApproval(task_result);
+                        false
+                    } else {
+                        *run_state = AgentRunState::Idle;
+                        true
+                    }
+                }
+                Err(e) => {
                     *run_state = AgentRunState::Idle;
-                    // Continue draining
-                    drain_queued_tasks(
-                        &agent_state_c, &config_c, &vault_path_c,
-                        &db_c, &read_db_c, &chat_db_c, &app_c,
+                    let _ = app_c.emit(
+                        "agent-error",
+                        serde_json::json!({ "error": e.to_string() }),
                     );
+                    true
                 }
             }
-            Err(e) => {
-                *run_state = AgentRunState::Idle;
-                let _ = app_c.emit(
-                    "agent-error",
-                    serde_json::json!({ "error": e.to_string() }),
-                );
-                // Continue draining even on error
-                drain_queued_tasks(
-                    &agent_state_c, &config_c, &vault_path_c,
-                    &db_c, &read_db_c, &chat_db_c, &app_c,
-                );
-            }
+        }; // run_state guard dropped
+        if should_drain {
+            drain_queued_tasks(
+                &agent_state_c, &config_c, &vault_path_c,
+                &db_c, &read_db_c, &chat_db_c, &app_c,
+            );
         }
     });
 }

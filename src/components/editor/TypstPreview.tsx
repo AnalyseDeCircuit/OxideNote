@@ -11,6 +11,10 @@ import { AlertTriangle, FileWarning, Clock, FileDown } from 'lucide-react';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from '@/hooks/useToast';
 import DOMPurify from 'dompurify';
+import { getEditorView } from '@/lib/editorViewRef';
+import { setDiagnostics, type Diagnostic } from '@codemirror/lint';
+import { EditorSelection } from '@codemirror/state';
+import { useNoteStore } from '@/store/noteStore';
 
 interface TypstPreviewProps {
   /** Vault-relative path of the .typ file being previewed */
@@ -38,6 +42,8 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const lastPathRef = useRef(path);
+  const pagesContainerRef = useRef<HTMLDivElement>(null);
+  const sourceMappingRef = useRef<[number, number][]>([]);
 
   // Compile on path change (debounced to avoid rapid fire during saves)
   const triggerCompile = useCallback(async (filePath: string) => {
@@ -46,6 +52,35 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
     try {
       const res = await compileTypstToSvg(filePath);
       setResult(res);
+      sourceMappingRef.current = res.source_mapping ?? [];
+
+      // Store diagnostics in noteStore for chat context injection
+      useNoteStore.getState().setLastCompileDiagnostics(res.diagnostics);
+
+      // Dispatch diagnostics to CM6 lint layer for inline display
+      const view = getEditorView();
+      if (view && res.diagnostics.length > 0) {
+        const doc = view.state.doc;
+        const cmDiags = res.diagnostics
+          .map((d) => {
+            // Convert 1-based line/column to 0-based offset
+            if (d.line < 1 || d.line > doc.lines) return null;
+            const lineObj = doc.line(d.line);
+            const from = Math.min(lineObj.from + Math.max(0, d.column - 1), lineObj.to);
+            const to = Math.min(from + 1, lineObj.to); // Underline at least 1 char
+            return {
+              from,
+              to,
+              severity: d.severity as Diagnostic['severity'],
+              message: d.message,
+            };
+          })
+          .filter((d): d is Diagnostic => d !== null);
+        view.dispatch(setDiagnostics(view.state, cmDiags));
+      } else if (view) {
+        // Clear diagnostics on successful compile
+        view.dispatch(setDiagnostics(view.state, []));
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -56,6 +91,7 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
   // Recompile when path changes or content is saved (via vault:file-changed)
   useEffect(() => {
     lastPathRef.current = path;
+    let disposed = false;
 
     // Initial compile
     triggerCompile(path);
@@ -73,10 +109,14 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
             }
           }, COMPILE_DEBOUNCE_MS);
         }
-      }).then((fn) => { unlisten = fn; });
+      }).then((fn) => {
+        // If component already unmounted, unregister immediately
+        if (disposed) { fn(); } else { unlisten = fn; }
+      });
     });
 
     return () => {
+      disposed = true;
       if (timerRef.current) clearTimeout(timerRef.current);
       unlisten?.();
     };
@@ -100,6 +140,61 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
       toast({ title: t('typst.exportFailed'), description: String(err), variant: 'error' });
     }
   }, [path, t]);
+
+  // Reverse search: click on a page → jump editor to the corresponding source line
+  const handlePageClick = useCallback((pageIndex: number) => {
+    const mapping = sourceMappingRef.current;
+    if (pageIndex < 0 || pageIndex >= mapping.length) return;
+
+    const [startLine] = mapping[pageIndex];
+    const view = getEditorView();
+    if (!view) return;
+
+    // Jump to the start of the mapped source line (1-based → 0-based)
+    const lineCount = view.state.doc.lines;
+    const targetLine = Math.min(startLine, lineCount);
+    if (targetLine < 1) return;
+
+    const lineObj = view.state.doc.line(targetLine);
+    view.dispatch({
+      selection: EditorSelection.cursor(lineObj.from),
+      scrollIntoView: true,
+    });
+    view.focus();
+  }, []);
+
+  // Forward search: listen to editor cursor changes → scroll preview to matching page
+  // Uses polling with change detection to avoid CM6 listener coupling
+  useEffect(() => {
+    let lastCursorLine = -1;
+
+    const interval = setInterval(() => {
+      const mapping = sourceMappingRef.current;
+      if (mapping.length === 0) return;
+
+      const view = getEditorView();
+      if (!view) return;
+
+      const cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+      // Skip if cursor hasn't moved to a new line
+      if (cursorLine === lastCursorLine) return;
+      lastCursorLine = cursorLine;
+
+      // Find which page contains this source line
+      const pageIndex = mapping.findIndex(
+        ([start, end]) => cursorLine >= start && cursorLine <= end,
+      );
+      if (pageIndex < 0) return;
+
+      // Scroll the corresponding page element into view
+      const container = pagesContainerRef.current;
+      if (!container) return;
+      const pageEl = container.children[pageIndex] as HTMLElement | undefined;
+      pageEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [result]);
 
   return (
     <div
@@ -158,11 +253,13 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
       )}
 
       {/* SVG pages */}
-      <div className="p-4 flex flex-col items-center gap-4">
+      <div ref={pagesContainerRef} className="p-4 flex flex-col items-center gap-4">
         {result?.pages.map((svg, i) => (
           <div
             key={i}
-            className="w-full max-w-[800px] bg-white shadow-md rounded"
+            className="w-full max-w-[800px] bg-white shadow-md rounded cursor-pointer"
+            data-page-index={i}
+            onClick={() => handlePageClick(i)}
             dangerouslySetInnerHTML={{ __html: sanitizeSvg(svg) }}
           />
         ))}

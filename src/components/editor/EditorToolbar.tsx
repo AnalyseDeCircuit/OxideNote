@@ -70,6 +70,10 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
 
+  // Derive file extension from active tab for file-aware AI actions
+  const activeTabPath = useNoteStore((s) => s.activeTabPath);
+  const fileExt = activeTabPath?.split('.').pop() || 'md';
+
   // ── Voice input handler ───────────────────────────────────
   const handleVoiceToggle = useCallback(() => {
     if (isListening) {
@@ -272,8 +276,10 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     const view = viewRef.current;
     if (!view) return;
     const config = useChatStore.getState().config;
-    const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
-    triggerAiTransform(view, instruction, config, noteTitle).catch((err) => {
+    const activePath = useNoteStore.getState().activeTabPath || '';
+    const noteTitle = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+    const fileExt = activePath.split('.').pop() || 'md';
+    triggerAiTransform(view, instruction, config, noteTitle, fileExt).catch((err) => {
       toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
     });
   }, [viewRef, t]);
@@ -414,6 +420,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
               onSuggestTags={handleSuggestTags}
               onSuggestLinks={handleSuggestLinks}
               onClose={() => setAiMenuOpen(false)}
+              fileExt={fileExt}
             />
           )}
         </div>
@@ -494,18 +501,42 @@ const AI_ACTIONS = [
   { key: 'explain', instruction: 'Explain this text in simpler terms' },
 ] as const;
 
+// Academic-specific AI actions for Typst/LaTeX files
+const ACADEMIC_ACTIONS_TYPST = [
+  { key: 'fixErrors', instruction: 'Fix any compilation errors or syntax issues in this Typst code' },
+  { key: 'convertToLatex', instruction: 'Convert this Typst code to equivalent LaTeX syntax' },
+  { key: 'explainFormula', instruction: 'Explain what this mathematical formula or expression does in plain language' },
+  { key: 'simplifyExpression', instruction: 'Algebraically simplify this mathematical expression' },
+] as const;
+
+const ACADEMIC_ACTIONS_LATEX = [
+  { key: 'fixErrors', instruction: 'Fix any compilation errors or syntax issues in this LaTeX code' },
+  { key: 'convertToTypst', instruction: 'Convert this LaTeX code to equivalent Typst syntax' },
+  { key: 'explainFormula', instruction: 'Explain what this mathematical formula or expression does in plain language' },
+  { key: 'simplifyExpression', instruction: 'Algebraically simplify this mathematical expression' },
+] as const;
+
 function AiActionMenu({
   onSelect,
   onSuggestTags,
   onSuggestLinks,
   onClose,
+  fileExt,
 }: {
   onSelect: (instruction: string) => void;
   onSuggestTags: () => void;
   onSuggestLinks: () => void;
   onClose: () => void;
+  fileExt: string;
 }) {
   const { t } = useTranslation();
+
+  // Academic actions based on file type
+  const academicActions = fileExt === 'typ'
+    ? ACADEMIC_ACTIONS_TYPST
+    : fileExt === 'tex'
+      ? ACADEMIC_ACTIONS_LATEX
+      : null;
 
   // Close on click outside
   const menuRef = useRef<HTMLDivElement>(null);
@@ -534,6 +565,22 @@ function AiActionMenu({
           {t(`inlineAi.${action.key}`)}
         </button>
       ))}
+      {/* Academic actions for Typst/LaTeX */}
+      {academicActions && (
+        <>
+          <div className="h-px bg-theme-border my-1 mx-2" />
+          {academicActions.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-sm text-theme-accent hover:bg-theme-hover transition-colors"
+              onClick={() => onSelect(action.instruction)}
+            >
+              {t(`inlineAi.${action.key}`)}
+            </button>
+          ))}
+        </>
+      )}
       {/* Intelligence actions separator */}
       <div className="h-px bg-theme-border my-1 mx-2" />
       <button

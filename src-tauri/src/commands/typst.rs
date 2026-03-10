@@ -68,6 +68,8 @@ pub struct TypstCompileResult {
     pub diagnostics: Vec<TypstDiagnostic>,
     /// Compilation time in milliseconds
     pub compile_time_ms: u64,
+    /// Source mapping: each page maps to (start_line, end_line) in the source (1-based)
+    pub source_mapping: Vec<(usize, usize)>,
 }
 
 // ── Shared font state ───────────────────────────────────────
@@ -301,10 +303,15 @@ pub async fn compile_typst_to_svg(
         let start = Instant::now();
         let world = OxideWorld::new(vault_owned, &path_owned, font_state);
 
-
-
         let warned = typst::compile::<typst::layout::PagedDocument>(&world);
         let elapsed = start.elapsed().as_millis() as u64;
+
+        // Read main source for building source mapping
+        let main_source = world.source(world.main_id).ok();
+        let total_lines = main_source
+            .as_ref()
+            .map(|s| s.text().lines().count().max(1))
+            .unwrap_or(1);
 
         // Collect warnings regardless of success/failure
         let mut all_diagnostics = Vec::new();
@@ -316,6 +323,9 @@ pub async fn compile_typst_to_svg(
 
         match warned.output {
             Ok(document) => {
+                let page_count = document.pages.len().max(1);
+                let source_mapping = build_source_mapping(total_lines, page_count);
+
                 let pages: Vec<String> = document
                     .pages
                     .iter()
@@ -326,6 +336,7 @@ pub async fn compile_typst_to_svg(
                     pages,
                     diagnostics: all_diagnostics,
                     compile_time_ms: elapsed,
+                    source_mapping,
                 }
             }
             Err(errors) => {
@@ -338,6 +349,7 @@ pub async fn compile_typst_to_svg(
                     pages: Vec::new(),
                     diagnostics: all_diagnostics,
                     compile_time_ms: elapsed,
+                    source_mapping: Vec::new(),
                 }
             }
         }
@@ -399,6 +411,137 @@ pub async fn compile_typst_to_pdf(
     Ok(())
 }
 
+/// Maximum content size for inline Typst compilation (64 KB)
+const MAX_INLINE_CONTENT_BYTES: usize = 64 * 1024;
+
+/// Compile inline Typst content (e.g. from ```typst code blocks in Markdown)
+/// and return SVG output. Does not require a file path — content is compiled
+/// as a virtual in-memory document.
+#[tauri::command]
+pub async fn compile_typst_content(
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<TypstCompileResult, TypstError> {
+    if content.len() > MAX_INLINE_CONTENT_BYTES {
+        return Err(TypstError::CompileError(format!(
+            "Inline content exceeds maximum size ({} bytes)",
+            MAX_INLINE_CONTENT_BYTES
+        )));
+    }
+
+    let font_state = state.get_or_init_fonts();
+
+    // Vault root is required for resolving #import paths
+    let vault_path = state.vault_path.read().clone();
+    let root = vault_path.ok_or(TypstError::NoVault)?;
+
+    tokio::task::spawn_blocking(move || {
+        let start = Instant::now();
+
+        // Create a virtual world with an in-memory main source
+        let main_path = "__inline__.typ";
+        let main_id = FileId::new(None, VirtualPath::new(main_path));
+        let world = OxideWorld {
+            root,
+            main_id,
+            library: LazyHash::new(Library::builder().build()),
+            font_state,
+            sources: Mutex::new(HashMap::from([(
+                main_id,
+                Source::new(main_id, content),
+            )])),
+            files: Mutex::new(HashMap::new()),
+        };
+
+        let warned = typst::compile::<typst::layout::PagedDocument>(&world);
+        let elapsed = start.elapsed().as_millis() as u64;
+
+        let mut all_diagnostics = Vec::new();
+        for w in &warned.warnings {
+            if let Some(d) = extract_single_diagnostic(&world, w) {
+                all_diagnostics.push(d);
+            }
+        }
+
+        match warned.output {
+            Ok(document) => {
+                let pages: Vec<String> = document
+                    .pages
+                    .iter()
+                    .map(|page| typst_svg::svg(page))
+                    .collect();
+                TypstCompileResult {
+                    pages,
+                    diagnostics: all_diagnostics,
+                    compile_time_ms: elapsed,
+                    source_mapping: Vec::new(), // inline blocks don't need mapping
+                }
+            }
+            Err(errors) => {
+                for e in &errors {
+                    if let Some(d) = extract_single_diagnostic(&world, e) {
+                        all_diagnostics.push(d);
+                    }
+                }
+                TypstCompileResult {
+                    pages: Vec::new(),
+                    diagnostics: all_diagnostics,
+                    compile_time_ms: elapsed,
+                    source_mapping: Vec::new(),
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| TypstError::CompileError(e.to_string()))
+}
+
+/// Compile a .typ file and return only diagnostics (no SVG/PDF output).
+/// Designed for agent tool usage where we only need error/warning feedback.
+pub async fn compile_diagnostics_only(
+    vault_path: PathBuf,
+    rel_path: String,
+    font_state: Arc<FontState>,
+) -> Result<Vec<TypstDiagnostic>, TypstError> {
+    tokio::task::spawn_blocking(move || {
+        let world = OxideWorld::new(vault_path, &rel_path, font_state);
+        let warned = typst::compile::<typst::layout::PagedDocument>(&world);
+
+        let mut diagnostics = Vec::new();
+        for w in &warned.warnings {
+            if let Some(d) = extract_single_diagnostic(&world, w) {
+                diagnostics.push(d);
+            }
+        }
+        if let Err(errors) = &warned.output {
+            for e in errors {
+                if let Some(d) = extract_single_diagnostic(&world, e) {
+                    diagnostics.push(d);
+                }
+            }
+        }
+        Ok(diagnostics)
+    })
+    .await
+    .map_err(|e| TypstError::CompileError(e.to_string()))?
+}
+
+/// Build a heuristic source-line → page mapping.
+/// Distributes source lines evenly across pages (1-based line numbers).
+fn build_source_mapping(total_lines: usize, page_count: usize) -> Vec<(usize, usize)> {
+    if page_count == 0 || total_lines == 0 {
+        return Vec::new();
+    }
+    let lines_per_page = total_lines as f64 / page_count as f64;
+    (0..page_count)
+        .map(|i| {
+            let start = (i as f64 * lines_per_page).floor() as usize + 1;
+            let end = ((i + 1) as f64 * lines_per_page).ceil() as usize;
+            (start, end.min(total_lines))
+        })
+        .collect()
+}
+
 /// Extract a single diagnostic from a SourceDiagnostic.
 fn extract_single_diagnostic(
     world: &OxideWorld,
@@ -420,4 +563,174 @@ fn extract_single_diagnostic(
         severity: severity.to_string(),
         message: diag.message.to_string(),
     })
+}
+
+// ── BibTeX parsing ──────────────────────────────────────────
+
+/// A parsed BibTeX entry for citation autocomplete
+#[derive(Debug, Clone, Serialize)]
+pub struct BibEntry {
+    /// Citation key (e.g. "knuth1984")
+    pub key: String,
+    /// Entry type (article, book, inproceedings, etc.)
+    pub entry_type: String,
+    /// Title of the work
+    pub title: String,
+    /// Author(s)
+    pub author: String,
+    /// Publication year
+    pub year: String,
+}
+
+/// Scan the vault for .bib files and parse all citation entries.
+/// Returns a flat list of BibEntry from all .bib files found.
+#[tauri::command]
+pub async fn list_bib_entries(
+    state: State<'_, AppState>,
+) -> Result<Vec<BibEntry>, TypstError> {
+    let vault_path = state.vault_path.read().clone();
+    let vault = vault_path.ok_or(TypstError::NoVault)?;
+
+    tokio::task::spawn_blocking(move || {
+        let mut entries = Vec::new();
+
+        // Walk vault directory for .bib files
+        for entry in walkdir::WalkDir::new(&vault)
+            .max_depth(10)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "bib") {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    parse_bib_entries(&content, &mut entries);
+                }
+            }
+        }
+
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| TypstError::CompileError(e.to_string()))?
+}
+
+/// Parse BibTeX entries from raw .bib file content.
+/// Handles nested braces correctly (e.g. `title = {The {LaTeX} Companion}`).
+fn parse_bib_entries(content: &str, out: &mut Vec<BibEntry>) {
+    // Match @type{key, ... } blocks
+    let entry_re = regex::Regex::new(
+        r"(?i)@(\w+)\s*\{\s*([^,\s]+)\s*,"
+    ).expect("valid regex");
+
+    // Match field name before `=`, used to locate field starts
+    let field_name_re = regex::Regex::new(
+        r"(?i)\b(title|author|year)\s*="
+    ).expect("valid regex");
+
+    for entry_match in entry_re.find_iter(content) {
+        let caps = match entry_re.captures(&content[entry_match.start()..]) {
+            Some(c) => c,
+            None => continue,
+        };
+
+        let entry_type = caps[1].to_lowercase();
+        let key = caps[2].to_string();
+
+        // Skip @comment, @preamble, @string pseudo-entries
+        if matches!(entry_type.as_str(), "comment" | "preamble" | "string") {
+            continue;
+        }
+
+        // Find the closing brace for this entry by counting brace depth
+        let start = entry_match.start();
+        let after_key = start + caps[0].len();
+        let mut depth = 1i32;
+        let mut end = after_key;
+        for (i, ch) in content[after_key..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = after_key + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let body = &content[after_key..end];
+
+        let mut title = String::new();
+        let mut author = String::new();
+        let mut year = String::new();
+
+        for field_match in field_name_re.find_iter(body) {
+            let fcaps = match field_name_re.captures(&body[field_match.start()..]) {
+                Some(c) => c,
+                None => continue,
+            };
+            let field_name = fcaps[1].to_lowercase();
+            let after_eq = field_match.start() + fcaps[0].len();
+
+            // Extract the field value using brace-depth counting or quote matching
+            let value = extract_bib_field_value(&body[after_eq..]);
+
+            match field_name.as_str() {
+                "title" => title = value,
+                "author" => author = value,
+                "year" => year = value,
+                _ => {}
+            }
+        }
+
+        out.push(BibEntry {
+            key,
+            entry_type,
+            title,
+            author,
+            year,
+        });
+    }
+}
+
+/// Extract a BibTeX field value from text after the `=` sign.
+/// Handles {nested {braces}}, "quoted strings", and bare numbers.
+fn extract_bib_field_value(text: &str) -> String {
+    let trimmed = text.trim_start();
+
+    if trimmed.starts_with('{') {
+        // Brace-delimited: count depth to handle nesting
+        let mut depth = 0i32;
+        let mut start = 0;
+        let mut end = 0;
+        for (i, ch) in trimmed.char_indices() {
+            match ch {
+                '{' => {
+                    if depth == 0 { start = i + 1; }
+                    depth += 1;
+                }
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        trimmed[start..end].trim().to_string()
+    } else if trimmed.starts_with('"') {
+        // Quote-delimited: find matching close quote
+        let inner = &trimmed[1..];
+        let close = inner.find('"').unwrap_or(inner.len());
+        inner[..close].trim().to_string()
+    } else {
+        // Bare value (e.g. year = 2024) — take until comma/newline/brace
+        let end = trimmed.find(|c: char| c == ',' || c == '}' || c == '\n')
+            .unwrap_or(trimmed.len());
+        trimmed[..end].trim().to_string()
+    }
 }

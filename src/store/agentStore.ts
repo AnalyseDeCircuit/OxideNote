@@ -61,6 +61,9 @@ interface AgentState {
   proposedChanges: ProposedChange[];
   summary: string | null;
 
+  // Queue
+  queueCount: number;
+
   // History
   history: AgentRunSummary[];
 
@@ -94,6 +97,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   progress: '',
   proposedChanges: [],
   summary: null,
+  queueCount: 0,
   history: [],
   customAgents: [],
   _listenersInitialized: false,
@@ -227,6 +231,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           pauseRequested: false,
           currentTaskId: resp.task_id,
           status: 'executing',
+          queueCount: resp.queue_count,
         });
       } else if (resp.state === 'paused') {
         set({
@@ -234,6 +239,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           pauseRequested: false,
           currentTaskId: resp.task_id,
           status: 'paused',
+          queueCount: resp.queue_count,
         });
       } else if (resp.state === 'waiting_approval' && resp.result) {
         set({
@@ -244,9 +250,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           planSteps: resp.result.plan_steps,
           proposedChanges: resp.result.proposed_changes,
           summary: resp.result.summary,
+          queueCount: resp.queue_count,
         });
       } else {
-        set({ isRunning: false, pauseRequested: false, currentTaskId: null, status: null });
+        set({ isRunning: false, pauseRequested: false, currentTaskId: null, status: null, queueCount: resp.queue_count });
       }
     } catch (e) {
       console.warn('Fetch agent status failed:', e);

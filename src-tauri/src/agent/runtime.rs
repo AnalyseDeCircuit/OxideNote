@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::context::build_agent_context;
 use super::tools::execute_tool;
+use crate::commands::typst::FontState;
 use super::types::*;
 use crate::llm::client::{call_llm_complete, LlmError};
 use crate::llm::function_calling::build_vault_tool_schemas;
@@ -150,6 +151,7 @@ pub async fn run_agent(
     system_prompt_override: Option<String>,
     max_writes: u8,
     task_id: String,
+    font_state: Option<Arc<FontState>>,
 ) -> Result<TaskResult, AgentError> {
     let started_at = Utc::now();
     let mut total_usage = TokenUsage::default();
@@ -162,7 +164,7 @@ pub async fn run_agent(
 
     // Phase 2: Planning — ask LLM to produce a plan
     let system_prompt = system_prompt_override
-        .unwrap_or_else(|| build_system_prompt(&task, &context.vault_summary));
+        .unwrap_or_else(|| build_system_prompt(&task, &context.vault_summary, &allowed_tools));
 
     let plan_messages = vec![
         ChatMessage {
@@ -268,6 +270,7 @@ pub async fn run_agent(
                 task.auto_apply,
                 &db,
                 max_writes,
+                font_state.clone(),
             )
             .await
             {
@@ -351,7 +354,7 @@ pub async fn run_agent(
 // ── Prompt builders ─────────────────────────────────────────
 
 /// Build the system prompt for the agent
-fn build_system_prompt(task: &AgentTask, vault_summary: &str) -> String {
+fn build_system_prompt(task: &AgentTask, vault_summary: &str, allowed_tools: &[String]) -> String {
     let agent_instruction = match &task.kind {
         AgentKind::DuplicateDetector => {
             "Find semantically similar or duplicate notes and suggest merges. \
@@ -373,22 +376,40 @@ fn build_system_prompt(task: &AgentTask, vault_summary: &str) -> String {
             "Analyze the knowledge graph. Find orphan notes (no links), dead links, \
              hub overload (>30 outlinks), and cluster isolation. Suggest link improvements."
         }
+        AgentKind::TypstReviewer => {
+            "Review and validate Typst (.typ) documents in the vault. \
+             Use typst_compile to check for compilation errors and warnings. \
+             Suggest fixes for any issues found. Check document structure, \
+             missing imports, and formatting problems."
+        }
         AgentKind::Custom(_) => {
             // Custom agents provide their own system prompt via override
             "Execute the user-defined task as instructed."
         }
     };
 
+    // Build tool descriptions dynamically based on allowed_tools
+    let all_tool_entries = [
+        ("vault_read", "vault_read(path): Read note content"),
+        ("vault_search", "vault_search(query): Search notes by keyword"),
+        ("vault_list", "vault_list(folder?, filter?): List notes"),
+        ("vault_link", "vault_link(path): Get backlinks/outlinks"),
+        ("vault_write", "vault_write(path, content): Write/modify note"),
+        ("typst_compile", "typst_compile(path): Compile .typ file, return diagnostics"),
+    ];
+    let tool_list: String = all_tool_entries
+        .iter()
+        .filter(|(name, _)| allowed_tools.iter().any(|t| t == name))
+        .map(|(_, desc)| format!("- {}", desc))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     format!(
         "You are an intelligent note organization agent for a Markdown knowledge vault.\n\n\
          VAULT CONTEXT:\n{vault_summary}\n\n\
          YOUR TASK: {agent_instruction}\n\n\
          AVAILABLE TOOLS:\n\
-         - vault_read(path): Read note content\n\
-         - vault_search(query): Search notes by keyword\n\
-         - vault_list(folder?, filter?): List notes\n\
-         - vault_link(path): Get backlinks/outlinks\n\
-         - vault_write(path, content): Write/modify note\n\n\
+         {tool_list}\n\n\
          RULES:\n\
          1. Always use WikiLinks ([[note-name]]) when referencing notes\n\
          2. Preserve existing frontmatter when modifying notes\n\

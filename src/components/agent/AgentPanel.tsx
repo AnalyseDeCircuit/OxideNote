@@ -37,6 +37,7 @@ const BUILTIN_AGENTS: { kind: AgentKind; labelKey: string }[] = [
   { kind: 'duplicate_detector', labelKey: 'agent.duplicateDetector' },
   { kind: 'index_generator',    labelKey: 'agent.indexGenerator' },
   { kind: 'graph_maintainer',   labelKey: 'agent.graphMaintainer' },
+  { kind: 'typst_reviewer',     labelKey: 'agent.typstReviewer' },
 ];
 
 // ── Scope options ───────────────────────────────────────────
@@ -63,6 +64,7 @@ export function AgentPanel() {
   const proposedChanges = useAgentStore((s) => s.proposedChanges);
   const summary = useAgentStore((s) => s.summary);
   const history = useAgentStore((s) => s.history);
+  const queueCount = useAgentStore((s) => s.queueCount);
   const customAgents = useAgentStore((s) => s.customAgents);
   const runAgent = useAgentStore((s) => s.runAgent);
   const abortAgent = useAgentStore((s) => s.abortAgent);
@@ -140,6 +142,11 @@ export function AgentPanel() {
         {isRunning && status && (
           <span className="text-xs text-muted-foreground animate-pulse">
             {t(STATUS_I18N[status])}
+          </span>
+        )}
+        {queueCount > 0 && (
+          <span className="text-xs px-1.5 py-0.5 rounded-full bg-theme-accent/15 text-theme-accent">
+            {t('agent.queueCount', { count: queueCount })}
           </span>
         )}
       </div>

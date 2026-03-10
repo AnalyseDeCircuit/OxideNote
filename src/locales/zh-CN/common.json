@@ -703,6 +703,8 @@
     "indexGenerator": "索引生成",
     "dailyReview": "每日回顾",
     "graphMaintainer": "图谱维护",
+    "typstReviewer": "Typst 审查",
+    "queueCount": "{{count}} 个排队中",
     "custom": "自定义智能体",
     "scope": {
       "currentNote": "当前笔记",
@@ -754,6 +756,11 @@
     "generateTags": "AI 生成标签",
     "flashcards": "AI 提取闪卡",
     "aiMenu": "AI 操作",
+    "fixErrors": "修复错误",
+    "convertToLatex": "转换为 LaTeX",
+    "convertToTypst": "转换为 Typst",
+    "explainFormula": "解释公式",
+    "simplifyExpression": "化简表达式",
     "customPlaceholder": "输入自定义指令..."
   },
   "noteAi": {
@@ -796,8 +803,29 @@
       "preference": "偏好",
       "style": "风格",
       "context": "上下文",
-      "instruction": "指令"
+      "instruction": "指令",
+      "typst": "Typst",
+      "latex": "LaTeX"
     }
+  },
+  "scheduler": {
+    "title": "定时任务",
+    "enabled": "启用定时调度",
+    "enabledHint": "自动在指定时间运行智能体任务",
+    "dailyReview": "每日回顾",
+    "hour": "执行时间",
+    "hourHint": "每天几点运行（24小时制）",
+    "outputFolder": "输出文件夹",
+    "template": "回顾模板",
+    "templateSummary": "摘要",
+    "templateHighlights": "要点",
+    "templateFull": "完整",
+    "graphMaintenance": "图谱维护",
+    "interval": "执行间隔（小时）",
+    "intervalHint": "每隔多少小时运行一次",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "定时配置已保存"
   },
   "typst": {
     "compiling": "编译中…",

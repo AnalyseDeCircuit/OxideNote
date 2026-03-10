@@ -302,6 +302,7 @@ export async function triggerAiTransform(
   instruction: string,
   config: ChatConfig,
   noteTitle: string,
+  fileExt: string = 'md',
 ): Promise<void> {
   const { from, to } = view.state.selection.main;
   if (from === to) return; // No selection
@@ -317,7 +318,7 @@ export async function triggerAiTransform(
   view.dispatch({ effects: setAiLoading.of(true) });
 
   try {
-    const result = await inlineAiTransform(selectedText, instruction, context, noteTitle, config);
+    const result = await inlineAiTransform(selectedText, instruction, context, noteTitle, fileExt, config);
     view.dispatch({
       effects: setAiResult.of({
         from,

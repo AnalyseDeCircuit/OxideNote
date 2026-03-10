@@ -40,15 +40,28 @@ impl From<LlmError> for InlineAiError {
 
 // ── System prompts ──────────────────────────────────────────
 
-/// System prompt for text transformation operations
-fn transform_system_prompt() -> String {
-    "You are a concise writing assistant embedded in a Markdown editor. \
+/// System prompt for text transformation operations.
+/// Adapts to file type when a non-empty extension is provided.
+fn transform_system_prompt(file_ext: &str) -> String {
+    let base = "You are a concise writing assistant embedded in a Markdown editor. \
      The user will provide a text selection and an instruction. \
      Apply the instruction to the text and return ONLY the transformed result. \
-     Do NOT include explanations, preamble, or markdown code fences around the result. \
-     Preserve the original Markdown formatting style (headings, lists, links, etc.) \
-     unless the instruction explicitly asks to change it."
-        .to_string()
+     Do NOT include explanations, preamble, or markdown code fences around the result.";
+
+    match file_ext {
+        "typ" => format!(
+            "{base} The file is Typst. Preserve Typst syntax (#set, #show, $ math $, \
+             #import, etc.). When converting from LaTeX, use equivalent Typst constructs."
+        ),
+        "tex" => format!(
+            "{base} The file is LaTeX. Preserve LaTeX commands (\\section, \\begin, \
+             \\usepackage, $ math $, etc.). When converting from Typst, use equivalent LaTeX."
+        ),
+        _ => format!(
+            "{base} Preserve the original Markdown formatting style (headings, lists, links, etc.) \
+             unless the instruction explicitly asks to change it."
+        ),
+    }
 }
 
 /// System prompt for text continuation
@@ -74,6 +87,7 @@ pub async fn inline_ai_transform(
     instruction: String,
     context: String,
     note_title: String,
+    file_ext: String,
     config: ChatConfig,
     _state: State<'_, AppState>,
 ) -> Result<String, InlineAiError> {
@@ -81,7 +95,7 @@ pub async fn inline_ai_transform(
 
     let mut messages = vec![ChatMessage {
         role: "system".into(),
-        content: transform_system_prompt(),
+        content: transform_system_prompt(&file_ext),
         reasoning: None,
         images: None,
     }];
@@ -394,4 +408,80 @@ pub async fn suggest_links(
         }
     }
     Ok(vec![])
+}
+
+// ── Memory Extraction ───────────────────────────────────────
+
+/// System prompt for extracting memorable facts from a conversation.
+fn extract_memories_system_prompt() -> String {
+    "You are a memory extraction assistant for a knowledge-base AI. \
+     Analyze the conversation and extract key user preferences, writing style notes, \
+     important facts, or recurring instructions that should be remembered across sessions. \
+     Only extract genuinely useful, persistent preferences — not ephemeral details. \
+     Return a JSON array of objects with \"content\" and \"category\" fields. \
+     Categories: general, preference, style, context, instruction, typst, latex. \
+     If nothing worth remembering is found, return an empty array []. \
+     Example: [{\"content\": \"user prefers bullet points over paragraphs\", \"category\": \"style\"}, \
+     {\"content\": \"user writes academic papers in Typst\", \"category\": \"typst\"}]"
+        .to_string()
+}
+
+/// Extract memorable facts from a chat conversation.
+///
+/// Called when switching away from or ending a session with enough messages.
+/// Returns a list of {content, category} objects parsed from LLM output.
+#[tauri::command]
+pub async fn extract_memories(
+    conversation: String,
+    config: ChatConfig,
+    _state: State<'_, AppState>,
+) -> Result<Vec<MemoryExtract>, InlineAiError> {
+    let (_, mut abort_rx) = watch::channel(false);
+
+    // Truncate conversation to stay within context window
+    const MAX_CHARS: usize = 6000;
+    let trimmed = if conversation.len() > MAX_CHARS {
+        &conversation[..conversation.floor_char_boundary(MAX_CHARS)]
+    } else {
+        &conversation
+    };
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".into(),
+            content: extract_memories_system_prompt(),
+            reasoning: None,
+            images: None,
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: format!("Extract memorable facts from this conversation:\n\n{trimmed}"),
+            reasoning: None,
+            images: None,
+        },
+    ];
+
+    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+
+    let raw = response.content.trim();
+    // Try parsing directly
+    if let Ok(memories) = serde_json::from_str::<Vec<MemoryExtract>>(raw) {
+        return Ok(memories);
+    }
+    // Try extracting from code block
+    if let Some(start) = raw.find('[') {
+        if let Some(end) = raw.rfind(']') {
+            if let Ok(memories) = serde_json::from_str::<Vec<MemoryExtract>>(&raw[start..=end]) {
+                return Ok(memories);
+            }
+        }
+    }
+    Ok(vec![])
+}
+
+/// A single extracted memory from a conversation.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct MemoryExtract {
+    pub content: String,
+    pub category: String,
 }

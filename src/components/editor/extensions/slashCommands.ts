@@ -86,8 +86,9 @@ export function slashCommandSource(context: CompletionContext): CompletionResult
         view.dispatch({ changes: { from, to, insert: '' } });
 
         const config = useChatStore.getState().config;
-        const noteTitle = useNoteStore.getState().activeTabPath
-          ?.replace(/\.md$/, '').split('/').pop() || '';
+        const activePath = useNoteStore.getState().activeTabPath || '';
+        const noteTitle = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
+        const fileExt = activePath.split('.').pop() || 'md';
 
         if (cmd.label === 'ai-continue') {
           triggerAiContinue(view, config, noteTitle).catch(console.warn);
@@ -124,7 +125,7 @@ export function slashCommandSource(context: CompletionContext): CompletionResult
                 ? 'Summarize this text into bullet points'
                 : 'Translate this text to the other language (Chinese↔English)';
 
-            triggerAiTransform(view, instruction, config, noteTitle).catch(console.warn);
+            triggerAiTransform(view, instruction, config, noteTitle, fileExt).catch(console.warn);
           }
         }
       },

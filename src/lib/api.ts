@@ -858,6 +858,7 @@ export type AgentKind =
   | 'index_generator'
   | 'daily_review'
   | 'graph_maintainer'
+  | 'typst_reviewer'
   | { custom: string };
 
 export type AgentStatus =
@@ -1011,6 +1012,7 @@ export async function inlineAiTransform(
   instruction: string,
   context: string,
   noteTitle: string,
+  fileExt: string,
   config: ChatConfig,
 ): Promise<string> {
   return invoke<string>('inline_ai_transform', {
@@ -1018,6 +1020,7 @@ export async function inlineAiTransform(
     instruction,
     context,
     noteTitle,
+    fileExt,
     config,
   });
 }
@@ -1064,6 +1067,20 @@ export async function suggestLinks(
   return invoke<string[]>('suggest_links', { content, noteTitle, allTitles, config });
 }
 
+/** A single extracted memory from a conversation. */
+export interface MemoryExtract {
+  content: string;
+  category: string;
+}
+
+/** Extract memorable facts from a chat conversation. */
+export async function extractMemories(
+  conversation: string,
+  config: ChatConfig,
+): Promise<MemoryExtract[]> {
+  return invoke<MemoryExtract[]>('extract_memories', { conversation, config });
+}
+
 // ─── Typst compilation ─────────────────────────────────────
 
 export interface TypstDiagnostic {
@@ -1077,6 +1094,8 @@ export interface TypstCompileResult {
   pages: string[];
   diagnostics: TypstDiagnostic[];
   compile_time_ms: number;
+  /** Page-to-source-line mapping: each entry is [startLine, endLine] (1-based) */
+  source_mapping: [number, number][];
 }
 
 /** Compile a .typ file and return SVG pages with diagnostics */
@@ -1087,4 +1106,24 @@ export async function compileTypstToSvg(path: string): Promise<TypstCompileResul
 /** Compile a .typ file to PDF and write to output path */
 export async function compileTypstToPdf(sourcePath: string, outputPath: string): Promise<void> {
   return invoke<void>('compile_typst_to_pdf', { sourcePath, outputPath });
+}
+
+/** Compile inline Typst content (e.g. code blocks in Markdown) to SVG */
+export async function compileTypstContent(content: string): Promise<TypstCompileResult> {
+  return invoke<TypstCompileResult>('compile_typst_content', { content });
+}
+
+// ── BibTeX ──────────────────────────────────────────────────
+
+export interface BibEntry {
+  key: string;
+  entry_type: string;
+  title: string;
+  author: string;
+  year: string;
+}
+
+/** Scan vault for .bib files and return parsed citation entries */
+export async function listBibEntries(): Promise<BibEntry[]> {
+  return invoke<BibEntry[]>('list_bib_entries');
 }

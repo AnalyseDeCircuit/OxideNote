@@ -16,6 +16,7 @@ pub enum AgentKind {
     IndexGenerator,
     DailyReview,
     GraphMaintainer,
+    TypstReviewer,
     /// User-defined custom agent (name matches the .md filename stem)
     Custom(String),
 }
@@ -28,6 +29,7 @@ impl std::fmt::Display for AgentKind {
             Self::IndexGenerator => write!(f, "index_generator"),
             Self::DailyReview => write!(f, "daily_review"),
             Self::GraphMaintainer => write!(f, "graph_maintainer"),
+            Self::TypstReviewer => write!(f, "typst_reviewer"),
             Self::Custom(name) => write!(f, "custom:{}", name),
         }
     }

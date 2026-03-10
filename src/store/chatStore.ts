@@ -19,6 +19,8 @@ import {
   resetLifetimeTokensDb,
   migrateChatFromJson,
   listAiMemories,
+  addAiMemory,
+  extractMemories,
   type ChatMessage,
   type ChatConfig,
   type ChatProvider,
@@ -719,6 +721,13 @@ export const useChatStore = create<ChatState>()(
     },
 
     switchSession: async (id) => {
+      // Extract memories from the session we're leaving (background, non-blocking)
+      const leavingMessages = get().messages;
+      const leavingConfig = get().config;
+      if (leavingMessages.length >= 4 && leavingConfig.api_key) {
+        extractMemoriesFromConversation(leavingMessages, leavingConfig);
+      }
+
       // Optimistic: show empty while loading
       set({
         currentSessionId: id,
@@ -948,7 +957,13 @@ function defaultSystemPrompt(): string {
 - When suggesting text edits, use <edit file="path"> XML format with <description>, <original>, and <modified> tags
 - Keep suggestions contextual and consistent with the note's style
 - For continuation requests, match the existing writing tone and structure
-- Be concise. Avoid unnecessary preamble.`;
+- Be concise. Avoid unnecessary preamble.
+
+## Academic Writing
+- When the current note is a .typ file, assist with Typst syntax, layout, math, and bibliography
+- When the current note is a .tex file, assist with LaTeX commands, packages, and environments
+- For Typst: use #set, #show, #import, $ math $, etc.
+- For LaTeX: use \\usepackage, \\begin{}, \\end{}, \\section{}, etc.`;
 }
 
 function buildSystemPrompt(
@@ -958,6 +973,20 @@ function buildSystemPrompt(
   let prompt = customPrompt || defaultSystemPrompt();
 
   prompt += `\n\n## Current Note\nTitle: ${ctx.current_note.title}\nPath: ${ctx.current_note.path}\n---\n${ctx.current_note.content}\n---`;
+
+  // Inject academic syntax reference when editing Typst or LaTeX files
+  const notePath = ctx.current_note.path.toLowerCase();
+  if (notePath.endsWith('.typ')) {
+    prompt += '\n\n## Typst Quick Reference\nCommon syntax: #set text(size: 12pt), #show heading: set text(blue), #import "file.typ", $ x^2 $, #figure(image("img.png")), #bibliography("refs.bib"), #cite(<key>), #table(columns: 3, ..), #enum / #list.';
+    // Include last compile diagnostics if available
+    const diags = useNoteStore.getState().lastCompileDiagnostics;
+    if (diags.length > 0) {
+      prompt += '\n\n## Compilation Diagnostics\n' +
+        diags.map((d) => `- [${d.severity}] L${d.line}:${d.column} — ${d.message}`).join('\n');
+    }
+  } else if (notePath.endsWith('.tex')) {
+    prompt += '\n\n## LaTeX Quick Reference\nCommon commands: \\documentclass{article}, \\usepackage{...}, \\begin{document}, \\section{}, \\subsection{}, $ x^2 $, \\begin{figure}, \\includegraphics, \\cite{key}, \\bibliography{refs}, \\begin{table}, \\begin{enumerate/itemize}.';
+  }
 
   if (ctx.backlink_summaries.length > 0) {
     prompt += '\n\n## Related Notes (Backlinks)';
@@ -981,4 +1010,26 @@ function buildSystemPrompt(
   }
 
   return prompt;
+}
+
+// Background helper: extract memorable facts from a chat session when switching away
+async function extractMemoriesFromConversation(
+  messages: ChatMessage[],
+  config: ChatConfig,
+): Promise<void> {
+  try {
+    // Format messages into a flat conversation string (skip system messages)
+    const conversation = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => `[${m.role}]: ${m.content}`)
+      .join('\n');
+
+    const memories = await extractMemories(conversation, config);
+
+    for (const m of memories) {
+      await addAiMemory(m.content, m.category);
+    }
+  } catch {
+    // Silent: this is a background optimization, never interrupt the user
+  }
 }

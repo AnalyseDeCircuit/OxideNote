@@ -13,6 +13,7 @@ use similar::{ChangeTag, TextDiff};
 use walkdir::WalkDir;
 
 use super::types::{ChangeAction, ProposedChange};
+use crate::commands::typst::FontState;
 use crate::indexing::{db, scanner};
 use crate::llm::types::ToolCall;
 
@@ -51,6 +52,7 @@ pub async fn execute_tool(
     auto_apply: bool,
     db: &Arc<Mutex<Option<Connection>>>,
     max_writes: u8,
+    font_state: Option<Arc<FontState>>,
 ) -> Result<String, ToolError> {
     match tool_call.tool.as_str() {
         "vault_read" => tool_vault_read(tool_call, vault_path).await,
@@ -68,6 +70,9 @@ pub async fn execute_tool(
         "vault_write" => {
             tool_vault_write(tool_call, vault_path, pending_writes, auto_apply, db, max_writes)
                 .await
+        }
+        "typst_compile" => {
+            tool_typst_compile(tool_call, vault_path, font_state).await
         }
         _ => Err(ToolError::UnknownTool(tool_call.tool.clone())),
     }
@@ -380,5 +385,51 @@ fn validate_path(vault_path: &Path, rel_path: &str) -> Result<std::path::PathBuf
             return Err(ToolError::AccessDenied(rel_path.into()));
         }
         Ok(full_path)
+    }
+}
+
+// ── typst_compile ───────────────────────────────────────────
+
+/// Compile a .typ file and return diagnostic text for the LLM.
+async fn tool_typst_compile(
+    tool_call: &ToolCall,
+    vault_path: &Path,
+    font_state: Option<Arc<FontState>>,
+) -> Result<String, ToolError> {
+    let rel_path = tool_call
+        .args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::MissingArg("path".into()))?;
+
+    // Validate path is a .typ file and stays inside vault
+    if !rel_path.ends_with(".typ") {
+        return Err(ToolError::Io("path must end with .typ".into()));
+    }
+    let _full = validate_path(vault_path, rel_path)?;
+
+    let fonts = font_state.ok_or_else(|| {
+        ToolError::Io("Typst fonts not available".into())
+    })?;
+
+    let diagnostics = crate::commands::typst::compile_diagnostics_only(
+        vault_path.to_path_buf(),
+        rel_path.to_string(),
+        fonts,
+    )
+    .await
+    .map_err(|e| ToolError::Io(e.to_string()))?;
+
+    if diagnostics.is_empty() {
+        Ok(format!("Compilation successful — no errors or warnings in '{}'", rel_path))
+    } else {
+        let mut output = format!("{} diagnostic(s) in '{}':\n", diagnostics.len(), rel_path);
+        for d in &diagnostics {
+            output.push_str(&format!(
+                "  [{}] line {}:{} — {}\n",
+                d.severity, d.line, d.column, d.message
+            ));
+        }
+        Ok(output)
     }
 }

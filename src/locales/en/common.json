@@ -704,6 +704,8 @@
     "indexGenerator": "Index Generator",
     "dailyReview": "Daily Review",
     "graphMaintainer": "Graph Maintainer",
+    "typstReviewer": "Typst Reviewer",
+    "queueCount": "{{count}} queued",
     "custom": "Custom Agent",
     "scope": {
       "currentNote": "Current Note",
@@ -755,6 +757,11 @@
     "generateTags": "AI Generate Tags",
     "flashcards": "AI Extract Flashcards",
     "aiMenu": "AI Actions",
+    "fixErrors": "Fix Errors",
+    "convertToLatex": "Convert to LaTeX",
+    "convertToTypst": "Convert to Typst",
+    "explainFormula": "Explain Formula",
+    "simplifyExpression": "Simplify Expression",
     "customPlaceholder": "Enter custom instruction..."
   },
   "noteAi": {
@@ -797,8 +804,29 @@
       "preference": "Preference",
       "style": "Style",
       "context": "Context",
-      "instruction": "Instruction"
+      "instruction": "Instruction",
+      "typst": "Typst",
+      "latex": "LaTeX"
     }
+  },
+  "scheduler": {
+    "title": "Scheduled Tasks",
+    "enabled": "Enable Scheduling",
+    "enabledHint": "Automatically run agent tasks at specified times",
+    "dailyReview": "Daily Review",
+    "hour": "Run Time",
+    "hourHint": "Hour of day to run (24-hour format)",
+    "outputFolder": "Output Folder",
+    "template": "Review Template",
+    "templateSummary": "Summary",
+    "templateHighlights": "Highlights",
+    "templateFull": "Full",
+    "graphMaintenance": "Graph Maintenance",
+    "interval": "Interval (hours)",
+    "intervalHint": "How often to run (in hours)",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Scheduler config saved"
   },
   "typst": {
     "compiling": "Compiling…",

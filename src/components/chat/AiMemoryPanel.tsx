@@ -19,7 +19,7 @@ import {
 import { toast } from '@/hooks/useToast';
 
 // Predefined categories for organizing memories
-const CATEGORIES = ['general', 'preference', 'style', 'context', 'instruction'] as const;
+const CATEGORIES = ['general', 'preference', 'style', 'context', 'instruction', 'typst', 'latex'] as const;
 
 interface AiMemoryPanelProps {
   onClose: () => void;

@@ -96,6 +96,20 @@ pub fn build_vault_tool_schemas(allowed_tools: &[String]) -> Vec<ToolSchema> {
                 "required": ["path", "content"]
             }),
         },
+        ToolSchema {
+            name: "typst_compile".into(),
+            description: "Compile a .typ file and return diagnostics (errors/warnings). Use this to validate Typst documents or check for compilation errors.".into(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Vault-relative path to the .typ file"
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
     ];
 
     // Filter to only allowed tools

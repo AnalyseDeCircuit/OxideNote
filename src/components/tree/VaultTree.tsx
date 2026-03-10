@@ -202,6 +202,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
       const note = await readNote(node.path);
       const config = useChatStore.getState().config;
       const noteTitle = node.name.replace(/\.md$/, '');
+      const ext = node.name.split('.').pop() || 'md';
       const instructionMap: Record<string, string> = {
         summarize: 'Summarize this note concisely in bullet points.',
         autoTag: 'Extract relevant tags from this note. Output as a comma-separated list of tags prefixed with #.',
@@ -210,7 +211,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
       };
       const instruction = instructionMap[operation] || operation;
       toast({ title: t('noteAi.processing') });
-      const result = await inlineAiTransform(note.content, instruction, '', noteTitle, config);
+      const result = await inlineAiTransform(note.content, instruction, '', noteTitle, ext, config);
       setAiResult({ result, title: t(`noteAi.${operation}Title`, { name: noteTitle }) });
     } catch (err) {
       toast({ title: t('noteAi.failed'), description: String(err), variant: 'error' });

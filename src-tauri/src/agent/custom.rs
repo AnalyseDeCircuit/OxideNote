@@ -59,6 +59,7 @@ const VALID_TOOLS: &[&str] = &[
     "vault_list",
     "vault_link",
     "vault_write",
+    "typst_compile",
 ];
 
 const VALID_SCOPES: &[&str] = &["current_note", "current_folder", "entire_vault"];

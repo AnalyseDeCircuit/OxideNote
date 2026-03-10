@@ -968,6 +968,20 @@ html {
 }
 .oxide-markdown-preview .mermaid-error { color: var(--theme-text-muted); font-family: var(--font-mono); font-size: 0.85em; }
 
+/* ── Typst code blocks in Markdown ─────────────────────────── */
+.oxide-markdown-preview .typst-block {
+  margin: 1em 0;
+  background: var(--theme-bg-panel);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+}
+.oxide-markdown-preview .typst-block.typst-rendered { text-align: center; }
+.oxide-markdown-preview .typst-block-output svg { max-width: 100%; height: auto; }
+.oxide-markdown-preview .typst-block-error { color: #ef4444; font-family: var(--font-mono); font-size: 0.85em; }
+.oxide-markdown-preview .typst-error-line { margin: 0.25em 0; }
+
 /* ── Audio player ──────────────────────────────────────────── */
 .oxide-markdown-preview .audio-player {
   margin: 0.75em 0;
