@@ -47,6 +47,15 @@ argon2 = "0.5"
 rand = "0.8"
 similar = "2"
 
+# Typst compiler integration — embedded academic document compilation
+typst = "0.14"
+typst-pdf = "0.14"
+typst-svg = "0.14"
+typst-syntax = "0.14"
+comemo = "0.5"
+fontdb = "0.22"
+once_cell = "1"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

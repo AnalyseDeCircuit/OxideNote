@@ -798,5 +798,15 @@
       "context": "上下文",
       "instruction": "指令"
     }
+  },
+  "typst": {
+    "compiling": "编译中…",
+    "compiled": "编译完成 ({{ms}}ms)",
+    "errorCount": "{{count}} 个错误",
+    "warningCount": "{{count}} 个警告",
+    "emptyOutput": "编译未生成输出页面",
+    "exportPdf": "导出 PDF",
+    "exportSuccess": "PDF 导出成功",
+    "exportFailed": "PDF 导出失败"
   }
 }

@@ -15,6 +15,7 @@ import { ConflictDialog } from '@/components/editor/ConflictDialog';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { DatabaseView, isDatabaseNote } from '@/components/database/DatabaseView';
 import { CanvasEditor } from '@/components/canvas/CanvasEditor';
+import { TypstPreview } from './TypstPreview';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -433,6 +434,8 @@ export function NoteEditor() {
   // Dedicated viewers for non-Markdown file types
   const isPdf = activeTabPath?.toLowerCase().endsWith('.pdf');
   const isCanvas = activeTabPath?.toLowerCase().endsWith('.canvas');
+  const isTypst = activeTabPath?.toLowerCase().endsWith('.typ');
+  // Binary/special files bypass CodeMirror entirely; Typst is editable text
   const isSpecialFile = isPdf || isCanvas;
 
   return (
@@ -461,9 +464,14 @@ export function NoteEditor() {
           style={{ height: '100%' }}
         />
 
-        {/* ── 预览区域：数据库视图 or Markdown 预览 ────────── */}
+        {/* ── 预览区域：数据库视图 / Typst 预览 / Markdown 预览 ── */}
         {activeTabPath && showPreview && (
-          isDatabaseNote(previewContent) ? (
+          isTypst ? (
+            <TypstPreview
+              path={activeTabPath}
+              className={showEditor ? 'w-1/2' : 'w-full'}
+            />
+          ) : isDatabaseNote(previewContent) ? (
             <div className={showEditor ? 'w-1/2' : 'w-full'}>
               <DatabaseView content={previewContent} filePath={activeTabPath} />
             </div>

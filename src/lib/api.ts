@@ -1063,3 +1063,28 @@ export async function suggestLinks(
 ): Promise<string[]> {
   return invoke<string[]>('suggest_links', { content, noteTitle, allTitles, config });
 }
+
+// ─── Typst compilation ─────────────────────────────────────
+
+export interface TypstDiagnostic {
+  line: number;
+  column: number;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+export interface TypstCompileResult {
+  pages: string[];
+  diagnostics: TypstDiagnostic[];
+  compile_time_ms: number;
+}
+
+/** Compile a .typ file and return SVG pages with diagnostics */
+export async function compileTypstToSvg(path: string): Promise<TypstCompileResult> {
+  return invoke<TypstCompileResult>('compile_typst_to_svg', { path });
+}
+
+/** Compile a .typ file to PDF and write to output path */
+export async function compileTypstToPdf(sourcePath: string, outputPath: string): Promise<void> {
+  return invoke<void>('compile_typst_to_pdf', { sourcePath, outputPath });
+}

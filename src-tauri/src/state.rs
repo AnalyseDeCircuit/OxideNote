@@ -8,6 +8,7 @@ use parking_lot::{Mutex, RwLock};
 use rusqlite::Connection;
 
 use crate::agent::commands::AgentState;
+use crate::commands::typst::FontState;
 
 /// Global application state shared across Tauri commands.
 pub struct AppState {
@@ -25,6 +26,8 @@ pub struct AppState {
     pub chat_db: Arc<Mutex<Option<Connection>>>,
     /// Agent workflow execution state
     pub agent_state: Arc<AgentState>,
+    /// Cached font state for Typst compilation — built lazily on first compile
+    font_state: once_cell::sync::OnceCell<Arc<FontState>>,
 }
 
 impl AppState {
@@ -37,6 +40,20 @@ impl AppState {
             abort_senders: Arc::new(std::sync::Mutex::new(HashMap::new())),
             chat_db: Arc::new(Mutex::new(None)),
             agent_state: Arc::new(AgentState::new()),
+            font_state: once_cell::sync::OnceCell::new(),
         }
+    }
+
+    /// Get or lazily initialize the shared font state for Typst compilation.
+    /// Font discovery scans system font directories and is cached for the app session.
+    pub fn get_or_init_fonts(&self) -> Arc<FontState> {
+        self.font_state
+            .get_or_init(|| {
+                tracing::info!("Building Typst font book (first compilation)...");
+                let state = FontState::new();
+                tracing::info!("Font book ready");
+                Arc::new(state)
+            })
+            .clone()
     }
 }

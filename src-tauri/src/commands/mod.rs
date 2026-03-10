@@ -16,5 +16,6 @@ pub mod note;
 pub mod search;
 pub mod stats;
 pub mod trash;
+pub mod typst;
 pub mod util;
 pub mod vault;

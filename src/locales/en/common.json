@@ -799,5 +799,15 @@
       "context": "Context",
       "instruction": "Instruction"
     }
+  },
+  "typst": {
+    "compiling": "Compiling…",
+    "compiled": "Compiled ({{ms}}ms)",
+    "errorCount": "{{count}} error(s)",
+    "warningCount": "{{count}} warning(s)",
+    "emptyOutput": "Compilation produced no output pages",
+    "exportPdf": "Export PDF",
+    "exportSuccess": "PDF exported successfully",
+    "exportFailed": "PDF export failed"
   }
 }

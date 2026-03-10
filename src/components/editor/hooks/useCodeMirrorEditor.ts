@@ -20,6 +20,7 @@ import {
   foldKeymap,
 } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { typst as typstLanguage } from 'codemirror-lang-typst';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -49,6 +50,35 @@ const lineHeightCompartment = new Compartment();
 const tabSizeCompartment = new Compartment();
 const wordWrapCompartment = new Compartment();
 const themeCompartment = new Compartment();
+const languageCompartment = new Compartment();
+const markdownExtensionsCompartment = new Compartment();
+
+/** Check if a file path refers to a Typst source file */
+function isTypstFile(path: string | null): boolean {
+  return path?.toLowerCase().endsWith('.typ') ?? false;
+}
+
+/** Determine the CM6 language extension based on the file path. */
+function languageForPath(path: string | null) {
+  if (isTypstFile(path)) {
+    return typstLanguage();
+  }
+  return markdown({ base: markdownLanguage });
+}
+
+/** Markdown-specific extensions (wikilinks, block refs, completions) — disabled for Typst */
+function markdownExtensionsForPath(
+  path: string | null,
+  onNavigate: React.RefObject<((target: string) => void) | undefined>,
+  getCurrentPath: () => string,
+) {
+  if (isTypstFile(path)) return [];
+  return [
+    wikilinkExtension((target) => onNavigate.current?.(target)),
+    blockRefExtension(getCurrentPath),
+    aiInlineExtension(),
+  ];
+}
 
 function makeFontSizeTheme(size: number) {
   return EditorView.theme({
@@ -206,22 +236,22 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         bracketMatching(),
         closeBrackets(),
         autocompletion({
-          override: [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
+          override: isTypstFile(activeTabPath)
+            ? []
+            : [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
         }),
         EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
         highlightSelectionMatches(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 
-        // Markdown
-        markdown({ base: markdownLanguage }),
+        // Language — dynamically resolved per file type
+        languageCompartment.of(languageForPath(activeTabPath)),
 
-        // WikiLink decoration + Cmd/Ctrl+click navigation
-        wikilinkExtension((target) => onNavigateRef.current?.(target)),
-        blockRefExtension(() => currentNotePathRef.current),
-
-        // Inline AI (ghost text, transform preview, accept/reject keybindings)
-        aiInlineExtension(),
+        // Markdown-specific extensions — disabled for Typst files
+        markdownExtensionsCompartment.of(
+          markdownExtensionsForPath(activeTabPath, onNavigateRef, () => currentNotePathRef.current)
+        ),
 
         // Theme
         themeCompartment.of(makeOxideTheme(isDarkTheme())),
@@ -341,6 +371,25 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
       });
     }
   }, [options.wordWrap]);
+
+  // Reconfigure language and markdown-specific extensions when switching file types
+  const prevIsTypstRef = useRef(isTypstFile(activeTabPath));
+  useEffect(() => {
+    if (!viewRef.current) return;
+    const nowTypst = isTypstFile(activeTabPath);
+    // Only reconfigure if the language type actually changed
+    if (nowTypst !== prevIsTypstRef.current) {
+      prevIsTypstRef.current = nowTypst;
+      viewRef.current.dispatch({
+        effects: [
+          languageCompartment.reconfigure(languageForPath(activeTabPath)),
+          markdownExtensionsCompartment.reconfigure(
+            markdownExtensionsForPath(activeTabPath, onNavigateRef, () => currentNotePathRef.current)
+          ),
+        ],
+      });
+    }
+  }, [activeTabPath]);
 
   // Method to set content programmatically (e.g., when loading a different note)
   const setContent = useCallback((content: string) => {
