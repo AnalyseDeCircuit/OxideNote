@@ -75,3 +75,12 @@ pub enum PathValidationError {
     AccessDenied,
     Io(String),
 }
+
+impl std::fmt::Display for PathValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PathValidationError::AccessDenied => write!(f, "Access denied: path is outside vault"),
+            PathValidationError::Io(msg) => write!(f, "IO error: {}", msg),
+        }
+    }
+}

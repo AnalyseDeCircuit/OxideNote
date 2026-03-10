@@ -138,7 +138,10 @@ pub async fn reindex_note(
 ) -> Result<(), SearchError> {
     let vault_path = state.vault_path.read().clone();
     let vault = vault_path.as_ref().ok_or(SearchError::NoVault)?;
-    let file_path = vault.join(&path);
+
+    // Validate path is within vault boundary to prevent directory traversal
+    let file_path = crate::commands::util::validate_path_inside_vault(vault, &path)
+        .map_err(|e| SearchError::Internal(format!("Path validation failed: {}", e)))?;
 
     let db_guard = state.db.lock();
     let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
@@ -178,7 +181,7 @@ pub async fn get_graph_data(
             })
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
 
     // Path set for filtering valid edges
@@ -216,7 +219,7 @@ pub async fn get_graph_data(
             })
         })
         .map_err(|e| SearchError::Internal(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         // Keep only edges where both endpoints exist (path → stem → alias)
         .filter_map(|mut link| {
             if !node_ids.contains(link.source.as_str()) {
@@ -275,7 +278,7 @@ pub async fn get_graph_data(
                 })
             })
             .map_err(|e| SearchError::Internal(e.to_string()))?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
             .collect();
 
         // Add edge from note → its block (containment)
@@ -315,7 +318,7 @@ pub async fn get_graph_data(
                 })
             })
             .map_err(|e| SearchError::Internal(e.to_string()))?
-            .filter_map(|r| r.ok())
+            .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
             .filter(|link| {
                 node_ids.contains(link.source.as_str())
                     && block_node_ids.contains(link.target.as_str())
@@ -454,16 +457,21 @@ static TASK_PRIORITY_RE: LazyLock<regex::Regex> =
 
 /// Scan all vault .md files for task checkbox items (- [ ] / - [x]).
 /// Extracts inline metadata: `@YYYY-MM-DD` for due dates, `!high/medium/low` for priority.
+/// Runs on a blocking thread to avoid stalling the async runtime during large vault scans.
 #[tauri::command]
 pub async fn list_tasks(
     state: State<'_, AppState>,
 ) -> Result<Vec<TaskItem>, SearchError> {
     let vault_path = state.vault_path.read().clone();
-    let vault = vault_path.as_ref().ok_or(SearchError::NoVault)?;
+    let vault = vault_path.as_ref().ok_or(SearchError::NoVault)?.clone();
 
-    let mut tasks = Vec::new();
-    collect_tasks(vault, vault, &mut tasks)?;
-    Ok(tasks)
+    tokio::task::spawn_blocking(move || {
+        let mut tasks = Vec::new();
+        collect_tasks(&vault, &vault, &mut tasks)?;
+        Ok(tasks)
+    })
+    .await
+    .map_err(|e| SearchError::Internal(e.to_string()))?
 }
 
 /// Recursively walk a directory and extract task items from .md files.

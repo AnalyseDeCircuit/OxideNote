@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::state::AppState;
+use crate::commands::util::{validate_path_inside_vault, PathValidationError};
 
 // ── Error type ──────────────────────────────────────────────
 
@@ -30,6 +31,15 @@ pub enum TrashError {
 impl Serialize for TrashError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
+    }
+}
+
+impl From<PathValidationError> for TrashError {
+    fn from(e: PathValidationError) -> Self {
+        match e {
+            PathValidationError::AccessDenied => TrashError::AccessDenied,
+            PathValidationError::Io(msg) => TrashError::Io(msg),
+        }
     }
 }
 
@@ -84,22 +94,7 @@ fn write_manifest(vault: &Path, entries: &[TrashEntry]) -> Result<(), TrashError
 }
 
 fn validate_inside_vault(base: &Path, rel_path: &str) -> Result<PathBuf, TrashError> {
-    let full_path = base.join(rel_path);
-    let canonical_base = base
-        .canonicalize()
-        .map_err(|e| TrashError::Io(e.to_string()))?;
-
-    if full_path.exists() {
-        let canonical = full_path
-            .canonicalize()
-            .map_err(|e| TrashError::Io(e.to_string()))?;
-        if !canonical.starts_with(&canonical_base) {
-            return Err(TrashError::AccessDenied);
-        }
-        Ok(canonical)
-    } else {
-        Ok(full_path)
-    }
+    validate_path_inside_vault(base, rel_path).map_err(TrashError::from)
 }
 
 fn now_ms() -> i64 {

@@ -195,6 +195,9 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('search.globalSearch')}
     >
       <div
         className="w-[600px] rounded-lg border border-theme-border bg-surface shadow-2xl overflow-hidden"

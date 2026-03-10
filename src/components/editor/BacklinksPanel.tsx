@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { getBacklinks, getBlockBacklinks, suggestLinks, getGraphData, type BacklinkResult } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { useChatStore } from '@/store/chatStore';
@@ -23,6 +24,15 @@ export function BacklinksPanel() {
   const [backlinks, setBacklinks] = useState<BacklinkResult[]>([]);
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation();
+
+  // Refresh backlinks when vault files change (e.g. a new link is added)
+  const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    const unlisten = listen('vault:file-changed', () => {
+      setRefreshKey((k) => k + 1);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   // Potential links state
   const [potentialLinks, setPotentialLinks] = useState<string[]>([]);
@@ -63,7 +73,7 @@ export function BacklinksPanel() {
       });
 
     return () => { cancelled = true; };
-  }, [activeTabPath, blockId]);
+  }, [activeTabPath, blockId, refreshKey]);
 
   const openNote = useNoteStore((s) => s.openNote);
 

@@ -36,7 +36,8 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { listTree } from '@/lib/api';
+import { listTree, readNote } from '@/lib/api';
+import { useNoteStore } from '@/store/noteStore';
 import { initPreviewCacheInvalidation } from '@/lib/previewCache';
 import { useTranslation } from 'react-i18next';
 
@@ -92,6 +93,16 @@ export function AppShell() {
         useWorkspaceStore.getState().setTree(tree);
       } catch {
         // ignore
+      }
+
+      // Validate persisted tabs — remove any whose files no longer exist
+      const tabs = useNoteStore.getState().openTabs;
+      for (const tab of tabs) {
+        try {
+          await readNote(tab.path);
+        } catch {
+          useNoteStore.getState().closeTab(tab.path);
+        }
       }
     });
     return () => { unlisten.then((fn) => fn()); };

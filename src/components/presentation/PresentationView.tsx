@@ -129,14 +129,14 @@ export function PresentationView({ onClose }: PresentationViewProps) {
           }}
           className="px-3 py-1 text-xs rounded bg-theme-hover text-muted-foreground hover:text-foreground transition-colors"
         >
-          {t('presentation.exit', 'ESC')}
+          {t('presentation.exit')}
         </button>
       </div>
 
       {/* ── Navigation hints (fade on hover) ─────────────── */}
       {totalSlides > 1 && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-muted-foreground/50 select-none">
-          ← → {t('presentation.navigate', '切换幻灯片')}
+          ← → {t('presentation.navigate')}
         </div>
       )}
     </div>

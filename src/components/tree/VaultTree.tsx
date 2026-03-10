@@ -762,7 +762,7 @@ function TemplateSubMenu({ parentPath, onCreated }: { parentPath: string; onCrea
     <ContextMenuSub>
       <ContextMenuSubTrigger>
         <Plus size={14} className="mr-2" />
-        {t('sidebar.newFromTemplate', '从模板创建')}
+        {t('sidebar.newFromTemplate')}
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
         {templates.map((tmpl, i) => (

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export interface Tab {
   path: string;
@@ -89,7 +90,9 @@ interface NoteState {
   setLastCompileDiagnostics: (diags: CompileDiagnostic[]) => void;
 }
 
-export const useNoteStore = create<NoteState>((set, get) => ({
+export const useNoteStore = create<NoteState>()(
+  persist(
+    (set, get) => ({
   openTabs: [],
   activeTabPath: null,
   conflicts: {},
@@ -238,4 +241,17 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       tabs.sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
       return { openTabs: tabs };
     }),
-}));
+    }),
+    {
+      name: 'oxidenote-tabs',
+      // Only persist tab-related data, not transient editor state
+      partialize: (state) => ({
+        openTabs: state.openTabs.map((tab) => ({
+          ...tab,
+          isDirty: false, // Never persist dirty state
+        })),
+        activeTabPath: state.activeTabPath,
+      }),
+    },
+  )
+);

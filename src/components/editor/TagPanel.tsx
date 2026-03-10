@@ -136,7 +136,7 @@ export function TagPanel() {
           onClick={handleBack}
         >
           <ChevronLeft size={14} />
-          <span className="text-xs">{t('tags.backToAll', '所有标签')}</span>
+          <span className="text-xs">{t('tags.backToAll')}</span>
         </button>
         <h3 className="text-xs font-medium text-muted-foreground mb-2">
           #{selectedTag} ({notes.length})
@@ -158,9 +158,9 @@ export function TagPanel() {
 
   return (
     <div className="p-3 text-sm">
-      <h3 className="text-xs font-medium text-muted-foreground mb-2">{t('tags.title', '标签')}</h3>
+      <h3 className="text-xs font-medium text-muted-foreground mb-2">{t('tags.title')}</h3>
       {tags.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{t('tags.empty', '暂无标签')}</p>
+        <p className="text-xs text-muted-foreground">{t('tags.empty')}</p>
       ) : (
         <div className="space-y-0.5">
           {tagTree.map((node) => renderNode(node, 0))}

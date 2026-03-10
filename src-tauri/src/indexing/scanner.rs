@@ -52,6 +52,7 @@ pub fn scan_vault(vault_path: &Path, conn: &Connection) -> Result<(), String> {
 }
 
 /// Inner indexing logic without transaction — caller manages the tx.
+/// Reads file content from disk internally.
 pub fn index_single_file_raw(
     vault_path: &Path,
     file_path: &Path,
@@ -59,6 +60,27 @@ pub fn index_single_file_raw(
 ) -> Result<(), String> {
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| e.to_string())?;
+
+    let modified_at = std::fs::metadata(file_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(|t| {
+            let dt: chrono::DateTime<chrono::Local> = t.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        });
+
+    index_with_content(vault_path, file_path, &content, modified_at.as_deref(), conn)
+}
+
+/// Index a file using pre-read content. Useful when the caller has already
+/// read the file outside a database lock to minimize lock hold time.
+pub fn index_with_content(
+    vault_path: &Path,
+    file_path: &Path,
+    content: &str,
+    modified_at: Option<&str>,
+    conn: &Connection,
+) -> Result<(), String> {
 
     let rel_path = file_path
         .strip_prefix(vault_path)
@@ -71,16 +93,8 @@ pub fn index_single_file_raw(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let parsed = parse_note(&content, &file_name);
-    let (blocks, block_refs) = parse_blocks(&content);
-
-    let modified_at = std::fs::metadata(file_path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map(|t| {
-            let dt: chrono::DateTime<chrono::Local> = t.into();
-            dt.format("%Y-%m-%d %H:%M:%S").to_string()
-        });
+    let parsed = parse_note(content, &file_name);
+    let (blocks, block_refs) = parse_blocks(content);
 
     db::upsert_note_raw(
         conn,
@@ -88,7 +102,7 @@ pub fn index_single_file_raw(
         &parsed.title,
         &parsed.content,
         parsed.created_at.as_deref(),
-        modified_at.as_deref(),
+        modified_at,
         parsed.frontmatter_json.as_deref(),
         &parsed.tags,
         &parsed.links,
@@ -154,4 +168,34 @@ pub fn remove_from_index(
         .to_string();
 
     db::delete_note(conn, &rel_path).map_err(|e| e.to_string())
+}
+
+/// Recursively index all supported note files in a directory.
+/// Skips hidden directories and non-note files.
+pub fn scan_directory(
+    vault_path: &Path,
+    dir: &Path,
+    conn: &Connection,
+) -> Result<(), String> {
+    for entry in WalkDir::new(dir)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            !name.starts_with('.') && name != "node_modules"
+        })
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !crate::commands::util::is_supported_extension(ext) {
+            continue;
+        }
+        if let Err(e) = index_single_file(vault_path, path, conn) {
+            tracing::warn!("Failed to index {}: {}", path.display(), e);
+        }
+    }
+    Ok(())
 }

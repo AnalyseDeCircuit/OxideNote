@@ -23,7 +23,7 @@ use typst::{Library, LibraryExt, World};
 // Required for chrono NaiveDate/NaiveTime method access
 use chrono::{Datelike, Timelike};
 
-use crate::commands::note::validate_inside_vault_public;
+use crate::commands::note::validate_inside_vault;
 use crate::state::AppState;
 
 // ── Error type ──────────────────────────────────────────────
@@ -290,7 +290,7 @@ pub async fn compile_typst_to_svg(
 
     // Validate path stays inside vault
     let _full_path =
-        validate_inside_vault_public(vault, &path).map_err(|_| TypstError::AccessDenied)?;
+        validate_inside_vault(vault, &path).map_err(|_| TypstError::AccessDenied)?;
 
     // Initialize font state lazily (cached in AppState for reuse)
     let font_state = state.get_or_init_fonts();
@@ -372,7 +372,7 @@ pub async fn compile_typst_to_pdf(
 
     // Validate source stays inside vault
     let _full =
-        validate_inside_vault_public(vault, &source_path).map_err(|_| TypstError::AccessDenied)?;
+        validate_inside_vault(vault, &source_path).map_err(|_| TypstError::AccessDenied)?;
 
     // Output path validation: ensure it's a .pdf extension to prevent misuse.
     // The output path comes from a native save dialog so the user explicitly chose it.
@@ -787,7 +787,7 @@ pub async fn compile_latex(
     let vault_path = state.vault_path.read().clone();
     let vault = vault_path.as_ref().ok_or(TypstError::NoVault)?;
     let full_path =
-        validate_inside_vault_public(vault, &source_path).map_err(|_| TypstError::AccessDenied)?;
+        validate_inside_vault(vault, &source_path).map_err(|_| TypstError::AccessDenied)?;
 
     // Resolve compiler: use provided, or auto-detect first available
     let compiler_name = compiler.unwrap_or_else(|| "xelatex".to_string());

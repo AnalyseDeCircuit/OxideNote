@@ -265,6 +265,17 @@ useSettingsStore.subscribe(() => {
   persistSettings(useSettingsStore.getState());
 });
 
+// Sanitize user-provided CSS to block dangerous constructs
+function sanitizeCustomCSS(css: string): string {
+  // Strip @import rules (prevents loading external stylesheets)
+  let sanitized = css.replace(/@import\s+[^;]+;/gi, '/* [blocked @import] */');
+  // Strip url() referencing external HTTP resources (data exfiltration risk)
+  sanitized = sanitized.replace(/url\s*\(\s*['"]?https?:\/\//gi, 'url(/* blocked */');
+  // Strip expression() — IE legacy but defense-in-depth
+  sanitized = sanitized.replace(/expression\s*\(/gi, '/* blocked expression */(');
+  return sanitized;
+}
+
 // Custom CSS → inject <style> element
 useSettingsStore.subscribe(
   (state) => state.customCSS,
@@ -276,7 +287,7 @@ useSettingsStore.subscribe(
       el.id = id;
       document.head.appendChild(el);
     }
-    el.textContent = css;
+    el.textContent = sanitizeCustomCSS(css);
   },
   { fireImmediately: true },
 );

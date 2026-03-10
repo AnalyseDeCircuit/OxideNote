@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::state::AppState;
+use crate::commands::util::{validate_path_inside_vault, PathValidationError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum NoteError {
@@ -25,6 +26,15 @@ impl Serialize for NoteError {
     }
 }
 
+impl From<PathValidationError> for NoteError {
+    fn from(e: PathValidationError) -> Self {
+        match e {
+            PathValidationError::AccessDenied => NoteError::AccessDenied,
+            PathValidationError::Io(msg) => NoteError::Io(msg),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteContent {
     pub path: String,
@@ -35,34 +45,9 @@ pub struct NoteContent {
 }
 
 /// Validate that a resolved path is within the vault root.
-/// Returns the canonical full path if valid.
-///
-/// Public variant used by other command modules (e.g. canvas).
-pub fn validate_inside_vault_public(base: &Path, rel_path: &str) -> Result<PathBuf, NoteError> {
-    validate_inside_vault(base, rel_path)
-}
-
-/// Validate that a resolved path is within the vault root.
-/// Returns the canonical full path if valid.
-fn validate_inside_vault(base: &Path, rel_path: &str) -> Result<PathBuf, NoteError> {
-    let full_path = base.join(rel_path);
-    let canonical_base = base.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
-    // For new files that don't exist yet, canonicalize the parent
-    if full_path.exists() {
-        let canonical_target = full_path.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
-        if !canonical_target.starts_with(&canonical_base) {
-            return Err(NoteError::AccessDenied);
-        }
-        Ok(canonical_target)
-    } else {
-        // For paths that don't exist yet, canonicalize the parent dir
-        let parent = full_path.parent().ok_or_else(|| NoteError::Io("Invalid path".into()))?;
-        let canonical_parent = parent.canonicalize().map_err(|e| NoteError::Io(e.to_string()))?;
-        if !canonical_parent.starts_with(&canonical_base) {
-            return Err(NoteError::AccessDenied);
-        }
-        Ok(full_path)
-    }
+/// Delegates to the canonical util implementation, mapping errors to NoteError.
+pub fn validate_inside_vault(base: &Path, rel_path: &str) -> Result<PathBuf, NoteError> {
+    validate_path_inside_vault(base, rel_path).map_err(NoteError::from)
 }
 
 /// Get file modification time as epoch milliseconds.
@@ -332,6 +317,19 @@ pub async fn rename_entry(
     std::fs::rename(&old_full, &new_full)
         .map_err(|e| NoteError::Io(e.to_string()))?;
 
+    // Proactively update index: remove old path, index new path
+    {
+        let db_guard = state.db.lock();
+        if let Some(conn) = db_guard.as_ref() {
+            let _ = crate::indexing::scanner::remove_from_index(base, &old_full, conn);
+            if new_full.is_file() {
+                let _ = crate::indexing::scanner::index_single_file(base, &new_full, conn);
+            } else if new_full.is_dir() {
+                let _ = crate::indexing::scanner::scan_directory(base, &new_full, conn);
+            }
+        }
+    }
+
     let rel_path = new_full
         .strip_prefix(base)
         .unwrap_or(&new_full)
@@ -397,6 +395,19 @@ pub async fn move_entry(
 
     std::fs::rename(&source_full, &dest)
         .map_err(|e| NoteError::Io(e.to_string()))?;
+
+    // Proactively update index: remove old path, index new path
+    {
+        let db_guard = state.db.lock();
+        if let Some(conn) = db_guard.as_ref() {
+            let _ = crate::indexing::scanner::remove_from_index(base, &source_full, conn);
+            if dest.is_file() {
+                let _ = crate::indexing::scanner::index_single_file(base, &dest, conn);
+            } else if dest.is_dir() {
+                let _ = crate::indexing::scanner::scan_directory(base, &dest, conn);
+            }
+        }
+    }
 
     let rel_path = dest
         .strip_prefix(base)

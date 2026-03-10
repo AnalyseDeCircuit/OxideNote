@@ -103,7 +103,9 @@ function parseSvgLength(value: string): number | null {
 
 // Module-level cache: avoids recompilation when switching tabs and returning.
 // Key = vault-relative path, value = last successful compile result.
+// Capped at MAX_CACHE_SIZE entries with simple LRU eviction.
 const typstResultCache = new Map<string, TypstCompileResult>();
+const MAX_TYPST_CACHE_SIZE = 10;
 
 function clampSvgScale(scale: number): number {
   return Math.min(Math.max(scale, MIN_SVG_SCALE), MAX_SVG_SCALE);
@@ -144,6 +146,11 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
     try {
       const res = await compileTypstToSvg(filePath);
       setResult(res);
+      // LRU eviction: remove oldest entry if cache is full
+      if (typstResultCache.size >= MAX_TYPST_CACHE_SIZE && !typstResultCache.has(filePath)) {
+        const oldest = typstResultCache.keys().next().value;
+        if (oldest) typstResultCache.delete(oldest);
+      }
       typstResultCache.set(filePath, res);
       sourceMappingRef.current = res.source_mapping ?? [];
 

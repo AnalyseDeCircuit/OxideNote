@@ -118,22 +118,40 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     });
   }, [isListening, viewRef, t, i18n.language]);
 
-  // ── 包裹选中文本的通用操作 ────────────────────────────────
-  // 如果没有选中文本，插入占位符并选中它
+  // ── Wrap/unwrap selected text (toggle) ─────────────────────
+  // If already wrapped with prefix/suffix, remove them; otherwise wrap.
+  // If nothing is selected, insert placeholder and select it.
   const wrapSelection = (prefix: string, suffix: string, placeholder: string) => {
     const view = viewRef.current;
     if (!view) return;
 
     const { from, to } = view.state.selection.main;
     const selected = view.state.sliceDoc(from, to);
-    const text = selected || placeholder;
-    const wrapped = `${prefix}${text}${suffix}`;
 
-    view.dispatch({
-      changes: { from, to, insert: wrapped },
-      // 选中包裹后的内容（不含前缀后缀），方便用户直接编辑
-      selection: { anchor: from + prefix.length, head: from + prefix.length + text.length },
-    });
+    // Check surrounding text for existing wrapping
+    const beforeFrom = Math.max(0, from - prefix.length);
+    const afterTo = Math.min(view.state.doc.length, to + suffix.length);
+    const before = view.state.sliceDoc(beforeFrom, from);
+    const after = view.state.sliceDoc(to, afterTo);
+
+    if (before === prefix && after === suffix) {
+      // Toggle OFF: remove the wrapping
+      view.dispatch({
+        changes: [
+          { from: beforeFrom, to: from, insert: '' },
+          { from: to, to: afterTo, insert: '' },
+        ],
+        selection: { anchor: beforeFrom, head: beforeFrom + selected.length },
+      });
+    } else {
+      // Toggle ON: wrap the selection
+      const text = selected || placeholder;
+      const wrapped = `${prefix}${text}${suffix}`;
+      view.dispatch({
+        changes: { from, to, insert: wrapped },
+        selection: { anchor: from + prefix.length, head: from + prefix.length + text.length },
+      });
+    }
     view.focus();
   };
 
@@ -524,6 +542,7 @@ function ToolbarBtn({
         active ? 'text-theme-accent bg-theme-accent/10' : 'text-muted-foreground hover:text-foreground'
       }`}
       title={title}
+      aria-label={title}
       onClick={onClick}
       type="button"
     >

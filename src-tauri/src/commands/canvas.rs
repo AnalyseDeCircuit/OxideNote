@@ -11,7 +11,7 @@ use tauri::State;
 use crate::state::AppState;
 
 // Re-use note module's path validation
-use super::note::validate_inside_vault_public;
+use super::note::validate_inside_vault;
 
 // ── Error type ──────────────────────────────────────────────
 
@@ -226,7 +226,7 @@ pub async fn create_canvas(
 /// Validate that the path is inside the vault and has .canvas extension.
 fn validate_canvas_path(base: &Path, rel_path: &str) -> Result<std::path::PathBuf, CanvasError> {
     // Delegate to note module's path validation
-    let full_path = validate_inside_vault_public(base, rel_path)
+    let full_path = validate_inside_vault(base, rel_path)
         .map_err(|_| CanvasError::AccessDenied)?;
     Ok(full_path)
 }

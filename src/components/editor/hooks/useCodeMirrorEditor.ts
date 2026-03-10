@@ -58,6 +58,7 @@ const languageCompartment = new Compartment();
 const completionCompartment = new Compartment();
 const markdownExtensionsCompartment = new Compartment();
 const lintCompartment = new Compartment();
+const historyCompartment = new Compartment();
 
 /** Check if a file path refers to a Typst source file */
 function isTypstFile(path: string | null): boolean {
@@ -207,6 +208,8 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
   const onSaveRef = useRef(options.onSave);
   const onNavigateRef = useRef(options.onNavigate);
   const currentNotePathRef = useRef('');
+  // Guard flag to prevent programmatic setContent from triggering onChange
+  const isLoadingRef = useRef(false);
 
   const activeTabPath = useNoteStore((state) => state.activeTabPath);
   onChangeRef.current = options.onChange;
@@ -231,7 +234,8 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
       if (update.docChanged) {
         if (changeTimer) clearTimeout(changeTimer);
         changeTimer = setTimeout(() => {
-          if (viewRef.current) {
+          // Skip onChange when content is being programmatically loaded
+          if (viewRef.current && !isLoadingRef.current) {
             onChangeRef.current?.(viewRef.current.state.doc.toString());
           }
         }, 50);
@@ -261,7 +265,7 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
-        history(),
+        historyCompartment.of(history()),
         foldGutter(),
         drawSelection(),
         indentOnInput(),
@@ -433,13 +437,19 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
     if (viewRef.current) {
       const currentContent = viewRef.current.state.doc.toString();
       if (currentContent !== content) {
+        isLoadingRef.current = true;
         viewRef.current.dispatch({
           changes: {
             from: 0,
             to: viewRef.current.state.doc.length,
             insert: content,
           },
+          // Reset undo history when loading a different file
+          effects: historyCompartment.reconfigure(history()),
         });
+        // Release guard after 100ms — ensures the debounced onChange (50ms)
+        // fires while the guard is still active
+        setTimeout(() => { isLoadingRef.current = false; }, 100);
       }
     }
   }, []);

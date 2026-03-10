@@ -326,7 +326,7 @@ export function DiagramEditor({ initialData, onSave, onClose }: DiagramEditorPro
       </div>
 
       {/* Canvas surface */}
-      <div ref={containerRef} className="flex-1 min-h-0 cursor-crosshair bg-[#09090b]">
+      <div ref={containerRef} className="flex-1 min-h-0 cursor-crosshair bg-background">
         <canvas
           ref={canvasRef}
           onPointerDown={handlePointerDown}

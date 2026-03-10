@@ -452,7 +452,7 @@ pub fn query_all_aliases(conn: &Connection) -> Result<HashMap<String, String>, r
             let path: String = row.get(1)?;
             Ok((alias.to_lowercase(), path))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
     Ok(map)
 }
@@ -829,7 +829,7 @@ pub fn search_embeddings(
             let title: Option<String> = row.get(3)?;
             Ok((path, title.unwrap_or_default(), chunk, blob))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .map(|(path, title, chunk, blob)| {
             let emb = blob_to_vec(&blob);
             let score = cosine_similarity(query_vec, &emb);

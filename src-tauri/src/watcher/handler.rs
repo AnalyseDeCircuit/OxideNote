@@ -60,15 +60,33 @@ pub fn start_watcher(
                             _ => "modify",
                         };
 
-                        // Incremental indexing for supported note files
+                        // Incremental indexing for supported note files.
+                        // Read file content OUTSIDE the DB lock to minimize lock hold time.
                         if is_note {
-                            let db_guard = db.lock();
-                            if let Some(conn) = db_guard.as_ref() {
-                                if event.path.exists() {
-                                    if let Err(e) = crate::indexing::scanner::index_single_file(&root, &event.path, conn) {
-                                        tracing::warn!("Incremental index failed for {}: {}", rel_path, e);
+                            if event.path.exists() {
+                                // Pre-read content and metadata before acquiring lock
+                                let content = std::fs::read_to_string(&event.path).ok();
+                                let mtime = std::fs::metadata(&event.path)
+                                    .ok()
+                                    .and_then(|m| m.modified().ok())
+                                    .map(|t| {
+                                        let dt: chrono::DateTime<chrono::Local> = t.into();
+                                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                                    });
+
+                                if let Some(ref text) = content {
+                                    let db_guard = db.lock();
+                                    if let Some(conn) = db_guard.as_ref() {
+                                        if let Err(e) = crate::indexing::scanner::index_with_content(
+                                            &root, &event.path, text, mtime.as_deref(), conn,
+                                        ) {
+                                            tracing::warn!("Incremental index failed for {}: {}", rel_path, e);
+                                        }
                                     }
-                                } else {
+                                }
+                            } else {
+                                let db_guard = db.lock();
+                                if let Some(conn) = db_guard.as_ref() {
                                     if let Err(e) = crate::indexing::scanner::remove_from_index(&root, &event.path, conn) {
                                         tracing::warn!("Remove from index failed for {}: {}", rel_path, e);
                                     }

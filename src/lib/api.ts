@@ -294,19 +294,9 @@ export async function bulkImportNotes(sourcePaths: string[], targetFolder: strin
   return invoke<ImportResult>('bulk_import_notes', { sourcePaths, targetFolder });
 }
 
-/** Check if a note is encrypted */
-export async function isNoteEncrypted(path: string): Promise<boolean> {
-  return invoke<boolean>('is_note_encrypted', { path });
-}
-
 /** Encrypt a note file in-place with a password */
 export async function encryptNote(path: string, password: string): Promise<void> {
   return invoke<void>('encrypt_note', { path, password });
-}
-
-/** Decrypt a note and return plaintext (does NOT write to disk) */
-export async function decryptNote(path: string, password: string): Promise<string> {
-  return invoke<string>('decrypt_note', { path, password });
 }
 
 /** Decrypt a note and write plaintext back to disk (permanent unlock) */
@@ -358,11 +348,6 @@ export interface TrashEntry {
   is_dir: boolean;
 }
 
-/** Move a file or directory to application trash */
-export async function softDelete(path: string): Promise<void> {
-  return invoke<void>('soft_delete', { path });
-}
-
 /** List all items currently in trash */
 export async function listTrash(): Promise<TrashEntry[]> {
   return invoke<TrashEntry[]>('list_trash');
@@ -404,11 +389,6 @@ export async function removeBookmark(path: string): Promise<void> {
 /** List all bookmarks ordered by sort_order */
 export async function listBookmarks(): Promise<BookmarkEntry[]> {
   return invoke<BookmarkEntry[]>('list_bookmarks');
-}
-
-/** Reorder bookmarks by providing the full path array in desired order */
-export async function reorderBookmarks(paths: string[]): Promise<void> {
-  return invoke<void>('reorder_bookmarks', { paths });
 }
 
 /** Check if a note is bookmarked */
@@ -809,14 +789,6 @@ export async function resetLifetimeTokensDb(): Promise<void> {
 
 export async function migrateChatFromJson(jsonString: string): Promise<MigrateResult> {
   return invoke<MigrateResult>('migrate_chat_from_json', { jsonString });
-}
-
-export async function saveChatImage(
-  sessionId: string,
-  dataBase64: string,
-  mediaType: string,
-): Promise<string> {
-  return invoke<string>('save_chat_image', { sessionId, dataBase64, mediaType });
 }
 
 // ─── AI Memory ──────────────────────────────────────────────
@@ -1229,9 +1201,4 @@ export interface DocumentTemplate {
   format: string;
   source: string;
   content: string;
-}
-
-/** List available document templates (built-in + user-defined) */
-export async function listTemplates(format?: string): Promise<DocumentTemplate[]> {
-  return invoke<DocumentTemplate[]>('list_templates', { format: format ?? null });
 }

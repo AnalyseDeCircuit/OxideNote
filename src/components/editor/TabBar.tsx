@@ -177,7 +177,7 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
         {!tab.isPinned && (
           <button
             className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-theme-hover transition-opacity"
-            aria-label={t('actions.closeTab', 'Close tab')}
+            aria-label={t('actions.closeTab')}
             onClick={(e) => {
               e.stopPropagation();
               void tryCloseTab(tab.path);
@@ -199,9 +199,10 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
           className="fixed z-50 min-w-[160px] rounded-md border border-theme-border bg-surface shadow-lg py-1 text-sm"
           style={{ left: ctx.x, top: ctx.y }}
           onClick={(e) => e.stopPropagation()}
+          role="menu"
         >
           <CtxMenuItem
-            label={t('tabs.close', '关闭')}
+            label={t('tabs.close')}
             onClick={() => { void tryCloseTab(ctx.path); setCtx(null); }}
           />
           <CtxMenuItem
@@ -209,14 +210,14 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
             onClick={() => { togglePinTab(ctx.path); setCtx(null); }}
           />
           <CtxMenuItem
-            label={t('tabs.closeOthers', '关闭其他')}
+            label={t('tabs.closeOthers')}
             onClick={() => {
               void tryCloseTabs(openTabs.filter((openTab) => openTab.path !== ctx.path).map((openTab) => openTab.path));
               setCtx(null);
             }}
           />
           <CtxMenuItem
-            label={t('tabs.closeRight', '关闭右侧')}
+            label={t('tabs.closeRight')}
             onClick={() => {
               const currentIndex = openTabs.findIndex((openTab) => openTab.path === ctx.path);
               if (currentIndex >= 0) {
@@ -226,7 +227,7 @@ const TabItem = memo(function TabItem({ tab, index, isActive, dragOverIndex, set
             }}
           />
           <CtxMenuItem
-            label={t('tabs.closeAll', '关闭所有')}
+            label={t('tabs.closeAll')}
             onClick={() => {
               void tryCloseTabs(openTabs.map((openTab) => openTab.path));
               setCtx(null);
@@ -244,6 +245,7 @@ function CtxMenuItem({ label, onClick }: { label: string; onClick: () => void })
     <button
       className="w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-theme-hover transition-colors"
       onClick={onClick}
+      role="menuitem"
     >
       {label}
     </button>

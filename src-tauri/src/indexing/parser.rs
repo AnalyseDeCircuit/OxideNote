@@ -209,13 +209,15 @@ pub fn parse_blocks(content: &str) -> (Vec<BlockInfo>, Vec<BlockRefInfo>) {
             if in_code_block {
                 // Code block end, check for block ID
                 if let Some(cap) = BLOCK_ID_RE.captures(line) {
-                    let block_id = cap.get(1).unwrap().as_str().to_string();
-                    blocks.push(BlockInfo {
-                        block_id,
-                        line_number: code_block_start,
-                        content: code_block_content.clone(),
-                        block_type: "code_block".to_string(),
-                    });
+                    if let Some(m) = cap.get(1) {
+                        let block_id = m.as_str().to_string();
+                        blocks.push(BlockInfo {
+                            block_id,
+                            line_number: code_block_start,
+                            content: code_block_content.clone(),
+                            block_type: "code_block".to_string(),
+                        });
+                    }
                 }
                 in_code_block = false;
                 code_block_content.clear();
@@ -235,40 +237,44 @@ pub fn parse_blocks(content: &str) -> (Vec<BlockInfo>, Vec<BlockRefInfo>) {
         // Extract block references [[note#^block-id]]
         for cap in BLOCK_REF_RE.captures_iter(line) {
             let target_note = cap.get(1).map(|m| m.as_str().trim().to_string());
-            let block_id = cap.get(2).unwrap().as_str().to_string();
-            block_refs.push(BlockRefInfo {
-                target_note,
-                block_id,
-                line_number: i,
-            });
+            if let Some(m) = cap.get(2) {
+                let block_id = m.as_str().to_string();
+                block_refs.push(BlockRefInfo {
+                    target_note,
+                    block_id,
+                    line_number: i,
+                });
+            }
         }
 
         // Extract block ID at line end
         if let Some(cap) = BLOCK_ID_RE.captures(line) {
-            let block_id = cap.get(1).unwrap().as_str().to_string();
-            let content = line[..cap.get(0).unwrap().start()].trim().to_string();
+            if let (Some(id_match), Some(full_match)) = (cap.get(1), cap.get(0)) {
+                let block_id = id_match.as_str().to_string();
+                let content = line[..full_match.start()].trim().to_string();
 
-            let block_type = if line.trim_start().starts_with("- ")
-                || line.trim_start().starts_with("* ")
-                || line.trim_start().starts_with("+ ")
-                || line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit())
-                    && line.trim_start().contains(". ")
-            {
-                "list_item"
-            } else if line.trim_start().starts_with('#') {
-                "heading"
-            } else if line.contains('|') && line.matches('|').count() >= 2 {
-                "table"
-            } else {
-                "paragraph"
-            };
+                let block_type = if line.trim_start().starts_with("- ")
+                    || line.trim_start().starts_with("* ")
+                    || line.trim_start().starts_with("+ ")
+                    || line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit())
+                        && line.trim_start().contains(". ")
+                {
+                    "list_item"
+                } else if line.trim_start().starts_with('#') {
+                    "heading"
+                } else if line.contains('|') && line.matches('|').count() >= 2 {
+                    "table"
+                } else {
+                    "paragraph"
+                };
 
-            blocks.push(BlockInfo {
-                block_id,
-                line_number: i,
-                content,
-                block_type: block_type.to_string(),
-            });
+                blocks.push(BlockInfo {
+                    block_id,
+                    line_number: i,
+                    content,
+                    block_type: block_type.to_string(),
+                });
+            }
         }
     }
 

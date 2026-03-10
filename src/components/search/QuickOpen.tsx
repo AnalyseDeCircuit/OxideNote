@@ -52,6 +52,9 @@ export function QuickOpen() {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
       onClick={() => setOpen(false)}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('search.quickOpen')}
     >
       <div
         className="w-[520px] rounded-lg border border-theme-border bg-surface shadow-2xl overflow-hidden"

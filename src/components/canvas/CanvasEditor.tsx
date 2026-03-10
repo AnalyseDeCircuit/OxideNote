@@ -677,7 +677,7 @@ export function CanvasEditor(props: CanvasEditorProps) {
               onPointerDown={(e) => handleCardDragStart(card.id, e)}
             >
               {/* Card header */}
-              <div className="flex items-center justify-between px-2 py-1 border-b border-white/10 shrink-0">
+              <div className="flex items-center justify-between px-2 py-1 border-b border-theme-border shrink-0">
                 <span className="text-[10px] text-white/60 truncate flex items-center gap-1">
                   {card.linkedBlock ? (
                     <>

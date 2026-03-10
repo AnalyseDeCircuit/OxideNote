@@ -106,13 +106,16 @@ pub async fn open_vault(
 
     tracing::info!("Index database initialized (read+write connections)");
 
-    // 后台扫描：从 Mutex 中取出连接直接传递给后台任务，
-    // 避免整个扫描期间持锁阻塞 watcher 增量索引
+    // Background scan + watcher start: take the DB connection for scanning,
+    // then start the watcher AFTER scan completes and connection is restored
     {
         let scan_conn = state.db.lock().take();
         let db_arc = state.db.clone();
+        let watcher_arc = state.watcher.clone();
         let vault_clone = vault_path.clone();
+        let vault_for_watcher = vault_path.clone();
         let handle = app_handle.clone();
+        let handle_for_watcher = app_handle.clone();
         tokio::task::spawn_blocking(move || {
             if let Some(conn) = scan_conn {
                 if let Err(e) = crate::indexing::scanner::scan_vault(&vault_clone, &conn) {
@@ -120,20 +123,24 @@ pub async fn open_vault(
                 } else {
                     tracing::info!("Vault scan completed");
                 }
-                // 扫描完毕，将连接放回 Mutex 供后续写操作使用
+                // Return connection to Mutex for subsequent write operations
                 *db_arc.lock() = Some(conn);
             }
             let _ = handle.emit("vault:index-ready", ());
-        });
-    }
 
-    // Start file system watcher (with incremental indexing)
-    let db_arc = state.db.clone();
-    if let Ok(debouncer) = crate::watcher::start_watcher(&vault_path, app_handle.clone(), db_arc) {
-        *state.watcher.lock() = Some(debouncer);
-        tracing::info!("File watcher started for vault");
-    } else {
-        tracing::warn!("Failed to start file watcher");
+            // Start file watcher AFTER scan completes and DB connection is restored
+            let watcher_db = db_arc.clone();
+            if let Ok(debouncer) = crate::watcher::start_watcher(
+                &vault_for_watcher,
+                handle_for_watcher,
+                watcher_db,
+            ) {
+                *watcher_arc.lock() = Some(debouncer);
+                tracing::info!("File watcher started for vault");
+            } else {
+                tracing::warn!("Failed to start file watcher");
+            }
+        });
     }
 
     // Clean up expired trash entries (>30 days) in background

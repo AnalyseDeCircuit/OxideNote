@@ -121,7 +121,7 @@ pub async fn list_bookmarks(
             })
         })
         .map_err(|e| BookmarkError::Db(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
 
     Ok(entries)

@@ -229,7 +229,7 @@ fn find_broken_links(
             let target: String = row.get(1)?;
             Ok((source, target))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .filter(|(_, target)| {
             let target_lower = target.to_lowercase();
 

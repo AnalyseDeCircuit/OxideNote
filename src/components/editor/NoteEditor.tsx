@@ -103,7 +103,7 @@ export function NoteEditor() {
       if (activePathRef.current === path) {
         saveNoteWithConflictCheck(path, contentRef.current);
       }
-    }, autoSaveDelay);
+    }, Math.max(autoSaveDelay, 500));
   }, [autoSaveDelay]);
 
   const handleSave = useCallback(() => {

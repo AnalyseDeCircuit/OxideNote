@@ -17,6 +17,7 @@ use similar::{ChangeTag, TextDiff};
 use tauri::State;
 
 use crate::state::AppState;
+use crate::commands::util::{validate_path_inside_vault, PathValidationError};
 
 // ── Error type ──────────────────────────────────────────────
 
@@ -35,6 +36,15 @@ pub enum HistoryError {
 impl Serialize for HistoryError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
+    }
+}
+
+impl From<PathValidationError> for HistoryError {
+    fn from(e: PathValidationError) -> Self {
+        match e {
+            PathValidationError::AccessDenied => HistoryError::AccessDenied,
+            PathValidationError::Io(msg) => HistoryError::Io(msg),
+        }
     }
 }
 
@@ -84,32 +94,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 /// Validate a relative path stays inside the vault.
 fn validate_inside_vault(base: &Path, rel_path: &str) -> Result<PathBuf, HistoryError> {
-    let full_path = base.join(rel_path);
-    let canonical_base = base
-        .canonicalize()
-        .map_err(|e| HistoryError::Io(e.to_string()))?;
-
-    if full_path.exists() {
-        let canonical = full_path
-            .canonicalize()
-            .map_err(|e| HistoryError::Io(e.to_string()))?;
-        if !canonical.starts_with(&canonical_base) {
-            return Err(HistoryError::AccessDenied);
-        }
-        Ok(canonical)
-    } else {
-        if let Some(parent) = full_path.parent() {
-            if parent.exists() {
-                let canonical_parent = parent
-                    .canonicalize()
-                    .map_err(|e| HistoryError::Io(e.to_string()))?;
-                if !canonical_parent.starts_with(&canonical_base) {
-                    return Err(HistoryError::AccessDenied);
-                }
-            }
-        }
-        Ok(full_path)
-    }
+    validate_path_inside_vault(base, rel_path).map_err(HistoryError::from)
 }
 
 // ── Public API (called from write_note) ─────────────────────

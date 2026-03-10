@@ -115,7 +115,7 @@ pub async fn get_vault_stats(
             })
         })
         .map_err(|e| StatsError::Internal(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
 
     // Top tags (top 10 by frequency)
@@ -134,7 +134,7 @@ pub async fn get_vault_stats(
             })
         })
         .map_err(|e| StatsError::Internal(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
 
     // Daily activity for the last 30 days
@@ -156,7 +156,7 @@ pub async fn get_vault_stats(
             })
         })
         .map_err(|e| StatsError::Internal(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
 
     Ok(VaultStats {
@@ -202,7 +202,7 @@ pub async fn list_notes_summary(
             })
         })
         .map_err(|e| StatsError::Internal(e.to_string()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| r.map_err(|e| tracing::warn!("Row parse error: {}", e)).ok())
         .collect();
 
     Ok(notes)

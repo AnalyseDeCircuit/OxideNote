@@ -21,7 +21,9 @@ import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openVault, listTree, loadEmbeddingConfig, saveEmbeddingConfig, getEmbeddingStatus, rebuildEmbeddings, clearEmbeddings, listModels, agentSchedulerConfig, agentSchedulerSetConfig, type EmbeddingConfig, type EmbeddingStatus, type EmbeddingProgressEvent, type ChatProvider, type ThinkingMode, type SchedulerConfig } from '@/lib/api';
 import { useChatStore, PROVIDER_DEFAULTS } from '@/store/chatStore';
+import { useAgentStore } from '@/store/agentStore';
 import { ModelSelector } from '@/components/chat/ModelSelector';
+import { clearAllPreviewCaches } from '@/lib/previewCache';
 import { toast } from '@/hooks/useToast';
 import { listen } from '@tauri-apps/api/event';
 import { confirm } from '@tauri-apps/plugin-dialog';
@@ -140,10 +142,10 @@ export function SettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-[780px] h-[600px] overflow-hidden flex p-0 gap-0 bg-surface border-theme-border text-foreground">
-        <DialogTitle className="sr-only">{t('settings.title', '设置')}</DialogTitle>
+        <DialogTitle className="sr-only">{t('settings.title')}</DialogTitle>
         {/* Sidebar */}
         <div className="w-48 shrink-0 border-r border-theme-border bg-background p-4 flex flex-col gap-1">
-          <h2 className="text-sm font-semibold text-foreground px-3 mb-3">{t('settings.title', '设置')}</h2>
+          <h2 className="text-sm font-semibold text-foreground px-3 mb-3">{t('settings.title')}</h2>
           {SIDEBAR_TABS.map(({ id, icon: Icon }) => (
             <button
               key={id}
@@ -281,8 +283,14 @@ function GeneralTab() {
 
     await openVault(path);
     const tree = await listTree('', useSettingsStore.getState().sortMode);
+
+    // Reset all stores when switching vault
     useNoteStore.getState().closeAllTabs();
     useNoteStore.getState().clearAllConflicts();
+    useChatStore.getState().cleanup();
+    useAgentStore.getState().cleanupListeners();
+    clearAllPreviewCaches();
+
     useWorkspaceStore.getState().setVaultPath(path);
     useWorkspaceStore.getState().setTree(tree);
     useSettingsStore.getState().setLastVaultPath(path);
@@ -311,7 +319,7 @@ function GeneralTab() {
 
   return (
     <>
-      <SettingsCard title={t('settings.vault', '仓库')}>
+      <SettingsCard title={t('settings.vault')}>
         {vaultPath && (
           <div className="flex items-center gap-2 mb-3">
             <FolderOpen size={14} className="text-theme-accent shrink-0" />
@@ -323,7 +331,7 @@ function GeneralTab() {
           className="flex items-center gap-2 px-4 py-2 rounded-md bg-theme-accent text-white text-sm font-medium hover:opacity-90 transition-opacity"
         >
           <FolderSync size={16} />
-          {t('settings.switchVault', '切换仓库')}
+          {t('settings.switchVault')}
         </button>
         <button
           onClick={() => {
@@ -337,8 +345,8 @@ function GeneralTab() {
         </button>
       </SettingsCard>
 
-      <SettingsCard title={t('settings.language', '语言')}>
-        <SettingRow label={t('settings.language')} hint={t('settings.languageHint', '界面显示语言')}>
+      <SettingsCard title={t('settings.language')}>
+        <SettingRow label={t('settings.language')} hint={t('settings.languageHint')}>
           <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
@@ -352,7 +360,7 @@ function GeneralTab() {
       </SettingsCard>
 
       {recentVaults.length > 0 && (
-        <SettingsCard title={t('settings.recentVaults', '最近的仓库')}>
+        <SettingsCard title={t('settings.recentVaults')}>
           <div className="space-y-1">
             {recentVaults.map((v) => (
               <button
@@ -388,7 +396,7 @@ function EditorTab() {
   return (
     <>
       {/* Font preview */}
-      <SettingsCard title={t('settings.fontPreview', '字体预览')}>
+      <SettingsCard title={t('settings.fontPreview')}>
         <div
           className="rounded-md bg-background border border-theme-border p-4 text-muted-foreground whitespace-pre-wrap"
           style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight }}
@@ -397,8 +405,8 @@ function EditorTab() {
         </div>
       </SettingsCard>
 
-      <SettingsCard title={t('settings.fontFamily', '字体')}>
-        <SettingRow label={t('settings.fontFamily')} hint={t('settings.fontFamilyHint', '输入系统已安装的字体名，多个用逗号分隔')}>
+      <SettingsCard title={t('settings.fontFamily')}>
+        <SettingRow label={t('settings.fontFamily')} hint={t('settings.fontFamilyHint')}>
           <input
             type="text"
             value={fontFamily}
@@ -408,7 +416,7 @@ function EditorTab() {
           />
         </SettingRow>
 
-        <SettingRow label={t('settings.fontSize')} hint={t('settings.fontSizeHint', '10 ~ 32px')}>
+        <SettingRow label={t('settings.fontSize')} hint={t('settings.fontSizeHint')}>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -429,7 +437,7 @@ function EditorTab() {
           </div>
         </SettingRow>
 
-        <SettingRow label={t('settings.lineHeight')} hint={t('settings.lineHeightHint', '行间距倍率')}>
+        <SettingRow label={t('settings.lineHeight')} hint={t('settings.lineHeightHint')}>
           <Select value={String(lineHeight)} onValueChange={(v) => setLineHeight(Number(v))}>
             <SelectTrigger className="w-20">
               <SelectValue />
@@ -445,8 +453,8 @@ function EditorTab() {
         </SettingRow>
       </SettingsCard>
 
-      <SettingsCard title={t('settings.editing', '编辑')}>
-        <SettingRow label={t('settings.tabSize')} hint={t('settings.tabSizeHint', '缩进空格数')}>
+      <SettingsCard title={t('settings.editing')}>
+        <SettingRow label={t('settings.tabSize')} hint={t('settings.tabSizeHint')}>
           <Select value={String(tabSize)} onValueChange={(v) => setTabSize(Number(v))}>
             <SelectTrigger className="w-20">
               <SelectValue />
@@ -459,7 +467,7 @@ function EditorTab() {
           </Select>
         </SettingRow>
 
-        <SettingRow label={t('settings.wordWrap')} hint={t('settings.wordWrapHint', '超出编辑器宽度时自动换行')}>
+        <SettingRow label={t('settings.wordWrap')} hint={t('settings.wordWrapHint')}>
           <button
             onClick={() => setWordWrap(!wordWrap)}
             className={`w-11 h-6 rounded-full transition-colors relative ${
@@ -474,7 +482,7 @@ function EditorTab() {
           </button>
         </SettingRow>
 
-        <SettingRow label={t('settings.autoSaveDelay')} hint={t('settings.autoSaveDelayHint', '停止输入后自动保存')}>
+        <SettingRow label={t('settings.autoSaveDelay')} hint={t('settings.autoSaveDelayHint')}>
           <Select value={String(autoSaveDelay)} onValueChange={(v) => setAutoSaveDelay(Number(v))}>
             <SelectTrigger className="w-[120px]">
               <SelectValue />
@@ -502,7 +510,7 @@ function TemplatesSection() {
 
   const addTemplate = () => {
     setTemplates([...templates, {
-      name: t('settings.newTemplate', '新模板'),
+      name: t('settings.newTemplate'),
       content: '---\ntitle: {{title}}\ncreated: {{datetime}}\n---\n\n',
     }]);
   };
@@ -519,9 +527,9 @@ function TemplatesSection() {
   };
 
   return (
-    <SettingsCard title={t('settings.templates', '笔记模板')}>
+    <SettingsCard title={t('settings.templates')}>
       <p className="text-xs text-muted-foreground mb-3">
-        {t('settings.templatesHint', '创建笔记时可选用模板。支持变量: {{title}}, {{date}}, {{datetime}}')}
+        {t('settings.templatesHint')}
       </p>
       <div className="space-y-3">
         {templates.map((tmpl, i) => (
@@ -532,7 +540,7 @@ function TemplatesSection() {
                 value={tmpl.name}
                 onChange={(e) => updateTemplate(i, 'name', e.target.value)}
                 className="flex-1 px-2 py-1 text-sm rounded border border-theme-border bg-background text-foreground outline-none focus:border-theme-accent"
-                placeholder={t('settings.templateName', '模板名称')}
+                placeholder={t('settings.templateName')}
               />
               <button
                 onClick={() => removeTemplate(i)}
@@ -556,7 +564,7 @@ function TemplatesSection() {
         className="flex items-center gap-1.5 mt-2 text-xs text-theme-accent hover:text-theme-accent/80 transition-colors"
       >
         <Plus size={14} />
-        {t('settings.addTemplate', '添加模板')}
+        {t('settings.addTemplate')}
       </button>
     </SettingsCard>
   );
@@ -577,10 +585,10 @@ function AppearanceTab() {
 
   return (
     <>
-      <SettingsCard title={t('settings.themeSection', '主题')}>
+      <SettingsCard title={t('settings.themeSection')}>
         <div>
           <Label className="text-xs text-muted-foreground mb-2 block">
-            {t('settings.oxideThemes', 'Oxide 系列')}
+            {t('settings.oxideThemes')}
           </Label>
           <div className="grid grid-cols-3 gap-2">
             {oxideThemes.map((th) => (
@@ -590,7 +598,7 @@ function AppearanceTab() {
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-2 block">
-            {t('settings.classicThemes', '经典深色')}
+            {t('settings.classicThemes')}
           </Label>
           <div className="grid grid-cols-3 gap-2">
             {classicThemes.map((th) => (
@@ -600,7 +608,7 @@ function AppearanceTab() {
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-2 block">
-            {t('settings.lightThemes', '浅色')}
+            {t('settings.lightThemes')}
           </Label>
           <div className="grid grid-cols-3 gap-2">
             {lightThemes.map((th) => (
@@ -612,8 +620,8 @@ function AppearanceTab() {
 
       <ThemeCustomizer />
 
-      <SettingsCard title={t('settings.layoutSection', '布局')}>
-        <SettingRow label={t('settings.density')} hint={t('settings.densityHint', '调整界面间距密度')}>
+      <SettingsCard title={t('settings.layoutSection')}>
+        <SettingRow label={t('settings.density')} hint={t('settings.densityHint')}>
           <Select value={density} onValueChange={(v) => setDensity(v as Density)}>
             <SelectTrigger className="w-[140px]">
               <SelectValue />
@@ -828,14 +836,14 @@ function KeybindingsTab() {
                     onClick={() => setRecording(isRecording ? null : action)}
                   >
                     {isRecording
-                      ? t('settings.pressKey', '...')
+                      ? t('settings.pressKey')
                       : formatKeybinding(keybindings[action])}
                   </button>
                   {!isDefault && (
                     <button
                       className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setKeybinding(action, DEFAULT_KEYBINDINGS[action])}
-                      title={t('settings.resetDefault', '重置')}
+                      title={t('settings.resetDefault')}
                     >
                       ↺
                     </button>
@@ -850,7 +858,7 @@ function KeybindingsTab() {
         className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
         onClick={resetKeybindings}
       >
-        {t('settings.resetAllKeybindings', '重置所有快捷键')}
+        {t('settings.resetAllKeybindings')}
       </button>
     </>
   );
@@ -1341,7 +1349,7 @@ function AboutTab() {
         </div>
       </SettingsCard>
 
-      <SettingsCard title={t('settings.techStack', '技术栈')}>
+      <SettingsCard title={t('settings.techStack')}>
         <div className="flex flex-wrap gap-2">
           {['Tauri 2', 'React 19', 'TypeScript', 'CodeMirror 6', 'SQLite FTS5', 'Zustand'].map((tech) => (
             <span
@@ -1354,15 +1362,15 @@ function AboutTab() {
         </div>
       </SettingsCard>
 
-      <SettingsCard title={t('settings.shortcuts', '快捷键')}>
+      <SettingsCard title={t('settings.shortcuts')}>
         <div className="grid grid-cols-2 gap-y-2 gap-x-6 text-xs">
           {[
-            [t('settings.shortcutQuickOpen', '快速打开'), '⌘ P'],
-            [t('settings.shortcutGlobalSearch', '全局搜索'), '⌘ ⇧ F'],
-            [t('settings.shortcutSettings', '设置'), '⌘ ,'],
-            [t('settings.shortcutNewNote', '新建笔记'), '⌘ N'],
-            [t('settings.shortcutSidebar', '切换侧栏'), '⌘ B'],
-            [t('settings.shortcutSave', '保存'), '⌘ S'],
+            [t('settings.shortcutQuickOpen'), '⌘ P'],
+            [t('settings.shortcutGlobalSearch'), '⌘ ⇧ F'],
+            [t('settings.shortcutSettings'), '⌘ ,'],
+            [t('settings.shortcutNewNote'), '⌘ N'],
+            [t('settings.shortcutSidebar'), '⌘ B'],
+            [t('settings.shortcutSave'), '⌘ S'],
           ].map(([label, key]) => (
             <div key={label} className="flex items-center justify-between">
               <span className="text-muted-foreground">{label}</span>
