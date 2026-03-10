@@ -603,3 +603,208 @@ pub async fn get_block_backlinks(
     db::get_block_backlinks(conn, &note_path, &block_id)
         .map_err(|e| SearchError::Internal(e.to_string()))
 }
+
+// ── Semantic graph data (AI-enhanced knowledge graph) ───────
+
+/// Semantic edge representing embedding-based similarity between two notes
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticEdge {
+    pub source: String,
+    pub target: String,
+    pub similarity: f64,
+}
+
+/// A group of notes clustered by semantic proximity
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticCluster {
+    pub id: usize,
+    pub label: String,
+    pub note_paths: Vec<String>,
+}
+
+/// A suggested link based on embedding similarity
+#[derive(Debug, Clone, Serialize)]
+pub struct SuggestedLink {
+    pub from: String,
+    pub to: String,
+    pub similarity: f64,
+    pub reason: String,
+}
+
+/// Full semantic graph data for AI-enhanced visualization
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticGraphData {
+    pub nodes: Vec<GraphNode>,
+    pub structural_links: Vec<GraphLink>,
+    pub semantic_edges: Vec<SemanticEdge>,
+    pub clusters: Vec<SemanticCluster>,
+    pub orphans: Vec<String>,
+    pub suggested_links: Vec<SuggestedLink>,
+}
+
+/// Get AI-enhanced graph data with semantic similarity edges.
+/// Computes cosine similarity between note embeddings and returns
+/// structural links, semantic edges, clusters, orphans, and suggested links.
+#[tauri::command]
+pub async fn get_semantic_graph_data(
+    similarity_threshold: Option<f64>,
+    state: State<'_, AppState>,
+) -> Result<SemanticGraphData, SearchError> {
+    let threshold = similarity_threshold.unwrap_or(0.75);
+
+    // Get structural graph first
+    let structural = get_graph_data(Some(false), state.clone()).await?;
+
+    // Load embeddings inside the lock, then release it before heavy computation
+    let note_embeddings = {
+        let db_guard = state.read_db.lock();
+        let conn = db_guard.as_ref().ok_or(SearchError::NoIndex)?;
+        db::get_note_mean_embeddings(conn)
+            .map_err(|e| SearchError::Internal(e.to_string()))?
+    }; // lock released here
+
+    // Build existing link set for suggested links filtering
+    let existing_links: std::collections::HashSet<(String, String)> = structural
+        .links
+        .iter()
+        .map(|l| (l.source.clone(), l.target.clone()))
+        .collect();
+
+    // Build connected set for orphan detection
+    let mut connected: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for link in &structural.links {
+        connected.insert(&link.source);
+        connected.insert(&link.target);
+    }
+
+    let orphans: Vec<String> = structural
+        .nodes
+        .iter()
+        .filter(|n| !connected.contains(n.id.as_str()))
+        .map(|n| n.id.clone())
+        .collect();
+
+    // Offload O(n²) pairwise computation to a blocking thread
+    let structural_nodes = structural.nodes.clone();
+    let structural_links = structural.links.clone();
+    let (semantic_edges, suggested_links, clusters) = tokio::task::spawn_blocking(move || {
+        let paths: Vec<&String> = note_embeddings.keys().collect();
+        let mut semantic_edges: Vec<SemanticEdge> = Vec::new();
+        let mut suggested_links: Vec<SuggestedLink> = Vec::new();
+
+        // Pairwise similarity computation
+        for i in 0..paths.len() {
+            for j in (i + 1)..paths.len() {
+                let a = &note_embeddings[paths[i]];
+                let b = &note_embeddings[paths[j]];
+                if a.len() != b.len() {
+                    continue;
+                }
+                let sim = db::cosine_similarity_pub(a, b) as f64;
+                if sim >= threshold {
+                    semantic_edges.push(SemanticEdge {
+                        source: paths[i].clone(),
+                        target: paths[j].clone(),
+                        similarity: sim,
+                    });
+
+                    // Suggest link if not already structurally linked
+                    let forward = (paths[i].clone(), paths[j].clone());
+                    let backward = (paths[j].clone(), paths[i].clone());
+                    if !existing_links.contains(&forward) && !existing_links.contains(&backward) {
+                        suggested_links.push(SuggestedLink {
+                            from: paths[i].clone(),
+                            to: paths[j].clone(),
+                            similarity: sim,
+                            reason: format!("Semantic similarity: {:.0}%", sim * 100.0),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort suggested links by similarity (highest first), limit to 20
+        suggested_links.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        suggested_links.truncate(20);
+
+        // Simple epsilon-neighborhood clustering from semantic edges
+        let clusters = build_semantic_clusters(&semantic_edges, &structural_nodes);
+
+        (semantic_edges, suggested_links, clusters)
+    })
+    .await
+    .map_err(|e| SearchError::Internal(format!("Computation task failed: {}", e)))?;
+
+    Ok(SemanticGraphData {
+        nodes: structural.nodes,
+        structural_links: structural.links,
+        semantic_edges,
+        clusters,
+        orphans,
+        suggested_links,
+    })
+}
+
+/// Build clusters from semantic edges using connected-components algorithm
+fn build_semantic_clusters(edges: &[SemanticEdge], nodes: &[GraphNode]) -> Vec<SemanticCluster> {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
+    // Build adjacency from semantic edges
+    let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in edges {
+        adj.entry(&e.source).or_default().push(&e.target);
+        adj.entry(&e.target).or_default().push(&e.source);
+    }
+
+    // Only cluster nodes that appear in semantic edges
+    let mut visited: HashSet<&str> = HashSet::new();
+    let mut clusters: Vec<SemanticCluster> = Vec::new();
+
+    // Node title lookup for cluster labeling
+    let title_map: HashMap<&str, &str> = nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n.title.as_str()))
+        .collect();
+
+    for node in adj.keys() {
+        if visited.contains(node) {
+            continue;
+        }
+
+        // BFS from this node to find connected component
+        let mut component: Vec<String> = Vec::new();
+        let mut queue: VecDeque<&str> = VecDeque::new();
+        queue.push_back(node);
+        visited.insert(node);
+
+        while let Some(current) = queue.pop_front() {
+            component.push(current.to_string());
+            if let Some(neighbors) = adj.get(current) {
+                for &neighbor in neighbors {
+                    if visited.insert(neighbor) {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+
+        // Only keep clusters with 2+ members
+        if component.len() >= 2 {
+            // Label: use the shortest title in the cluster as representative
+            let label = component
+                .iter()
+                .filter_map(|p| title_map.get(p.as_str()))
+                .min_by_key(|t| t.len())
+                .map(|t| format!("{}…", t))
+                .unwrap_or_else(|| format!("Cluster {}", clusters.len() + 1));
+
+            clusters.push(SemanticCluster {
+                id: clusters.len(),
+                label,
+                note_paths: component,
+            });
+        }
+    }
+
+    clusters
+}

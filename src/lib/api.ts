@@ -139,6 +139,45 @@ export async function getLocalGraph(centerPath: string, depth?: number): Promise
   return invoke<GraphData>('get_local_graph', { centerPath, depth: depth ?? 2 });
 }
 
+// ── Semantic graph (AI-enhanced knowledge graph) ─────────────
+
+export interface SemanticEdge {
+  source: string;
+  target: string;
+  similarity: number;
+}
+
+export interface SemanticCluster {
+  id: number;
+  label: string;
+  note_paths: string[];
+}
+
+export interface SuggestedLink {
+  from: string;
+  to: string;
+  similarity: number;
+  reason: string;
+}
+
+export interface SemanticGraphData {
+  nodes: GraphNode[];
+  structural_links: GraphLink[];
+  semantic_edges: SemanticEdge[];
+  clusters: SemanticCluster[];
+  orphans: string[];
+  suggested_links: SuggestedLink[];
+}
+
+/** Fetch AI-enhanced graph data with semantic similarity edges, clusters, etc. */
+export async function getSemanticGraphData(
+  similarityThreshold?: number,
+): Promise<SemanticGraphData> {
+  return invoke<SemanticGraphData>('get_semantic_graph_data', {
+    similarityThreshold: similarityThreshold ?? 0.75,
+  });
+}
+
 // ─── Tag commands ────────────────────────────────────────────
 
 export interface TagCount {
@@ -1126,4 +1165,53 @@ export interface BibEntry {
 /** Scan vault for .bib files and return parsed citation entries */
 export async function listBibEntries(): Promise<BibEntry[]> {
   return invoke<BibEntry[]>('list_bib_entries');
+}
+
+// ── LaTeX external compilation ──────────────────────────────
+
+export interface LatexCompileResult {
+  pdf_path: string;
+  diagnostics: LatexDiagnostic[];
+  log_output: string;
+  compile_time_ms: number;
+}
+
+export interface LatexDiagnostic {
+  line: number | null;
+  severity: string;
+  message: string;
+}
+
+export interface DetectedCompiler {
+  name: string;
+  path: string;
+}
+
+/** Detect available LaTeX compilers on the system */
+export async function detectLatexCompilers(): Promise<DetectedCompiler[]> {
+  return invoke<DetectedCompiler[]>('detect_latex_compilers');
+}
+
+/** Compile a .tex file with an external LaTeX compiler */
+export async function compileLatex(
+  sourcePath: string,
+  compiler?: string,
+): Promise<LatexCompileResult> {
+  return invoke<LatexCompileResult>('compile_latex', { sourcePath, compiler });
+}
+
+// ── Document templates ──────────────────────────────────────
+
+export interface DocumentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  format: string;
+  source: string;
+  content: string;
+}
+
+/** List available document templates (built-in + user-defined) */
+export async function listTemplates(format?: string): Promise<DocumentTemplate[]> {
+  return invoke<DocumentTemplate[]>('list_templates', { format: format ?? null });
 }

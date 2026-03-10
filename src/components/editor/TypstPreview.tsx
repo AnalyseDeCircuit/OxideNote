@@ -15,6 +15,7 @@ import { getEditorView } from '@/lib/editorViewRef';
 import { setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { EditorSelection } from '@codemirror/state';
 import { useNoteStore } from '@/store/noteStore';
+import { useUIStore } from '@/store/uiStore';
 
 interface TypstPreviewProps {
   /** Vault-relative path of the .typ file being previewed */
@@ -49,10 +50,19 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
   const triggerCompile = useCallback(async (filePath: string) => {
     setCompiling(true);
     setError(null);
+    // Update status bar compile indicator
+    useUIStore.getState().setCompileStatus('compiling');
     try {
       const res = await compileTypstToSvg(filePath);
       setResult(res);
       sourceMappingRef.current = res.source_mapping ?? [];
+
+      // Update status bar with result
+      const hasErrors = res.diagnostics.some((d) => d.severity === 'error');
+      useUIStore.getState().setCompileStatus(
+        hasErrors ? 'error' : 'success',
+        res.compile_time_ms,
+      );
 
       // Store diagnostics in noteStore for chat context injection
       useNoteStore.getState().setLastCompileDiagnostics(res.diagnostics);
@@ -83,6 +93,7 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
       }
     } catch (err) {
       setError(String(err));
+      useUIStore.getState().setCompileStatus('error');
     } finally {
       setCompiling(false);
     }

@@ -64,7 +64,9 @@
     "loading": "Loading...",
     "empty": "No backlinks found",
     "blockMode": "Block backlinks",
-    "blockEmpty": "No block-level backlinks"
+    "blockEmpty": "No block-level backlinks",
+    "potentialLinks": "Potential Links",
+    "noPotential": "No potential links found"
   },
   "settings": {
     "title": "Settings",
@@ -201,7 +203,12 @@
     "zoomFit": "Fit to view",
     "refresh": "Refresh",
     "aiAnalyze": "AI Analyze Graph Structure",
-    "aiAnalysisTitle": "AI Graph Analysis"
+    "aiAnalysisTitle": "AI Graph Analysis",
+    "semanticToggle": "Semantic Mode (AI Enhanced)",
+    "semanticEdges": "semantic edges",
+    "clusters": "clusters",
+    "orphans": "orphan notes",
+    "suggestedLinks": "Suggested Links"
   },
   "dailyNote": {
     "today": "Today",
@@ -292,7 +299,12 @@
   "statusBar": {
     "words": "words",
     "saved": "Saved",
-    "unsaved": "Unsaved"
+    "unsaved": "Unsaved",
+    "compiling": "Compiling...",
+    "compiled": "Compiled",
+    "compileError": "Compile Error",
+    "aiGenerating": "AI Generating...",
+    "agentRunning": "Agent Running"
   },
   "pdf": {
     "export": "Export PDF",

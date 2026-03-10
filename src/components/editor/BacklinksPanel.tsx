@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
-import { getBacklinks, getBlockBacklinks, type BacklinkResult } from '@/lib/api';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { getBacklinks, getBlockBacklinks, suggestLinks, getGraphData, type BacklinkResult } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
+import { useChatStore } from '@/store/chatStore';
 import { useTranslation } from 'react-i18next';
-import { Boxes } from 'lucide-react';
+import { Boxes, Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ── Block ID detection helper ──────────────────────────────
 // Extracts ^blockId from the line at cursor position (1-based cursorLine)
@@ -21,6 +22,11 @@ export function BacklinksPanel() {
   const [backlinks, setBacklinks] = useState<BacklinkResult[]>([]);
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation();
+
+  // Potential links state
+  const [potentialLinks, setPotentialLinks] = useState<string[]>([]);
+  const [potentialLoading, setPotentialLoading] = useState(false);
+  const [potentialExpanded, setPotentialExpanded] = useState(false);
 
   // Detect if cursor is on a block ID line
   const blockId = useMemo(
@@ -59,6 +65,27 @@ export function BacklinksPanel() {
   }, [activeTabPath, blockId]);
 
   const openNote = useNoteStore((s) => s.openNote);
+
+  // Fetch AI-suggested potential links
+  const handleFetchPotential = useCallback(async () => {
+    if (!activeTabPath || !activeContent) return;
+    setPotentialLoading(true);
+    setPotentialExpanded(true);
+    try {
+      const config = useChatStore.getState().config;
+      // Get all vault note titles via graph data for comprehensive coverage
+      const graphData = await getGraphData();
+      const allTitles = graphData.nodes.map((n) => n.title).filter(Boolean);
+      const noteTitle = activeTabPath.replace(/\.md$/, '').split('/').pop() ?? '';
+      const results = await suggestLinks(activeContent, noteTitle, allTitles, config);
+      setPotentialLinks(results);
+    } catch (err) {
+      console.warn('[backlinks] potential links failed:', err);
+      setPotentialLinks([]);
+    } finally {
+      setPotentialLoading(false);
+    }
+  }, [activeTabPath, activeContent]);
 
   if (!activeTabPath) {
     return (
@@ -106,6 +133,52 @@ export function BacklinksPanel() {
               </li>
             ))}
           </ul>
+        )}
+      </div>
+
+      {/* Potential links section (AI-suggested) */}
+      <div className="border-t border-theme-border">
+        <button
+          onClick={() => {
+            if (!potentialExpanded && potentialLinks.length === 0) {
+              handleFetchPotential();
+            } else {
+              setPotentialExpanded((v) => !v);
+            }
+          }}
+          className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground hover:bg-theme-hover transition-colors"
+        >
+          <Sparkles size={12} />
+          <span className="font-medium">{t('backlinks.potentialLinks')}</span>
+          <div className="flex-1" />
+          {potentialLoading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : potentialExpanded ? (
+            <ChevronUp size={12} />
+          ) : (
+            <ChevronDown size={12} />
+          )}
+        </button>
+        {potentialExpanded && (
+          <div className="px-2 pb-2">
+            {potentialLinks.length === 0 && !potentialLoading ? (
+              <div className="p-2 text-xs text-muted-foreground">{t('backlinks.noPotential')}</div>
+            ) : (
+              <ul className="space-y-0.5">
+                {potentialLinks.map((link) => (
+                  <li key={link}>
+                    <button
+                      onClick={() => openNote(link.endsWith('.md') ? link : `${link}.md`, link)}
+                      className="w-full text-left px-2 py-1 text-xs rounded hover:bg-theme-hover transition-colors text-foreground"
+                    >
+                      <ChevronDown size={10} className="inline text-theme-accent mr-1 -rotate-90" />
+                      {link}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </div>
     </div>

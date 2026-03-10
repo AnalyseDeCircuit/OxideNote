@@ -40,9 +40,12 @@ import {
   Printer,
   PenTool,
   Sparkles,
+  Bot,
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import { useChatStore } from '@/store/chatStore';
+import { useUIStore } from '@/store/uiStore';
+import { useAgentStore } from '@/store/agentStore';
 import { exportToPdf } from '@/lib/exportPdf';
 import { exportToHtml, createHtmlMarked, buildHtmlDocument } from '@/lib/exportHtml';
 import { printHtml } from '@/lib/api';
@@ -73,6 +76,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   // Derive file extension from active tab for file-aware AI actions
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
   const fileExt = activeTabPath?.split('.').pop() || 'md';
+  const agentRunning = useAgentStore((s) => s.isRunning);
 
   // ── Voice input handler ───────────────────────────────────
   const handleVoiceToggle = useCallback(() => {
@@ -422,6 +426,27 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
               onClose={() => setAiMenuOpen(false)}
               fileExt={fileExt}
             />
+          )}
+        </div>
+      </ToolbarGroup>
+
+      <ToolbarDivider />
+
+      {/* ── Agent shortcut ─────────────────────────────── */}
+      <ToolbarGroup>
+        <div className="relative">
+          <ToolbarBtn
+            icon={<Bot size={14} />}
+            title={t('agent.title')}
+            onClick={() => {
+              useUIStore.getState().setSidePanelVisible(true);
+              useUIStore.getState().setSidePanelTab('agent');
+            }}
+            active={agentRunning}
+          />
+          {/* Running badge */}
+          {agentRunning && (
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-theme-accent animate-pulse" />
           )}
         </div>
       </ToolbarGroup>

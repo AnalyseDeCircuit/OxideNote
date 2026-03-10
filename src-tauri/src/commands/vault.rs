@@ -126,6 +126,13 @@ pub async fn open_vault(
         });
     }
 
+    // Start agent scheduler (periodic background tasks like daily review)
+    {
+        let agent_state = state.agent_state.clone();
+        let vault_clone = vault_path.clone();
+        crate::agent::scheduler::start_scheduler(agent_state, vault_clone);
+    }
+
     Ok(path)
 }
 

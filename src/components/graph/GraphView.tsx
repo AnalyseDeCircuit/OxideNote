@@ -31,6 +31,7 @@ interface ForceGraphInstance {
   linkWidth(w: number | ((link: object) => number)): ForceGraphInstance;
   linkDirectionalArrowLength(l: number): ForceGraphInstance;
   linkDirectionalArrowRelPos(p: number): ForceGraphInstance;
+  linkLineDash(fn: null | number[] | ((link: object) => number[] | null)): ForceGraphInstance;
   onNodeClick(fn: (n: object) => void): ForceGraphInstance;
   onNodeHover(fn: (n: object | null) => void): ForceGraphInstance;
   backgroundColor(c: string): ForceGraphInstance;
@@ -46,13 +47,13 @@ interface ForceGraphInstance {
 }
 type ForceGraphFactory = (el: HTMLElement) => ForceGraphInstance;
 const createForceGraph = ForceGraph as unknown as () => ForceGraphFactory;
-import { getGraphData, getLocalGraph, analyzeGraph, type GraphData, type GraphNode } from '@/lib/api';
+import { getGraphData, getLocalGraph, analyzeGraph, getSemanticGraphData, type GraphData, type GraphNode, type SemanticGraphData, type SuggestedLink } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { useChatStore } from '@/store/chatStore';
 import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
-import { X, Clock, Boxes, Globe, Focus, ZoomIn, ZoomOut, Maximize2, RotateCw, Sparkles, Loader2 } from 'lucide-react';
+import { X, Clock, Boxes, Globe, Focus, ZoomIn, ZoomOut, Maximize2, RotateCw, Sparkles, Loader2, BrainCircuit, Link2, ChevronDown, ChevronUp } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
@@ -237,6 +238,13 @@ export function GraphView() {
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
 
+  // ── Semantic graph mode (AI-enhanced) ────────────────────
+  const [semanticMode, setSemanticMode] = useState(false);
+  const [semanticData, setSemanticData] = useState<SemanticGraphData | null>(null);
+  const [showSuggested, setShowSuggested] = useState(false);
+  const semanticModeRef = useRef(false);
+  const semanticClusterRef = useRef<Map<string, { clusterId: number; color: string }>>(new Map());
+
   // ── 加载图谱数据 ─────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
@@ -251,6 +259,37 @@ export function GraphView() {
       })
       .finally(() => setLoading(false));
   }, [includeBlocks, localMode, localDepth, currentNotePath]);
+
+  // ── Load semantic graph data when mode is toggled on ─────
+  useEffect(() => {
+    if (!semanticMode) {
+      setSemanticData(null);
+      return;
+    }
+    getSemanticGraphData(0.75)
+      .then(setSemanticData)
+      .catch((err) => {
+        console.warn('[graph] Failed to load semantic data:', err);
+        setSemanticData(null);
+      });
+  }, [semanticMode]);
+
+  // Sync semanticMode ref for stable callbacks
+  semanticModeRef.current = semanticMode;
+
+  // ── Compute semantic cluster map for node coloring ───────
+  const semanticClusterMap = useMemo(() => {
+    const map = new Map<string, { clusterId: number; color: string }>();
+    if (!semanticData) return map;
+    for (const cluster of semanticData.clusters) {
+      const color = CLUSTER_PALETTE[cluster.id % CLUSTER_PALETTE.length];
+      for (const path of cluster.note_paths) {
+        map.set(path, { clusterId: cluster.id, color });
+      }
+    }
+    return map;
+  }, [semanticData]);
+  semanticClusterRef.current = semanticClusterMap;
 
   // ── 计算时间范围 ─────────────────────────────────────────
   const timeRange = useMemo(() => {
@@ -295,6 +334,21 @@ export function GraphView() {
     );
     return { nodes, links };
   }, [graphData, timelineEnabled, cutoffTs]);
+
+  // ── Merge semantic edges into link set when semantic mode is on
+  const mergedLinks = useMemo(() => {
+    const base = filteredData.links.map((l) => ({ ...l, _semantic: false }));
+    if (semanticMode && semanticData) {
+      const nodeIds = new Set(filteredData.nodes.map((n) => n.id));
+      for (const edge of semanticData.semantic_edges) {
+        // Only add semantic edges for visible nodes
+        if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+          base.push({ source: edge.source, target: edge.target, _semantic: true });
+        }
+      }
+    }
+    return base;
+  }, [filteredData, semanticMode, semanticData]);
 
   // ── 节点颜色计算函数 ─────────────────────────────────────
   const getNodeColor = useCallback(
@@ -348,19 +402,23 @@ export function GraphView() {
       .height(height)
       .graphData({
         nodes: filteredData.nodes.map((n) => ({ ...n })),
-        links: filteredData.links.map((l) => ({ ...l })),
+        links: mergedLinks.map((l) => ({ ...l })),
       })
       .nodeLabel((node: any) => node.title || node.id)
       .nodeColor(() => accentColor)
       .nodeRelSize(5)
-      // Link color: match source node's cluster color (with transparency)
+      // Link color: semantic edges get accent color, structural get cluster color
       .linkColor((link: any) => {
+        if (link._semantic) {
+          return accentColorRef.current + '50'; // Semi-transparent accent for semantic
+        }
         if (timelineEnabledRef.current) return borderColorRef.current;
         const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
         const cluster = clusterInfoRef.current?.get(sourceId);
         return cluster?.color ? `${cluster.color}55` : borderColorRef.current;
       })
       .linkWidth((link: any) => {
+        if (link._semantic) return 0.6; // Thinner for semantic edges
         // Thicker links between hubs
         const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
         const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -368,6 +426,8 @@ export function GraphView() {
         const tgtHub = clusterInfoRef.current?.get(targetId)?.isHub;
         return srcHub && tgtHub ? 1.5 : 0.8;
       })
+      // Dashed lines for semantic edges
+      .linkLineDash((link: any) => link._semantic ? [4, 2] : null)
       .linkDirectionalArrowLength(4)
       .linkDirectionalArrowRelPos(1)
       .backgroundColor('transparent')
@@ -380,9 +440,12 @@ export function GraphView() {
         const isHub = cluster?.isHub ?? false;
         const deg = cluster?.degree ?? 0;
 
-        // Choose color based on mode
+        // Choose color based on mode (semantic cluster > timeline > structural cluster)
         let color: string;
-        if (timelineEnabledRef.current) {
+        if (semanticModeRef.current) {
+          const sc = semanticClusterRef.current.get(node.id);
+          color = sc?.color ?? mutedColorRef.current;
+        } else if (timelineEnabledRef.current) {
           color = getNodeColorRef.current(node as GraphNode, accentColorRef.current);
         } else {
           color = cluster?.color ?? accentColorRef.current;
@@ -505,7 +568,7 @@ export function GraphView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData, setGraphViewOpen]);
 
-  // ── 时间轴滑动时增量更新图谱数据（不销毁/重建实例）──────
+  // ── 时间轴/语义模式滑动时增量更新图谱数据 ──────────────
   useEffect(() => {
     if (!graphRef.current) return;
     // Skip redundant re-injection right after graph creation
@@ -515,9 +578,9 @@ export function GraphView() {
     }
     graphRef.current.graphData({
       nodes: filteredData.nodes.map((n) => ({ ...n })),
-      links: filteredData.links.map((l) => ({ ...l })),
+      links: mergedLinks.map((l) => ({ ...l })),
     });
-  }, [filteredData]);
+  }, [filteredData, mergedLinks]);
 
   // ── 键盘事件：Esc 关闭 ───────────────────────────────────
   useEffect(() => {
@@ -734,6 +797,32 @@ export function GraphView() {
           >
             <Boxes size={15} />
           </button>
+          {/* Semantic mode toggle */}
+          <button
+            onClick={() => setSemanticMode((v) => !v)}
+            className={`p-1.5 rounded transition-colors ${
+              semanticMode
+                ? 'bg-theme-accent/20 text-theme-accent'
+                : 'hover:bg-theme-hover text-muted-foreground'
+            }`}
+            title={t('graph.semanticToggle')}
+          >
+            <BrainCircuit size={15} />
+          </button>
+          {/* Suggested links (only when semantic mode is on) */}
+          {semanticMode && semanticData && semanticData.suggested_links.length > 0 && (
+            <button
+              onClick={() => setShowSuggested((v) => !v)}
+              className={`p-1.5 rounded transition-colors ${
+                showSuggested
+                  ? 'bg-theme-accent/20 text-theme-accent'
+                  : 'hover:bg-theme-hover text-muted-foreground'
+              }`}
+              title={t('graph.suggestedLinks')}
+            >
+              <Link2 size={15} />
+            </button>
+          )}
           {/* Timeline toggle */}
           <button
             onClick={() => setTimelineEnabled((v) => !v)}
@@ -794,6 +883,59 @@ export function GraphView() {
                          [&_li]:my-0.5"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(aiAnalysis) }}
             />
+          </div>
+        )}
+
+        {/* Suggested links panel (semantic mode) */}
+        {showSuggested && semanticData && semanticData.suggested_links.length > 0 && (
+          <div className="absolute top-2 left-2 w-72 max-h-[60%] bg-background/95 backdrop-blur-sm border border-theme-border rounded-lg shadow-lg flex flex-col overflow-hidden z-10">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-theme-border">
+              <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                <Link2 size={13} className="text-theme-accent" />
+                {t('graph.suggestedLinks')}
+              </span>
+              <button
+                onClick={() => setShowSuggested(false)}
+                className="p-0.5 rounded hover:bg-theme-hover text-muted-foreground"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {semanticData.suggested_links.map((sl, i) => {
+                const fromName = sl.from.replace(/\.md$/, '').split('/').pop() ?? sl.from;
+                const toName = sl.to.replace(/\.md$/, '').split('/').pop() ?? sl.to;
+                return (
+                  <div key={i} className="px-3 py-2 border-b border-theme-border/50 last:border-0 hover:bg-theme-hover/50">
+                    <div className="flex items-center gap-1 text-xs text-foreground">
+                      <span className="truncate max-w-[100px]" title={sl.from}>{fromName}</span>
+                      <span className="text-muted-foreground mx-0.5">→</span>
+                      <span className="truncate max-w-[100px]" title={sl.to}>{toName}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+                        {(sl.similarity * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{sl.reason}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Semantic mode stats badge */}
+        {semanticMode && semanticData && (
+          <div className="absolute bottom-2 left-2 bg-background/90 backdrop-blur-sm border border-theme-border rounded-md px-2.5 py-1.5 text-[10px] text-muted-foreground z-10 flex items-center gap-2">
+            <BrainCircuit size={12} className="text-theme-accent" />
+            <span>{semanticData.semantic_edges.length} {t('graph.semanticEdges')}</span>
+            <span>·</span>
+            <span>{semanticData.clusters.length} {t('graph.clusters')}</span>
+            {semanticData.orphans.length > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-yellow-500">{semanticData.orphans.length} {t('graph.orphans')}</span>
+              </>
+            )}
           </div>
         )}
       </div>

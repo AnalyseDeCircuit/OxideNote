@@ -138,6 +138,10 @@ pub fn run() {
             commands::typst::compile_typst_to_pdf,
             commands::typst::compile_typst_content,
             commands::typst::list_bib_entries,
+            commands::typst::detect_latex_compilers,
+            commands::typst::compile_latex,
+            commands::typst::list_templates,
+            commands::search::get_semantic_graph_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

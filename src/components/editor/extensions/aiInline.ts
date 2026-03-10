@@ -314,8 +314,10 @@ export async function triggerAiTransform(
   const contextEnd = Math.min(view.state.doc.length, to + 500);
   const context = view.state.doc.sliceString(contextStart, contextEnd);
 
-  // Show loading state
+  // Show loading state in editor + status bar
   view.dispatch({ effects: setAiLoading.of(true) });
+  const { useUIStore } = await import('@/store/uiStore');
+  useUIStore.getState().setAiGenerating(true);
 
   try {
     const result = await inlineAiTransform(selectedText, instruction, context, noteTitle, fileExt, config);
@@ -331,6 +333,8 @@ export async function triggerAiTransform(
   } catch (err) {
     view.dispatch({ effects: rejectAiResult.of(null) });
     throw err; // Let caller handle the error toast
+  } finally {
+    useUIStore.getState().setAiGenerating(false);
   }
 }
 
@@ -351,8 +355,10 @@ export async function triggerAiContinue(
   const start = Math.max(0, cursor - 2000);
   const precedingText = view.state.doc.sliceString(start, cursor);
 
-  // Show loading state
+  // Show loading state in editor + status bar
   view.dispatch({ effects: setAiLoading.of(true) });
+  const { useUIStore } = await import('@/store/uiStore');
+  useUIStore.getState().setAiGenerating(true);
 
   try {
     const result = await inlineAiContinue(precedingText, noteTitle, config);
@@ -368,6 +374,8 @@ export async function triggerAiContinue(
   } catch (err) {
     view.dispatch({ effects: rejectAiResult.of(null) });
     throw err;
+  } finally {
+    useUIStore.getState().setAiGenerating(false);
   }
 }
 

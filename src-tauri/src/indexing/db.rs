@@ -917,3 +917,55 @@ pub fn get_embedded_note_paths(conn: &Connection) -> Result<std::collections::Ha
     }
     Ok(set)
 }
+
+/// Public wrapper for cosine_similarity (used by semantic graph commands)
+pub fn cosine_similarity_pub(a: &[f32], b: &[f32]) -> f32 {
+    cosine_similarity(a, b)
+}
+
+/// Get average embedding per note (mean of all chunks).
+/// Returns a map of note_path → mean embedding vector.
+pub fn get_note_mean_embeddings(
+    conn: &Connection,
+) -> Result<HashMap<String, Vec<f32>>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT note_path, embedding, dimensions FROM embeddings ORDER BY note_path, chunk_index",
+    )?;
+
+    // Accumulate: note_path → (sum_vec, count)
+    let mut accum: HashMap<String, (Vec<f32>, usize)> = HashMap::new();
+
+    let rows = stmt.query_map([], |row| {
+        let path: String = row.get(0)?;
+        let blob: Vec<u8> = row.get(1)?;
+        let dims: i64 = row.get(2)?;
+        Ok((path, blob, dims as usize))
+    })?;
+
+    for row in rows {
+        let (path, blob, dims) = row?;
+        let vec = blob_to_vec(&blob);
+        let entry = accum.entry(path).or_insert_with(|| (vec![0.0; dims], 0));
+        // Accumulate element-wise sum
+        if entry.0.len() == vec.len() {
+            for (s, v) in entry.0.iter_mut().zip(vec.iter()) {
+                *s += v;
+            }
+            entry.1 += 1;
+        }
+    }
+
+    // Divide by count to get mean
+    let mut result: HashMap<String, Vec<f32>> = HashMap::new();
+    for (path, (mut sum_vec, count)) in accum {
+        if count > 0 {
+            let c = count as f32;
+            for v in sum_vec.iter_mut() {
+                *v /= c;
+            }
+            result.insert(path, sum_vec);
+        }
+    }
+
+    Ok(result)
+}

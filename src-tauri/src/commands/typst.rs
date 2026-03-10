@@ -734,3 +734,464 @@ fn extract_bib_field_value(text: &str) -> String {
         trimmed[..end].trim().to_string()
     }
 }
+
+// ── LaTeX external compilation ──────────────────────────────
+
+/// Whitelisted LaTeX compiler binaries (prevent arbitrary command execution)
+const ALLOWED_LATEX_COMPILERS: &[&str] = &["pdflatex", "xelatex", "lualatex", "latexmk"];
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LatexCompileResult {
+    pub pdf_path: String,
+    pub diagnostics: Vec<LatexDiagnostic>,
+    pub log_output: String,
+    pub compile_time_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LatexDiagnostic {
+    pub line: Option<usize>,
+    pub severity: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectedCompiler {
+    pub name: String,
+    pub path: String,
+}
+
+/// Detect available LaTeX compilers on the system via `which`.
+#[tauri::command]
+pub async fn detect_latex_compilers() -> Result<Vec<DetectedCompiler>, TypstError> {
+    let mut found = Vec::new();
+    for &name in ALLOWED_LATEX_COMPILERS {
+        if let Ok(path) = which::which(name) {
+            found.push(DetectedCompiler {
+                name: name.to_string(),
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+    Ok(found)
+}
+
+/// Compile a .tex file using an external LaTeX compiler.
+/// Spawns the compiler in a subprocess, captures output, parses log for errors.
+#[tauri::command]
+pub async fn compile_latex(
+    source_path: String,
+    compiler: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<LatexCompileResult, TypstError> {
+    let vault_path = state.vault_path.read().clone();
+    let vault = vault_path.as_ref().ok_or(TypstError::NoVault)?;
+    let full_path =
+        validate_inside_vault_public(vault, &source_path).map_err(|_| TypstError::AccessDenied)?;
+
+    // Resolve compiler: use provided, or auto-detect first available
+    let compiler_name = compiler.unwrap_or_else(|| "xelatex".to_string());
+    if !ALLOWED_LATEX_COMPILERS.contains(&compiler_name.as_str()) {
+        return Err(TypstError::CompileError(format!(
+            "Compiler '{}' is not allowed. Use one of: {}",
+            compiler_name,
+            ALLOWED_LATEX_COMPILERS.join(", ")
+        )));
+    }
+
+    // Verify compiler exists
+    let compiler_path = which::which(&compiler_name)
+        .map_err(|_| TypstError::CompileError(format!(
+            "Compiler '{}' not found in PATH. Please install a TeX distribution.",
+            compiler_name
+        )))?;
+
+    let output_dir = full_path
+        .parent()
+        .ok_or_else(|| TypstError::Io("Cannot determine output directory".into()))?
+        .to_path_buf();
+
+    let start = std::time::Instant::now();
+
+    // Spawn compiler process
+    let output = tokio::process::Command::new(&compiler_path)
+        .arg("-interaction=nonstopmode")
+        .arg("-halt-on-error")
+        .arg("-no-shell-escape")
+        .arg("-output-directory")
+        .arg(&output_dir)
+        .arg(&full_path)
+        .current_dir(&output_dir)
+        .output()
+        .await
+        .map_err(|e| TypstError::Io(format!("Failed to spawn {}: {}", compiler_name, e)))?;
+
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined_log = format!("{}\n{}", stdout, stderr);
+
+    // Parse diagnostics from log output
+    let diagnostics = parse_latex_log(&combined_log);
+
+    // Determine PDF output path (same name, .pdf extension)
+    let pdf_name = full_path
+        .file_stem()
+        .map(|s| format!("{}.pdf", s.to_string_lossy()))
+        .unwrap_or_default();
+    let pdf_full_path = output_dir.join(&pdf_name);
+
+    // Return relative path within vault
+    let pdf_rel = pdf_full_path
+        .strip_prefix(vault)
+        .unwrap_or(&pdf_full_path)
+        .to_string_lossy()
+        .to_string();
+
+    Ok(LatexCompileResult {
+        pdf_path: pdf_rel,
+        diagnostics,
+        log_output: combined_log.chars().take(8000).collect(), // Truncate log
+        compile_time_ms: elapsed,
+    })
+}
+
+/// Parse LaTeX log output for error/warning lines.
+/// Line numbers are extracted from `l.NNN` patterns appearing in lines
+/// immediately following `! ` error markers.
+fn parse_latex_log(log: &str) -> Vec<LatexDiagnostic> {
+    use std::sync::LazyLock;
+    static LINE_PATTERN: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"l\.(\d+)").expect("valid regex"));
+
+    let mut diagnostics = Vec::new();
+    let lines: Vec<&str> = log.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("! ") {
+            // Search forward in the next few lines for `l.NNN` line number
+            let line_num = lines[i + 1..std::cmp::min(i + 5, lines.len())]
+                .iter()
+                .find_map(|subsequent| {
+                    LINE_PATTERN
+                        .captures(subsequent)
+                        .and_then(|c| c[1].parse::<usize>().ok())
+                });
+            diagnostics.push(LatexDiagnostic {
+                line: line_num,
+                severity: "error".to_string(),
+                message: trimmed.strip_prefix("! ").unwrap_or(trimmed).to_string(),
+            });
+        } else if trimmed.contains("LaTeX Warning:") {
+            diagnostics.push(LatexDiagnostic {
+                line: None,
+                severity: "warning".to_string(),
+                message: trimmed.to_string(),
+            });
+        }
+    }
+    diagnostics
+}
+
+// ── Template system ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DocumentTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// "typst" or "latex"
+    pub format: String,
+    /// "builtin" or "user"
+    pub source: String,
+    pub content: String,
+}
+
+/// Built-in templates (embedded at compile time)
+fn builtin_templates() -> Vec<DocumentTemplate> {
+    vec![
+        DocumentTemplate {
+            id: "typst-blank".into(),
+            name: "Blank Document".into(),
+            description: "Empty Typst document".into(),
+            format: "typst".into(),
+            source: "builtin".into(),
+            content: "#set page(paper: \"a4\")\n#set text(font: \"New Computer Modern\", size: 11pt)\n\n".into(),
+        },
+        DocumentTemplate {
+            id: "typst-paper".into(),
+            name: "Academic Paper".into(),
+            description: "IEEE-style academic paper".into(),
+            format: "typst".into(),
+            source: "builtin".into(),
+            content: r#"#set page(paper: "a4", margin: (x: 2.5cm, y: 2.5cm))
+#set text(font: "New Computer Modern", size: 11pt)
+#set par(justify: true, leading: 0.65em)
+#set heading(numbering: "1.1")
+
+#align(center)[
+  #text(size: 16pt, weight: "bold")[Paper Title]
+  #v(0.5em)
+  #text(size: 12pt)[Author Name]
+  #v(0.3em)
+  #text(size: 10pt, style: "italic")[Institution]
+]
+
+#v(1em)
+*Abstract.* #lorem(80)
+
+= Introduction
+#lorem(100)
+
+= Method
+#lorem(100)
+
+= Results
+#lorem(80)
+
+= Conclusion
+#lorem(60)
+"#.into(),
+        },
+        DocumentTemplate {
+            id: "typst-slides".into(),
+            name: "Presentation Slides".into(),
+            description: "Simple slide deck".into(),
+            format: "typst".into(),
+            source: "builtin".into(),
+            content: r#"#set page(paper: "presentation-16-9")
+#set text(font: "New Computer Modern", size: 20pt)
+
+#align(center + horizon)[
+  #text(size: 36pt, weight: "bold")[Presentation Title]
+  #v(1em)
+  Author Name
+  #v(0.5em)
+  #text(size: 14pt)[#datetime.today().display()]
+]
+
+#pagebreak()
+#heading[Introduction]
+- Point one
+- Point two
+- Point three
+
+#pagebreak()
+#heading[Content]
+#lorem(40)
+
+#pagebreak()
+#align(center + horizon)[
+  #text(size: 28pt, weight: "bold")[Thank You]
+]
+"#.into(),
+        },
+        DocumentTemplate {
+            id: "typst-letter".into(),
+            name: "Letter".into(),
+            description: "Formal letter".into(),
+            format: "typst".into(),
+            source: "builtin".into(),
+            content: r#"#set page(paper: "a4", margin: (x: 2.5cm, y: 2cm))
+#set text(font: "New Computer Modern", size: 11pt)
+
+#align(right)[
+  Your Name \
+  Your Address \
+  City, Postal Code \
+  #datetime.today().display()
+]
+
+#v(2em)
+Recipient Name \
+Recipient Address \
+City, Postal Code
+
+#v(1.5em)
+Dear Sir/Madam,
+
+#v(0.5em)
+#lorem(60)
+
+#v(0.5em)
+#lorem(40)
+
+#v(1em)
+Sincerely,
+
+#v(2em)
+_Your Name_
+"#.into(),
+        },
+        DocumentTemplate {
+            id: "typst-resume".into(),
+            name: "Resume / CV".into(),
+            description: "Clean resume layout".into(),
+            format: "typst".into(),
+            source: "builtin".into(),
+            content: r#"#set page(paper: "a4", margin: (x: 2cm, y: 1.5cm))
+#set text(font: "New Computer Modern", size: 10pt)
+
+#align(center)[
+  #text(size: 18pt, weight: "bold")[Your Name]
+  #v(0.3em)
+  email\@example.com · +1 234 567 890 · City, Country
+]
+
+#line(length: 100%)
+
+== Education
+*University Name* #h(1fr) 2020 -- 2024 \
+B.Sc. in Computer Science
+
+== Experience
+*Company Name* — _Position_ #h(1fr) 2024 -- Present \
+- Accomplishment one \
+- Accomplishment two
+
+== Skills
+*Languages:* Rust, TypeScript, Python \
+*Tools:* Git, Docker, Linux
+"#.into(),
+        },
+        DocumentTemplate {
+            id: "latex-blank".into(),
+            name: "Blank Document".into(),
+            description: "Empty LaTeX document".into(),
+            format: "latex".into(),
+            source: "builtin".into(),
+            content: "\\documentclass[a4paper,11pt]{article}\n\\usepackage[utf8]{inputenc}\n\n\\begin{document}\n\n\n\\end{document}\n".into(),
+        },
+        DocumentTemplate {
+            id: "latex-paper".into(),
+            name: "Academic Paper".into(),
+            description: "Article-class academic paper".into(),
+            format: "latex".into(),
+            source: "builtin".into(),
+            content: r#"\documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Paper Title}
+\author{Author Name}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Abstract text goes here.
+\end{abstract}
+
+\section{Introduction}
+Introduction text.
+
+\section{Method}
+Method description.
+
+\section{Results}
+Results.
+
+\section{Conclusion}
+Conclusion.
+
+\bibliographystyle{plain}
+\end{document}
+"#.into(),
+        },
+        DocumentTemplate {
+            id: "latex-slides".into(),
+            name: "Presentation (Beamer)".into(),
+            description: "Beamer slide deck".into(),
+            format: "latex".into(),
+            source: "builtin".into(),
+            content: r#"\documentclass{beamer}
+\usetheme{Madrid}
+\usepackage[utf8]{inputenc}
+
+\title{Presentation Title}
+\author{Author Name}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Introduction}
+\begin{itemize}
+  \item Point one
+  \item Point two
+  \item Point three
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Content}
+Content goes here.
+\end{frame}
+
+\begin{frame}
+\centering
+\Huge Thank You
+\end{frame}
+
+\end{document}
+"#.into(),
+        },
+    ]
+}
+
+/// List available document templates (builtin + user-defined).
+#[tauri::command]
+pub async fn list_templates(
+    format: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<DocumentTemplate>, TypstError> {
+    let mut templates = builtin_templates();
+
+    // Load user templates from <vault>/.oxidenote/templates/
+    let vault_path = state.vault_path.read().clone();
+    if let Some(vault) = vault_path.as_ref() {
+        let user_dir = vault.join(".oxidenote").join("templates");
+        if user_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&user_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    let fmt = match ext {
+                        "typ" => "typst",
+                        "tex" => "latex",
+                        _ => continue,
+                    };
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        let name = path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("Custom")
+                            .to_string();
+                        templates.push(DocumentTemplate {
+                            id: format!("user-{}", name),
+                            name: name.clone(),
+                            description: "User template".into(),
+                            format: fmt.into(),
+                            source: "user".into(),
+                            content,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Filter by format if specified
+    if let Some(fmt) = format {
+        templates.retain(|t| t.format == fmt);
+    }
+
+    Ok(templates)
+}

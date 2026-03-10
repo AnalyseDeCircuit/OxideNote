@@ -38,6 +38,13 @@ interface UIState {
   cardFlowOpen: boolean;
   diagramEditorOpen: boolean;
 
+  // ── Compilation & AI status (shown in StatusBar) ─────────
+  /** Current compile status: null (idle), 'compiling', 'success', 'error' */
+  compileStatus: 'compiling' | 'success' | 'error' | null;
+  compileTimeMs: number | null;
+  /** Whether an inline AI transform is in progress */
+  aiGenerating: boolean;
+
   toggleSidebar: () => void;
   toggleSidePanel: () => void;
   setSidebarVisible: (v: boolean) => void;
@@ -59,6 +66,8 @@ interface UIState {
   setCurrentSlide: (n: number) => void;
   setCardFlowOpen: (v: boolean) => void;
   setDiagramEditorOpen: (v: boolean) => void;
+  setCompileStatus: (status: 'compiling' | 'success' | 'error' | null, timeMs?: number | null) => void;
+  setAiGenerating: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -80,6 +89,9 @@ export const useUIStore = create<UIState>((set) => ({
   currentSlide: 0,
   cardFlowOpen: false,
   diagramEditorOpen: false,
+  compileStatus: null,
+  compileTimeMs: null,
+  aiGenerating: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleSidePanel: () => set((s) => ({ sidePanelVisible: !s.sidePanelVisible })),
@@ -102,4 +114,6 @@ export const useUIStore = create<UIState>((set) => ({
   setCurrentSlide: (n) => set({ currentSlide: n }),
   setCardFlowOpen: (v) => set({ cardFlowOpen: v }),
   setDiagramEditorOpen: (v) => set({ diagramEditorOpen: v }),
+  setCompileStatus: (status, timeMs) => set({ compileStatus: status, compileTimeMs: timeMs ?? null }),
+  setAiGenerating: (v) => set({ aiGenerating: v }),
 }));

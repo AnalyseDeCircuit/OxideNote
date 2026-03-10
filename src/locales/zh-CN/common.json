@@ -64,7 +64,9 @@
     "loading": "加载中...",
     "empty": "暂无反向链接",
     "blockMode": "块级反链",
-    "blockEmpty": "暂无块级反向引用"
+    "blockEmpty": "暂无块级反向引用",
+    "potentialLinks": "潜在链接",
+    "noPotential": "未发现潜在链接"
   },
   "settings": {
     "title": "设置",
@@ -201,7 +203,12 @@
     "zoomFit": "适应窗口",
     "refresh": "刷新",
     "aiAnalyze": "AI 分析图谱结构",
-    "aiAnalysisTitle": "AI 图谱分析"
+    "aiAnalysisTitle": "AI 图谱分析",
+    "semanticToggle": "语义模式（AI 增强）",
+    "semanticEdges": "语义连接",
+    "clusters": "聚类",
+    "orphans": "孤立笔记",
+    "suggestedLinks": "建议链接"
   },
   "dailyNote": {
     "today": "今天",
@@ -292,7 +299,12 @@
   "statusBar": {
     "words": "字",
     "saved": "已保存",
-    "unsaved": "未保存"
+    "unsaved": "未保存",
+    "compiling": "编译中...",
+    "compiled": "编译成功",
+    "compileError": "编译失败",
+    "aiGenerating": "AI 生成中...",
+    "agentRunning": "Agent 运行中"
   },
   "pdf": {
     "export": "导出 PDF",
