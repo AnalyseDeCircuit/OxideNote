@@ -19,6 +19,8 @@ import { LaTeXPreview } from './LaTeXPreview';
 import { TagSuggestion } from './TagSuggestion';
 import { SmartLinkSuggestion } from './SmartLinkSuggestion';
 import { SelectionToolbar } from './SelectionToolbar';
+import { EditorToolbar } from './EditorToolbar';
+import { getFormatAdapter } from '@/lib/formatAdapter';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
@@ -142,9 +144,9 @@ export function NoteEditor() {
     }
   }, [t]);
 
-  // ── 图片粘贴/拖拽处理 ────────────────────────────────────
-  // 从剪贴板或拖拽事件中捕获图片文件，
-  // 保存到 .attachments 目录并插入 Markdown 图片引用
+  // ── Image paste/drop handler ───────────────────────────────
+  // Captures image files from clipboard or drag events,
+  // saves to .attachments directory and inserts appropriate embed syntax
   const handleImageFile = useCallback(async (file: File) => {
     const view = viewRef.current;
     if (!view || !activePathRef.current) return;
@@ -155,11 +157,14 @@ export function NoteEditor() {
         new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
       );
       const relPath = await saveAttachment(base64, file.name);
-      const markdown = `![${file.name}](${relPath})`;
+      // Use format-aware image syntax based on file extension
+      const ext = activePathRef.current.split('.').pop() || 'md';
+      const adapter = getFormatAdapter(ext);
+      const embed = adapter.image(file.name, relPath);
       const { from } = view.state.selection.main;
       view.dispatch({
-        changes: { from, to: from, insert: markdown },
-        selection: { anchor: from + markdown.length },
+        changes: { from, to: from, insert: embed },
+        selection: { anchor: from + embed.length },
       });
     } catch (err) {
       toast({ title: t('editor.imageUploadFailed'), description: String(err), variant: 'error' });
@@ -453,6 +458,10 @@ export function NoteEditor() {
       {/* Canvas editor — persistent whiteboard for .canvas files */}
       {isCanvas && activeTabPath && (
         <CanvasEditor canvasPath={activeTabPath} />
+      )}
+
+      {!isSpecialFile && activeTabPath && showEditor && (
+        <EditorToolbar viewRef={viewRef} />
       )}
 
       {!isSpecialFile && (

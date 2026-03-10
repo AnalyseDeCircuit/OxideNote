@@ -1,15 +1,15 @@
 /**
- * EditorToolbar — 编辑器格式化工具栏
+ * EditorToolbar — unified formatting toolbar for Markdown, Typst, and LaTeX.
  *
- * 提供常用 Markdown 格式化快捷操作：
- *   · 标题 (H1~H3)  · 粗体 / 斜体 / 删除线
- *   · 代码           · 引用块
- *   · 无序列表       · 有序列表
- *   · 链接           · 图片引用
- *   · 水平分割线     · 公式块
+ * Uses the FormatAdapter abstraction to apply correct syntax based on
+ * the current file extension. All three languages share one toolbar UI
+ * with buttons that produce the right markup automatically.
  *
- * 直接操控 CodeMirror EditorView 实例进行文本插入/包裹，
- * 保持 undo 历史的完整性。
+ * Features:
+ *   · Headings (H1–H3)            · Bold / Italic / Strikethrough / Code
+ *   · Blockquote / Lists / Tables  · Link / Image / Math
+ *   · Export (PDF/HTML/DOCX/Print) · Voice input / Audio recording
+ *   · Compile (Typst/LaTeX)        · AI inline actions
  */
 
 import type { MutableRefObject } from 'react';
@@ -61,9 +61,16 @@ import { CanvasEditor } from '@/components/canvas/CanvasEditor';
 import { triggerAiTransform, triggerAiContinue } from '@/components/editor/extensions/aiInline';
 import { suggestTags, suggestLinks, listAllTags, getGraphData } from '@/lib/api';
 import { stripNoteExtension } from '@/lib/utils';
+import {
+  getFormatAdapter,
+  wrapSelection,
+  insertLinePrefix,
+  toggleHeading,
+  insertBlock,
+} from '@/lib/formatAdapter';
 
 // ═══════════════════════════════════════════════════════════════
-// 工具栏组件
+// EditorToolbar component
 // ═══════════════════════════════════════════════════════════════
 
 interface EditorToolbarProps {
@@ -77,9 +84,10 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
 
-  // Derive file extension from active tab for file-aware AI actions
+  // Derive file extension and format adapter
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
   const fileExt = activeTabPath?.split('.').pop() || 'md';
+  const adapter = getFormatAdapter(fileExt);
   const agentRunning = useAgentStore((s) => s.isRunning);
 
   // ── Voice input handler ───────────────────────────────────
@@ -120,105 +128,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     });
   }, [isListening, viewRef, t, i18n.language]);
 
-  // ── Wrap/unwrap selected text (toggle) ─────────────────────
-  // If already wrapped with prefix/suffix, remove them; otherwise wrap.
-  // If nothing is selected, insert placeholder and select it.
-  const wrapSelection = (prefix: string, suffix: string, placeholder: string) => {
-    const view = viewRef.current;
-    if (!view) return;
-
-    const { from, to } = view.state.selection.main;
-    const selected = view.state.sliceDoc(from, to);
-
-    // Check surrounding text for existing wrapping
-    const beforeFrom = Math.max(0, from - prefix.length);
-    const afterTo = Math.min(view.state.doc.length, to + suffix.length);
-    const before = view.state.sliceDoc(beforeFrom, from);
-    const after = view.state.sliceDoc(to, afterTo);
-
-    if (before === prefix && after === suffix) {
-      // Toggle OFF: remove the wrapping
-      view.dispatch({
-        changes: [
-          { from: beforeFrom, to: from, insert: '' },
-          { from: to, to: afterTo, insert: '' },
-        ],
-        selection: { anchor: beforeFrom, head: beforeFrom + selected.length },
-      });
-    } else {
-      // Toggle ON: wrap the selection
-      const text = selected || placeholder;
-      const wrapped = `${prefix}${text}${suffix}`;
-      view.dispatch({
-        changes: { from, to, insert: wrapped },
-        selection: { anchor: from + prefix.length, head: from + prefix.length + text.length },
-      });
-    }
-    view.focus();
-  };
-
-  // ── 行首插入操作 ──────────────────────────────────────────
-  // 用于标题、引用、列表等行首标记
-  const insertLinePrefix = (prefix: string) => {
-    const view = viewRef.current;
-    if (!view) return;
-
-    const { from } = view.state.selection.main;
-    const line = view.state.doc.lineAt(from);
-
-    view.dispatch({
-      changes: { from: line.from, to: line.from, insert: prefix },
-    });
-    view.focus();
-  };
-
-  // ── 标题层级切换 ──────────────────────────────────────────
-  // 如果行首已有标题前缀，先移除再替换（避免叠加）
-  const toggleHeading = (level: number) => {
-    const view = viewRef.current;
-    if (!view) return;
-
-    const { from } = view.state.selection.main;
-    const line = view.state.doc.lineAt(from);
-    const lineText = view.state.sliceDoc(line.from, line.to);
-    const headingMatch = lineText.match(/^(#{1,6})\s/);
-    const prefix = '#'.repeat(level) + ' ';
-
-    if (headingMatch) {
-      // 如果当前标题层级与目标相同 → 取消标题
-      // 否则替换为新层级
-      const existingPrefix = headingMatch[0];
-      if (headingMatch[1].length === level) {
-        view.dispatch({
-          changes: { from: line.from, to: line.from + existingPrefix.length, insert: '' },
-        });
-      } else {
-        view.dispatch({
-          changes: { from: line.from, to: line.from + existingPrefix.length, insert: prefix },
-        });
-      }
-    } else {
-      view.dispatch({
-        changes: { from: line.from, to: line.from, insert: prefix },
-      });
-    }
-    view.focus();
-  };
-
-  // ── 插入独立文本块 ────────────────────────────────────────
-  const insertBlock = (text: string) => {
-    const view = viewRef.current;
-    if (!view) return;
-
-    const { from } = view.state.selection.main;
-    view.dispatch({
-      changes: { from, to: from, insert: text },
-      selection: { anchor: from + text.length },
-    });
-    view.focus();
-  };
-
-  // ── PDF 导出操作 ──────────────────────────────────────────
+  // ── PDF export ────────────────────────────────────────────
   const handleExportPdf = async () => {
     const view = viewRef.current;
     if (!view) return;
@@ -233,7 +143,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   };
 
-  // ── HTML 导出操作 ─────────────────────────────────────────
+  // ── HTML export ───────────────────────────────────────────
   const handleExportHtml = async () => {
     const view = viewRef.current;
     if (!view) return;
@@ -264,10 +174,6 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
   };
 
   // ── Print via system browser ──────────────────────────────
-  // window.print() does not work in Tauri WebView. Instead we
-  // render Markdown → sanitized HTML, then call the Rust backend
-  // to write a temp file and open it in the system browser with
-  // an auto-print script.
   const handlePrint = useCallback(async () => {
     const view = viewRef.current;
     if (!view) return;
@@ -279,14 +185,11 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     try {
       const marked = createHtmlMarked();
       const rawHtml = await marked.parse(content);
-      // Sanitize to prevent XSS from untrusted Markdown content
       const cleanHtml = DOMPurify.sanitize(rawHtml, {
         ADD_TAGS: ['math-block'],
         ADD_ATTR: ['displaystyle'],
       });
       const fullHtml = buildHtmlDocument(title, cleanHtml);
-      // Delegate to Rust: inlines local images as data URIs,
-      // writes temp file and opens in system browser
       await printHtml(fullHtml, activeTab);
     } catch (err) {
       toast({ title: t('toolbar.printFailed'), description: String(err), variant: 'error' });
@@ -300,14 +203,12 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
 
     const { from, to } = view.state.selection.main;
     if (from === to) {
-      // No selection: trigger continuation
       const config = useChatStore.getState().config;
       const noteTitle = useNoteStore.getState().activeTabPath ? stripNoteExtension(useNoteStore.getState().activeTabPath!).split('/').pop() || '' : '';
       triggerAiContinue(view, config, noteTitle).catch((err) => {
         toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
       });
     } else {
-      // Has selection: show action menu
       setAiMenuOpen((prev) => !prev);
     }
   }, [viewRef, t]);
@@ -319,13 +220,12 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     const config = useChatStore.getState().config;
     const activePath = useNoteStore.getState().activeTabPath || '';
     const noteTitle = activePath.replace(/\.[^.]+$/, '').split('/').pop() || '';
-    const fileExt = activePath.split('.').pop() || 'md';
-    triggerAiTransform(view, instruction, config, noteTitle, fileExt).catch((err) => {
+    const ext = activePath.split('.').pop() || 'md';
+    triggerAiTransform(view, instruction, config, noteTitle, ext).catch((err) => {
       toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
     });
   }, [viewRef, t]);
 
-  // AI suggest tags: inserts inline #tags at the end of the note
   const handleSuggestTags = useCallback(async () => {
     setAiMenuOpen(false);
     const view = viewRef.current;
@@ -337,7 +237,6 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       const allTags = await listAllTags();
       const tags = await suggestTags(content, noteTitle, allTags.map((t) => t.tag), config);
       if (!tags.length) return;
-      // Insert suggested tags as inline #tags at the end of the document
       const tagLine = '\n\n' + tags.map((tag) => `#${tag}`).join(' ');
       const docLen = view.state.doc.length;
       view.dispatch({ changes: { from: docLen, to: docLen, insert: tagLine } });
@@ -347,7 +246,6 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   }, [viewRef, t]);
 
-  // AI suggest links: inserts [[WikiLinks]] at the cursor
   const handleSuggestLinks = useCallback(async () => {
     setAiMenuOpen(false);
     const view = viewRef.current;
@@ -360,7 +258,6 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       const allTitles = graphData.nodes.map((n) => n.title).filter((t) => t && t !== noteTitle);
       const suggestions = await suggestLinks(content, noteTitle, allTitles, config);
       if (!suggestions.length) return;
-      // Insert suggested links at the end of the document
       const linkLine = '\n\n' + suggestions.map((s) => `[[${s}]]`).join(' · ');
       const docLen = view.state.doc.length;
       view.dispatch({ changes: { from: docLen, to: docLen, insert: linkLine } });
@@ -370,58 +267,104 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   }, [viewRef, t]);
 
-  // ── Compile/build handler for .typ/.tex files ──────────
+  // ── Compile handler for .typ/.tex files ───────────────────
   const isCompilable = fileExt === 'typ' || fileExt === 'tex';
 
   const handleCompile = useCallback(() => {
     if (!activeTabPath) return;
-    // Dispatch a custom event that preview components (TypstPreview/LaTeXPreview) listen for.
-    // This avoids duplicate compilation — the preview owns the actual compile logic.
     window.dispatchEvent(new CustomEvent('compile-request', { detail: { path: activeTabPath } }));
   }, [activeTabPath]);
 
+  // ── Format-aware toolbar actions ──────────────────────────
+  // These use the adapter to produce correct syntax per language
+
+  const doWrap = (key: 'bold' | 'italic' | 'strikethrough' | 'inlineCode' | 'inlineMath') => {
+    const view = viewRef.current;
+    if (view) wrapSelection(view, adapter[key]);
+  };
+
+  const doHeading = (level: number) => {
+    const view = viewRef.current;
+    if (view) toggleHeading(view, adapter, level);
+  };
+
+  const doLinePrefix = (key: 'quote' | 'unorderedList' | 'orderedList') => {
+    const view = viewRef.current;
+    if (!view) return;
+    const val = adapter[key];
+    // Block-style values (containing newlines) use insertBlock instead of line prefix
+    if (val.includes('\n')) {
+      insertBlock(view, val);
+    } else {
+      insertLinePrefix(view, val);
+    }
+  };
+
+  const doBlock = (key: 'horizontalRule' | 'table' | 'mathBlock') => {
+    const view = viewRef.current;
+    if (view) insertBlock(view, adapter[key]);
+  };
+
+  const doLink = () => {
+    const view = viewRef.current;
+    if (view) insertBlock(view, adapter.link('link text', 'url'));
+  };
+
+  const doImage = () => {
+    const view = viewRef.current;
+    if (view) insertBlock(view, adapter.image('alt', 'image-url'));
+  };
+
+  // Language badge for current file type
+  const langBadge = adapter.lang.toUpperCase();
+
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
-      {/* ── 标题层级 ───────────────────────────────────────── */}
+      {/* ── Language indicator ────────────────────────────── */}
+      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-theme-accent/10 text-theme-accent mr-1 select-none">
+        {langBadge}
+      </span>
+
+      {/* ── Headings ─────────────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Heading1 size={14} />} title={t('toolbar.heading1')} onClick={() => toggleHeading(1)} />
-        <ToolbarBtn icon={<Heading2 size={14} />} title={t('toolbar.heading2')} onClick={() => toggleHeading(2)} />
-        <ToolbarBtn icon={<Heading3 size={14} />} title={t('toolbar.heading3')} onClick={() => toggleHeading(3)} />
+        <ToolbarBtn icon={<Heading1 size={14} />} title={t('toolbar.heading1')} onClick={() => doHeading(1)} />
+        <ToolbarBtn icon={<Heading2 size={14} />} title={t('toolbar.heading2')} onClick={() => doHeading(2)} />
+        <ToolbarBtn icon={<Heading3 size={14} />} title={t('toolbar.heading3')} onClick={() => doHeading(3)} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
-      {/* ── 行内格式 ───────────────────────────────────────── */}
+      {/* ── Inline formatting ────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Bold size={14} />} title={t('toolbar.bold')} onClick={() => wrapSelection('**', '**', 'bold')} />
-        <ToolbarBtn icon={<Italic size={14} />} title={t('toolbar.italic')} onClick={() => wrapSelection('*', '*', 'italic')} />
-        <ToolbarBtn icon={<Strikethrough size={14} />} title={t('toolbar.strikethrough')} onClick={() => wrapSelection('~~', '~~', 'text')} />
-        <ToolbarBtn icon={<Code size={14} />} title={t('toolbar.code')} onClick={() => wrapSelection('`', '`', 'code')} />
+        <ToolbarBtn icon={<Bold size={14} />} title={t('toolbar.bold')} onClick={() => doWrap('bold')} />
+        <ToolbarBtn icon={<Italic size={14} />} title={t('toolbar.italic')} onClick={() => doWrap('italic')} />
+        <ToolbarBtn icon={<Strikethrough size={14} />} title={t('toolbar.strikethrough')} onClick={() => doWrap('strikethrough')} />
+        <ToolbarBtn icon={<Code size={14} />} title={t('toolbar.code')} onClick={() => doWrap('inlineCode')} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
-      {/* ── 块级元素 ───────────────────────────────────────── */}
+      {/* ── Block elements ───────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Quote size={14} />} title={t('toolbar.quote')} onClick={() => insertLinePrefix('> ')} />
-        <ToolbarBtn icon={<List size={14} />} title={t('toolbar.unorderedList')} onClick={() => insertLinePrefix('- ')} />
-        <ToolbarBtn icon={<ListOrdered size={14} />} title={t('toolbar.orderedList')} onClick={() => insertLinePrefix('1. ')} />
-        <ToolbarBtn icon={<Table2 size={14} />} title={t('toolbar.table')} onClick={() => insertBlock('\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n|          |          |          |\n')} />
-        <ToolbarBtn icon={<Minus size={14} />} title={t('toolbar.horizontalRule')} onClick={() => insertBlock('\n---\n')} />
+        <ToolbarBtn icon={<Quote size={14} />} title={t('toolbar.quote')} onClick={() => doLinePrefix('quote')} />
+        <ToolbarBtn icon={<List size={14} />} title={t('toolbar.unorderedList')} onClick={() => doLinePrefix('unorderedList')} />
+        <ToolbarBtn icon={<ListOrdered size={14} />} title={t('toolbar.orderedList')} onClick={() => doLinePrefix('orderedList')} />
+        <ToolbarBtn icon={<Table2 size={14} />} title={t('toolbar.table')} onClick={() => doBlock('table')} />
+        <ToolbarBtn icon={<Minus size={14} />} title={t('toolbar.horizontalRule')} onClick={() => doBlock('horizontalRule')} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
-      {/* ── 嵌入 ───────────────────────────────────────────── */}
+      {/* ── Embed / math ─────────────────────────────────── */}
       <ToolbarGroup>
-        <ToolbarBtn icon={<Link size={14} />} title={t('toolbar.link')} onClick={() => wrapSelection('[', '](url)', 'link text')} />
-        <ToolbarBtn icon={<Image size={14} />} title={t('toolbar.image')} onClick={() => insertBlock('![alt](image-url)')} />
-        <ToolbarBtn icon={<Sigma size={14} />} title={t('toolbar.math')} onClick={() => insertBlock('\n$$\nE = mc^2\n$$\n')} />
+        <ToolbarBtn icon={<Link size={14} />} title={t('toolbar.link')} onClick={doLink} />
+        <ToolbarBtn icon={<Image size={14} />} title={t('toolbar.image')} onClick={doImage} />
+        <ToolbarBtn icon={<Sigma size={14} />} title={t('toolbar.math')} onClick={() => doBlock('mathBlock')} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
-      {/* ── 导出 & 语音 ─────────────────────────────────── */}
+      {/* ── Export & voice ───────────────────────────────── */}
       <ToolbarGroup>
         <ToolbarBtn icon={<FileDown size={14} />} title={t('pdf.export')} onClick={handleExportPdf} />
         <ToolbarBtn icon={<FileCode size={14} />} title={t('export.htmlExport')} onClick={handleExportHtml} />
@@ -438,8 +381,9 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
           onSaved={(relPath) => {
             const view = viewRef.current;
             if (!view) return;
-            // Insert audio embed as Markdown image syntax (rendered as <audio> by preview)
-            const embed = `![${relPath.split('/').pop() || 'audio'}](${relPath})`;
+            const embed = adapter.lang === 'md'
+              ? `![${relPath.split('/').pop() || 'audio'}](${relPath})`
+              : adapter.link(relPath.split('/').pop() || 'audio', relPath);
             const { from } = view.state.selection.main;
             view.dispatch({
               changes: { from, to: from, insert: `\n${embed}\n` },
@@ -451,7 +395,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* ── Compile (Typst/LaTeX only) ─────────────────── */}
+      {/* ── Compile (Typst/LaTeX only) ───────────────────── */}
       {isCompilable && (
         <>
           <ToolbarGroup>
@@ -465,14 +409,14 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
         </>
       )}
 
-      {/* ── Canvas ─────────────────────────────────────── */}
+      {/* ── Canvas ───────────────────────────────────────── */}
       <ToolbarGroup>
         <ToolbarBtn icon={<PenTool size={14} />} title={t('canvas.title')} onClick={() => setCanvasOpen(true)} />
       </ToolbarGroup>
 
       <ToolbarDivider />
 
-      {/* ── AI ─────────────────────────────────────────── */}
+      {/* ── AI ───────────────────────────────────────────── */}
       <ToolbarGroup>
         <div className="relative">
           <ToolbarBtn
@@ -494,19 +438,15 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
 
       <ToolbarDivider />
 
-      {/* ── Agent shortcut ─────────────────────────────── */}
+      {/* ── Agent shortcut ───────────────────────────────── */}
       <ToolbarGroup>
         <div className="relative">
           <ToolbarBtn
             icon={<Bot size={14} />}
             title={t('agent.title')}
-            onClick={() => {
-              useUIStore.getState().setSidePanelVisible(true);
-              useUIStore.getState().setSidePanelTab('agent');
-            }}
+            onClick={() => useUIStore.getState().setSidebarSection('agent')}
             active={agentRunning}
           />
-          {/* Running badge */}
           {agentRunning && (
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-theme-accent animate-pulse" />
           )}
@@ -526,7 +466,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
           onSaved={(relPath) => {
             const view = viewRef.current;
             if (!view) return;
-            const embed = `![canvas](${relPath})`;
+            const embed = adapter.image('canvas', relPath);
             const { from } = view.state.selection.main;
             view.dispatch({
               changes: { from, to: from, insert: `\n${embed}\n` },
