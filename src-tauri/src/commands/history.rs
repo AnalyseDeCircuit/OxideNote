@@ -66,7 +66,7 @@ const MAX_SNAPSHOTS_PER_NOTE: usize = 50;
 /// Compute the history directory for a given note path.
 /// e.g. for "notes/ideas.md" → ".oxidenote/history/notes/ideas"
 fn history_dir_for(vault: &Path, note_rel_path: &str) -> PathBuf {
-    let stem = note_rel_path.strip_suffix(".md").unwrap_or(note_rel_path);
+    let stem = super::util::strip_note_extension(note_rel_path);
     vault.join(".oxidenote").join("history").join(stem)
 }
 

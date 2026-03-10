@@ -57,6 +57,7 @@ import { AudioRecorder } from '@/components/editor/AudioRecorder';
 import { CanvasEditor } from '@/components/canvas/CanvasEditor';
 import { triggerAiTransform, triggerAiContinue } from '@/components/editor/extensions/aiInline';
 import { suggestTags, suggestLinks, listAllTags, getGraphData } from '@/lib/api';
+import { stripNoteExtension } from '@/lib/utils';
 
 // ═══════════════════════════════════════════════════════════════
 // 工具栏组件
@@ -202,7 +203,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     if (!view) return;
     const content = view.state.doc.toString();
     const activeTab = useNoteStore.getState().activeTabPath;
-    const title = activeTab?.replace(/\.md$/, '').split('/').pop() || 'export';
+    const title = activeTab ? stripNoteExtension(activeTab).split('/').pop() || 'export' : 'export';
     try {
       await exportToPdf(content, title);
       toast({ title: t('pdf.exportSuccess') });
@@ -217,7 +218,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     if (!view) return;
     const content = view.state.doc.toString();
     const activeTab = useNoteStore.getState().activeTabPath;
-    const title = activeTab?.replace(/\.md$/, '').split('/').pop() || 'export';
+    const title = activeTab ? stripNoteExtension(activeTab).split('/').pop() || 'export' : 'export';
     try {
       await exportToHtml(content, title);
       toast({ title: t('export.htmlExportSuccess') });
@@ -237,7 +238,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     const content = view.state.doc.toString();
     const activeTab = useNoteStore.getState().activeTabPath;
     if (!activeTab) return;
-    const title = activeTab.replace(/\.md$/, '').split('/').pop() || 'print';
+    const title = stripNoteExtension(activeTab).split('/').pop() || 'print';
 
     try {
       const marked = createHtmlMarked();
@@ -265,7 +266,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     if (from === to) {
       // No selection: trigger continuation
       const config = useChatStore.getState().config;
-      const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+      const noteTitle = useNoteStore.getState().activeTabPath ? stripNoteExtension(useNoteStore.getState().activeTabPath!).split('/').pop() || '' : '';
       triggerAiContinue(view, config, noteTitle).catch((err) => {
         toast({ title: t('inlineAi.error'), description: String(err), variant: 'error' });
       });
@@ -294,7 +295,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     const view = viewRef.current;
     if (!view) return;
     const config = useChatStore.getState().config;
-    const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+    const noteTitle = useNoteStore.getState().activeTabPath ? stripNoteExtension(useNoteStore.getState().activeTabPath!).split('/').pop() || '' : '';
     const content = view.state.doc.toString();
     try {
       const allTags = await listAllTags();
@@ -316,7 +317,7 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     const view = viewRef.current;
     if (!view) return;
     const config = useChatStore.getState().config;
-    const noteTitle = useNoteStore.getState().activeTabPath?.replace(/\.md$/, '').split('/').pop() || '';
+    const noteTitle = useNoteStore.getState().activeTabPath ? stripNoteExtension(useNoteStore.getState().activeTabPath!).split('/').pop() || '' : '';
     const content = view.state.doc.toString();
     try {
       const graphData = await getGraphData();

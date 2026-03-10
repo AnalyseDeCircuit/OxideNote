@@ -12,6 +12,7 @@ import { X, Search, ArrowUpDown, Clock, Type, FileText, Tag } from 'lucide-react
 import { useUIStore } from '@/store/uiStore';
 import { useNoteStore } from '@/store/noteStore';
 import { listNotesSummary, readNote, type StatsRecentNote } from '@/lib/api';
+import { stripNoteExtension } from '@/lib/utils';
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -77,7 +78,7 @@ export function CardFlowView() {
         }
         return {
           path: n.path,
-          title: n.title || n.path.replace(/\.md$/, '').split('/').pop() || n.path,
+          title: n.title || stripNoteExtension(n.path).split('/').pop() || n.path,
           modified_at: n.modified_at,
           excerpt,
           tags,

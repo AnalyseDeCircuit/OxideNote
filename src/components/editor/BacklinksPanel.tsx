@@ -4,6 +4,7 @@ import { useNoteStore } from '@/store/noteStore';
 import { useChatStore } from '@/store/chatStore';
 import { useTranslation } from 'react-i18next';
 import { Boxes, Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { stripNoteExtension } from '@/lib/utils';
 
 // ── Block ID detection helper ──────────────────────────────
 // Extracts ^blockId from the line at cursor position (1-based cursorLine)
@@ -76,7 +77,7 @@ export function BacklinksPanel() {
       // Get all vault note titles via graph data for comprehensive coverage
       const graphData = await getGraphData();
       const allTitles = graphData.nodes.map((n) => n.title).filter(Boolean);
-      const noteTitle = activeTabPath.replace(/\.md$/, '').split('/').pop() ?? '';
+      const noteTitle = stripNoteExtension(activeTabPath).split('/').pop() ?? '';
       const results = await suggestLinks(activeContent, noteTitle, allTitles, config);
       setPotentialLinks(results);
     } catch (err) {
@@ -168,7 +169,7 @@ export function BacklinksPanel() {
                 {potentialLinks.map((link) => (
                   <li key={link}>
                     <button
-                      onClick={() => openNote(link.endsWith('.md') ? link : `${link}.md`, link)}
+                      onClick={() => openNote(/\.(md|typ|tex)$/i.test(link) ? link : `${link}.md`, link)}
                       className="w-full text-left px-2 py-1 text-xs rounded hover:bg-theme-hover transition-colors text-foreground"
                     >
                       <ChevronDown size={10} className="inline text-theme-accent mr-1 -rotate-90" />

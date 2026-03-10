@@ -53,6 +53,7 @@ import { useUIStore } from '@/store/uiStore';
 import { useChatStore } from '@/store/chatStore';
 import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
+import { stripNoteExtension } from '@/lib/utils';
 import { X, Clock, Boxes, Globe, Focus, ZoomIn, ZoomOut, Maximize2, RotateCw, Sparkles, Loader2, BrainCircuit, Link2, ChevronDown, ChevronUp } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -903,8 +904,8 @@ export function GraphView() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {semanticData.suggested_links.map((sl, i) => {
-                const fromName = sl.from.replace(/\.md$/, '').split('/').pop() ?? sl.from;
-                const toName = sl.to.replace(/\.md$/, '').split('/').pop() ?? sl.to;
+                const fromName = stripNoteExtension(sl.from).split('/').pop() ?? sl.from;
+                const toName = stripNoteExtension(sl.to).split('/').pop() ?? sl.to;
                 return (
                   <div key={i} className="px-3 py-2 border-b border-theme-border/50 last:border-0 hover:bg-theme-hover/50">
                     <div className="flex items-center gap-1 text-xs text-foreground">

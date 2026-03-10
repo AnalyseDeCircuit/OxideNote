@@ -75,7 +75,7 @@ export function BookmarkList() {
       {!collapsed && (
         <ul className="pb-1">
           {bookmarks.map((bm) => {
-            const name = bm.path.split('/').pop()?.replace('.md', '') ?? bm.path;
+            const name = bm.path.split('/').pop()?.replace(/\.(md|typ|tex)$/, '') ?? bm.path;
             return (
               <li key={bm.path} className="group">
                 <button

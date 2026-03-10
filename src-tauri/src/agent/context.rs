@@ -62,7 +62,7 @@ fn build_vault_summary(
     {
         let entry = entry.map_err(|e| e.to_string())?;
         if entry.file_type().is_file()
-            && entry.path().extension().map_or(false, |ext| ext == "md")
+            && entry.path().extension().and_then(|e| e.to_str()).map_or(false, |ext| crate::commands::util::is_supported_extension(ext))
         {
             note_count += 1;
         } else if entry.file_type().is_dir() {
@@ -144,7 +144,7 @@ async fn build_relevant_notes(
                 {
                     let entry = entry.map_err(|e| e.to_string())?;
                     if entry.file_type().is_file()
-                        && entry.path().extension().map_or(false, |ext| ext == "md")
+                        && entry.path().extension().and_then(|e| e.to_str()).map_or(false, |ext| crate::commands::util::is_supported_extension(ext))
                     {
                         let rel = entry
                             .path()

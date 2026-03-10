@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { toast } from '@/hooks/useToast';
 import { listen } from '@tauri-apps/api/event';
+import { NOTE_EXT_RE, stripNoteExtension } from '@/lib/utils';
 
 // ═══════════════════════════════════════════════════════════════
 // NoteEditor — 核心编辑组件
@@ -124,7 +125,7 @@ export function NoteEditor() {
         // 精确匹配优先：先查找 stem 完全一致的结果，避免模糊匹配打开错误笔记
         const targetLower = target.toLowerCase();
         const exact = results.find((r) => {
-          const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+          const stem = r.path.replace(NOTE_EXT_RE, '').split('/').pop()?.toLowerCase();
           return stem === targetLower || r.path.toLowerCase() === targetLower;
         });
         const best = exact ?? results[0];
@@ -437,6 +438,7 @@ export function NoteEditor() {
   const isPdf = activeTabPath?.toLowerCase().endsWith('.pdf');
   const isCanvas = activeTabPath?.toLowerCase().endsWith('.canvas');
   const isTypst = activeTabPath?.toLowerCase().endsWith('.typ');
+  const isLatex = activeTabPath?.toLowerCase().endsWith('.tex');
   // Binary/special files bypass CodeMirror entirely; Typst is editable text
   const isSpecialFile = isPdf || isCanvas;
 
@@ -499,16 +501,16 @@ export function NoteEditor() {
       </div>
       )}
 
-      {/* ── Tag suggestion pills (AI-powered) ─────────────── */}
-      {activeTabPath && !isSpecialFile && !isTypst && activeTabPath.endsWith('.md') && (
+      {/* Tag suggestion pills (AI-powered) — Markdown notes only */}
+      {activeTabPath && !isSpecialFile && !isTypst && !isLatex && activeTabPath.endsWith('.md') && (
         <div className="shrink-0 px-3 py-1 border-t border-theme-border flex items-center gap-3">
           <TagSuggestion
             path={activeTabPath}
-            title={activeTabPath.replace(/\.md$/, '').split('/').pop() ?? ''}
+            title={stripNoteExtension(activeTabPath).split('/').pop() ?? ''}
           />
           <SmartLinkSuggestion
             path={activeTabPath}
-            title={activeTabPath.replace(/\.md$/, '').split('/').pop() ?? ''}
+            title={stripNoteExtension(activeTabPath).split('/').pop() ?? ''}
           />
         </div>
       )}

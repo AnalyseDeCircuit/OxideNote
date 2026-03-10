@@ -24,7 +24,7 @@ function collectNotePaths(entries: TreeNode[], prefix = ''): string[] {
     const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.is_dir && entry.children) {
       paths.push(...collectNotePaths(entry.children, fullPath));
-    } else if (entry.name.endsWith('.md')) {
+    } else if (/\.(md|typ|tex)$/i.test(entry.name)) {
       paths.push(fullPath);
     }
   }
@@ -127,9 +127,9 @@ export async function publishSite(tree: TreeNode[]): Promise<number> {
         ADD_ATTR: ['displaystyle'],
       });
 
-      // Convert .md path to .html path, sanitize each segment individually
-      const htmlPath = notePath.replace(/\.md$/, '.html');
-      const title = notePath.replace(/\.md$/, '').split('/').pop() || notePath;
+      // Convert note path to .html path, sanitize each segment individually
+      const htmlPath = notePath.replace(/\.(md|typ|tex)$/, '.html');
+      const title = notePath.replace(/\.(md|typ|tex)$/, '').split('/').pop() || notePath;
       const safePath = htmlPath.split('/').map(sanitizeFilename).join('/');
 
       const pageHtml = buildSitePage(title, cleanHtml);

@@ -74,8 +74,8 @@ fn extract_attachments(content: &str) -> Vec<String> {
     // WikiLink embeds: ![[filename]]
     for cap in RE_WIKI_EMBED.captures_iter(content) {
         let name = cap[1].trim();
-        // Only include non-markdown embeds (images, pdfs, etc.)
-        if !name.ends_with(".md") {
+        // Only include non-note embeds (images, pdfs, etc.)
+        if !crate::commands::util::is_supported_note_file(name) {
             paths.push(name.to_string());
         }
     }

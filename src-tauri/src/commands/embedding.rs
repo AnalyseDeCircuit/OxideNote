@@ -446,7 +446,7 @@ fn collect_md_recursive(
         }
         if path.is_dir() {
             collect_md_recursive(root, &path, files)?;
-        } else if path.extension().map_or(false, |ext| ext == "md") {
+        } else if path.extension().and_then(|e| e.to_str()).map_or(false, |ext| crate::commands::util::is_supported_extension(ext)) {
             files.push(path);
         }
     }

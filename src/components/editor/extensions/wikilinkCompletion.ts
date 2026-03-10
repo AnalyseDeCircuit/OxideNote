@@ -13,6 +13,7 @@ import {
 } from '@codemirror/autocomplete';
 import { searchByFilename, readNote, getNoteBlocks } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
+import { NOTE_EXT_RE } from '@/lib/utils';
 
 // Debounce tracking for API calls
 let lastQuery = '';
@@ -77,7 +78,7 @@ export async function wikilinkCompletionSource(
 
           const targetLower = noteName.toLowerCase();
           const exact = results.find((r) => {
-            const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+            const stem = r.path.replace(NOTE_EXT_RE, '').split('/').pop()?.toLowerCase();
             return stem === targetLower || r.path.toLowerCase() === targetLower;
           });
           targetPath = (exact ?? results[0]).path;
@@ -122,7 +123,7 @@ export async function wikilinkCompletionSource(
 
         const targetLower = noteName.toLowerCase();
         const exact = results.find((r) => {
-          const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+          const stem = r.path.replace(NOTE_EXT_RE, '').split('/').pop()?.toLowerCase();
           return stem === targetLower || r.path.toLowerCase() === targetLower;
         });
         targetPath = (exact ?? results[0]).path;
@@ -168,7 +169,7 @@ export async function wikilinkCompletionSource(
       if (fetchTimer) clearTimeout(fetchTimer);
       const results = await searchByFilename(query || '');
       lastResults = results.map((r) => {
-        const stem = r.path.replace(/\.md$/i, '').split('/').pop() || r.path;
+        const stem = r.path.replace(NOTE_EXT_RE, '').split('/').pop() || r.path;
         return {
           label: stem,
           detail: r.path,

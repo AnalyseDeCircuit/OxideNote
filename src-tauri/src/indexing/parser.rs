@@ -80,9 +80,7 @@ pub fn parse_note(content: &str, file_name: &str) -> ParsedNote {
 
     // Fallback to filename
     if result.title.is_empty() {
-        result.title = file_name
-            .trim_end_matches(".md")
-            .to_string();
+        result.title = crate::commands::util::strip_note_extension(file_name).to_string();
     }
 
     // Extract WikiLinks

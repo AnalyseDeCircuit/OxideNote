@@ -17,6 +17,7 @@ import { useNoteStore } from '@/store/noteStore';
 import { toast } from '@/hooks/useToast';
 import { exportToPdfWithSettings, type TypesettingSettings } from '@/lib/exportPdf';
 import { X } from 'lucide-react';
+import { stripNoteExtension } from '@/lib/utils';
 
 interface TypesettingDialogProps {
   open: boolean;
@@ -67,7 +68,7 @@ const PRESETS: Record<string, Partial<TypesettingSettings>> = {
 export function TypesettingDialog({ open, onClose, content }: TypesettingDialogProps) {
   const { t } = useTranslation();
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
-  const title = activeTabPath?.replace(/\.md$/, '').split('/').pop() || 'export';
+  const title = activeTabPath ? stripNoteExtension(activeTabPath).split('/').pop() || 'export' : 'export';
 
   const [settings, setSettings] = useState<TypesettingSettings>({
     pageSize: 'A4',

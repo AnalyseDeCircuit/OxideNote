@@ -15,6 +15,7 @@ import { updateCell, deleteRow, deleteColumn, sortRows, filterRows } from '@/lib
 import { searchByFilename } from '@/lib/api';
 import { useNoteStore } from '@/store/noteStore';
 import { Link2, FileText } from 'lucide-react';
+import { stripNoteExtension } from '@/lib/utils';
 
 interface TableViewProps {
   schema: DatabaseSchema;
@@ -383,7 +384,7 @@ function RelationCell({ value, editing, onStartEdit, onEndEdit, onChange }: Rela
 
   // Navigate to a linked note
   const handleNavigate = useCallback((path: string) => {
-    const name = path.split('/').pop()?.replace(/\.md$/i, '') || path;
+    const name = stripNoteExtension(path).split('/').pop() || path;
     useNoteStore.getState().openNote(path, name);
   }, []);
 
@@ -405,7 +406,7 @@ function RelationCell({ value, editing, onStartEdit, onEndEdit, onChange }: Rela
   const displayName = (p: string) => {
     const parts = p.split('/');
     const file = parts[parts.length - 1];
-    return file.replace(/\.md$/i, '');
+    return stripNoteExtension(file);
   };
 
   // View mode: show linked notes as badges

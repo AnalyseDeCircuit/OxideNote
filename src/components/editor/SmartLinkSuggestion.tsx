@@ -11,6 +11,7 @@ import { useChatStore } from '@/store/chatStore';
 import { useNoteStore } from '@/store/noteStore';
 import { getEditorView } from '@/lib/editorViewRef';
 import { toast } from '@/hooks/useToast';
+import { stripNoteExtension } from '@/lib/utils';
 
 interface SmartLinkSuggestionProps {
   /** Vault-relative path of the active note */
@@ -49,7 +50,7 @@ export function SmartLinkSuggestion({ path, title }: SmartLinkSuggestionProps) {
 
       // Gather all note titles in the vault for context
       const openTabs = useNoteStore.getState().openTabs;
-      const allTitles = openTabs.map((tab: { path: string }) => tab.path.replace(/\.md$/, '').split('/').pop() ?? '').filter(Boolean);
+      const allTitles = openTabs.map((tab: { path: string }) => stripNoteExtension(tab.path).split('/').pop() ?? '').filter(Boolean);
 
       const suggested = await suggestLinks(note.content, title, allTitles, config);
 

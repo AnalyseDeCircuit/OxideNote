@@ -21,12 +21,12 @@ pub fn scan_vault_raw(vault_path: &Path, conn: &Connection) -> Result<usize, Str
     {
         let path = entry.path();
 
-        // Only index .md files
+        // Only index supported note files (.md, .typ, .tex)
         if !path.is_file() {
             continue;
         }
-        let ext = path.extension().and_then(|e| e.to_str());
-        if ext != Some("md") {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !crate::commands::util::is_supported_extension(ext) {
             continue;
         }
 

@@ -76,13 +76,13 @@ pub async fn bulk_import_notes(
     for source in &source_paths {
         let source_path = Path::new(source);
 
-        // Only accept .md files
+        // Only accept supported note files (.md, .typ, .tex)
         let ext = source_path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        if ext.to_lowercase() != "md" {
-            skipped.push(format!("{} (not .md)", source));
+        if !super::util::is_supported_extension(ext) {
+            skipped.push(format!("{} (unsupported extension)", source));
             continue;
         }
 

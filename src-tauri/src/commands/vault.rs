@@ -228,8 +228,8 @@ fn list_dir_entries(dir: &Path, base: &Path, sort_mode: &str) -> Result<Vec<Tree
         };
         let is_dir = file_type.is_dir();
 
-        // Only include .md files and directories
-        if !is_dir && !file_name.ends_with(".md") {
+        // Only include supported note files (.md, .typ, .tex) and directories
+        if !is_dir && !super::util::is_supported_note_file(&file_name) {
             continue;
         }
 

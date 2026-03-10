@@ -19,7 +19,7 @@ export function Breadcrumb({ path }: BreadcrumbProps) {
   const segments = path.split('/');
   // Last segment is the file name, rest are folders
   const folders = segments.slice(0, -1);
-  const fileName = segments[segments.length - 1]?.replace('.md', '') ?? '';
+  const fileName = segments[segments.length - 1]?.replace(/\.(md|typ|tex)$/, '') ?? '';
 
   return (
     <nav className="flex items-center gap-0.5 text-xs text-muted-foreground overflow-x-auto whitespace-nowrap scrollbar-hide">

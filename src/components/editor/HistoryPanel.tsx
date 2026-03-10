@@ -110,7 +110,7 @@ export function HistoryPanel() {
         await restoreSnapshot(activeTabPath, entry.id);
         toast({ title: t('history.restored') });
         // Reload the note in the editor
-        const title = activeTabPath.split('/').pop()?.replace('.md', '') ?? activeTabPath;
+        const title = activeTabPath.split('/').pop()?.replace(/\.(md|typ|tex)$/, '') ?? activeTabPath;
         openNote(activeTabPath, title);
         loadHistory();
       } catch (err) {

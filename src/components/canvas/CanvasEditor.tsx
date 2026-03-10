@@ -26,6 +26,7 @@ import {
 import { useNoteStore, registerPendingSave, unregisterPendingSave } from '@/store/noteStore';
 import { toast } from '@/hooks/useToast';
 import { StickyNote, Type, MousePointer, Pen, FileText } from 'lucide-react';
+import { stripNoteExtension } from '@/lib/utils';
 
 // ── Props ─────────────────────────────────────────────────
 
@@ -411,11 +412,11 @@ export function CanvasEditor(props: CanvasEditorProps) {
     if (card.linkedBlock) {
       // Jump to the block's note and scroll to the block line
       const { notePath, blockId } = card.linkedBlock;
-      const title = notePath.replace(/\.md$/i, '').split('/').pop() || notePath;
+      const title = stripNoteExtension(notePath).split('/').pop() || notePath;
       useNoteStore.getState().setPendingScrollTarget({ blockId });
       useNoteStore.getState().openNote(notePath, title);
     } else if (card.linkedNote) {
-      const title = card.linkedNote.replace(/\.md$/i, '').split('/').pop() || card.linkedNote;
+      const title = stripNoteExtension(card.linkedNote).split('/').pop() || card.linkedNote;
       useNoteStore.getState().openNote(card.linkedNote, title);
     }
   }, []);
@@ -681,7 +682,7 @@ export function CanvasEditor(props: CanvasEditorProps) {
                   {card.linkedBlock ? (
                     <>
                       <FileText size={10} className="shrink-0" />
-                      {card.linkedBlock.notePath.replace(/\.md$/i, '').split('/').pop()}
+                      {stripNoteExtension(card.linkedBlock.notePath).split('/').pop()}
                       <span className="text-white/40">^{card.linkedBlock.blockId}</span>
                     </>
                   ) : (

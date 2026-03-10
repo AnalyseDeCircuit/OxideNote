@@ -24,6 +24,7 @@ import {
   Circle,
   CheckCircle,
 } from 'lucide-react';
+import { stripNoteExtension } from '@/lib/utils';
 
 interface Props {
   onClose: () => void;
@@ -85,7 +86,7 @@ export function TaskPanel({ onClose }: Props) {
   const done = tasks.filter((t) => t.done).length;
 
   const handleTaskClick = (task: TaskItem) => {
-    const title = task.path.replace(/\.md$/i, '').split('/').pop() || task.path;
+    const title = stripNoteExtension(task.path).split('/').pop() || task.path;
     useNoteStore.getState().openNote(task.path, title);
   };
 

@@ -88,7 +88,9 @@ pub async fn get_vault_stats(
                AND path NOT IN (SELECT target_path FROM links)
                AND id NOT IN (
                  SELECT n2.id FROM notes n2
-                 JOIN links l2 ON l2.target_path = replace(replace(n2.path, rtrim(n2.path, replace(n2.path, '/', '')), ''), '.md', '')
+                 JOIN links l2 ON l2.target_path = replace(replace(replace(
+                   replace(n2.path, rtrim(n2.path, replace(n2.path, '/', '')), ''),
+                   '.md', ''), '.typ', ''), '.tex', '')
                )",
             [],
             |r| r.get(0),

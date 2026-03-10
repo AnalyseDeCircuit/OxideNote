@@ -147,7 +147,8 @@ pub async fn write_note(
     }
 
     // Atomic write: write to .tmp then rename
-    let tmp_path = full_path.with_extension("md.tmp");
+    let tmp_name = format!("{}.tmp", full_path.display());
+    let tmp_path = std::path::PathBuf::from(&tmp_name);
     std::fs::write(&tmp_path, &content)
         .map_err(|e| NoteError::Io(e.to_string()))?;
     if let Err(e) = std::fs::rename(&tmp_path, &full_path) {
@@ -173,7 +174,7 @@ pub async fn create_note(
     let vault_path = state.vault_path.read();
     let base = vault_path.as_ref().ok_or(NoteError::NoVault)?;
 
-    let file_name = if name.ends_with(".md") {
+    let file_name = if super::util::is_supported_note_file(&name) {
         name.clone()
     } else {
         format!("{}.md", name)
@@ -197,17 +198,37 @@ pub async fn create_note(
     }
 
     let default_content = if let Some(tmpl) = template {
-        tmpl.replace("{{title}}", name.trim_end_matches(".md"))
+        let stem = super::util::strip_note_extension(&name);
+        tmpl.replace("{{title}}", stem)
             .replace("{{date}}", &chrono::Local::now().format("%Y-%m-%d").to_string())
             .replace("{{datetime}}", &chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
     } else {
-        format!("---\ntitle: {}\ncreated: {}\n---\n\n", 
-            name.trim_end_matches(".md"),
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        )
+        let stem = super::util::strip_note_extension(&name);
+        // Generate format-appropriate default content based on file extension
+        let ext = std::path::Path::new(&file_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("md");
+        match ext {
+            "tex" => format!(
+                "% {}\n% {}\n\\documentclass{{article}}\n\\begin{{document}}\n\n\\end{{document}}\n",
+                stem,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+            ),
+            "typ" => format!(
+                "// {}\n// {}\n\n",
+                stem,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+            ),
+            _ => format!("---\ntitle: {}\ncreated: {}\n---\n\n", 
+                stem,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+            ),
+        }
     };
-    // 原子写入：先写 .tmp 再 rename，与 write_note 保持一致
-    let tmp_path = full_path.with_extension("md.tmp");
+    // Atomic write: write to .tmp then rename (consistent with write_note)
+    let create_tmp_name = format!("{}.tmp", full_path.display());
+    let tmp_path = std::path::PathBuf::from(&create_tmp_name);
     std::fs::write(&tmp_path, &default_content)
         .map_err(|e| NoteError::Io(e.to_string()))?;
     std::fs::rename(&tmp_path, &full_path)

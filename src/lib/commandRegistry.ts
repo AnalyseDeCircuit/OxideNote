@@ -215,7 +215,7 @@ export function buildCommands(t: (key: string) => string): AppCommand[] {
         open({
           title: t('import.bulkImport'),
           multiple: true,
-          filters: [{ name: 'Markdown', extensions: ['md'] }],
+          filters: [{ name: 'Notes', extensions: ['md', 'typ', 'tex'] }],
         }).then((selected) => {
           if (selected && selected.length > 0) {
             bulkImportNotes(selected as string[], '').catch((e) =>

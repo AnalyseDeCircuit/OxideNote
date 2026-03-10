@@ -11,6 +11,7 @@
  */
 
 import { readNote, writeNote, listTree, type TreeNode } from '@/lib/api';
+import { stripNoteExtension } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ function collectMdPaths(nodes: TreeNode[]): string[] {
   for (const node of nodes) {
     if (node.is_dir) {
       if (node.children) paths.push(...collectMdPaths(node.children));
-    } else if (node.path.endsWith('.md') && !node.path.startsWith('.oxidenote')) {
+    } else if (/\.(md|typ|tex)$/i.test(node.path) && !node.path.startsWith('.oxidenote')) {
       paths.push(node.path);
     }
   }
@@ -254,7 +255,7 @@ export async function loadDecks(): Promise<Deck[]> {
 
       decks.push({
         sourcePath: path,
-        title: path.replace(/\.md$/, '').split('/').pop() || path,
+        title: stripNoteExtension(path).split('/').pop() || path,
         totalCards: cards.length,
         dueCards,
         newCards,

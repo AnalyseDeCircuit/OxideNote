@@ -135,7 +135,8 @@ fn collect_disk_files(base: &Path) -> std::collections::HashSet<String> {
         if !path.is_file() {
             continue;
         }
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+        let ext_str = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !crate::commands::util::is_supported_extension(ext_str) {
             continue;
         }
         let rel = path

@@ -25,6 +25,7 @@ import { blockRefCache, noteResolveCache, noteEmbedCache, blockRefKey } from '@/
 import { ImageLightbox } from '@/components/editor/ImageLightbox';
 import { getSourceLineForPreviewOffset } from '@/components/editor/scrollSync';
 import 'katex/dist/katex.min.css';
+import { NOTE_EXT_RE } from '@/lib/utils';
 
 // ── Mermaid 初始化 ──────────────────────────────────────────
 // 动态检测主题明暗，匹配 OxideNote 当前界面
@@ -630,7 +631,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
               if (results.length > 0) {
                 const targetLower = noteTarget.toLowerCase();
                 const exact = results.find((r) => {
-                  const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+                  const stem = r.path.replace(NOTE_EXT_RE, '').split('/').pop()?.toLowerCase();
                   return stem === targetLower || r.path.toLowerCase() === targetLower;
                 });
                 const best = exact ?? results[0];
@@ -792,7 +793,7 @@ export function MarkdownPreview({ content, className = '', onScroll, scrollRef }
         // 精确匹配优先：先查找 stem 完全一致的结果
         const targetLower = linkTarget.toLowerCase();
         const exact = results.find((r) => {
-          const stem = r.path.replace(/\.md$/i, '').split('/').pop()?.toLowerCase();
+          const stem = r.path.replace(NOTE_EXT_RE, '').split('/').pop()?.toLowerCase();
           return stem === targetLower || r.path.toLowerCase() === targetLower;
         });
         const best = exact ?? results[0];

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronDown,
   File,
+  FileText,
   Folder,
   FolderOpen,
   Plus,
@@ -54,6 +55,7 @@ import {
 import { toast } from '@/hooks/useToast';
 import { AiResultDialog } from '@/components/tree/AiResultDialog';
 import { TrashView } from '@/components/tree/TrashView';
+import { stripNoteExtension, isNoteFile } from '@/lib/utils';
 
 export function VaultTree() {
   const { t } = useTranslation();
@@ -113,7 +115,7 @@ export function VaultTree() {
       if (type === 'note') {
         const path = await createNote(parentPath, name.trim());
         await refreshTree();
-        const title = name.trim().replace(/\.md$/, '');
+        const title = stripNoteExtension(name.trim());
         useNoteStore.getState().openNote(path, title);
       } else {
         await createFolder(parentPath, name.trim());
@@ -201,7 +203,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
     try {
       const note = await readNote(node.path);
       const config = useChatStore.getState().config;
-      const noteTitle = node.name.replace(/\.md$/, '');
+      const noteTitle = stripNoteExtension(node.name);
       const ext = node.name.split('.').pop() || 'md';
       const instructionMap: Record<string, string> = {
         summarize: 'Summarize this note concisely in bullet points.',
@@ -226,7 +228,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
       const title = node.name.replace(/\.canvas$/, '');
       useNoteStore.getState().openNote(node.path, title);
     } else {
-      const title = node.name.replace(/\.md$/, '');
+      const title = stripNoteExtension(node.name);
       useNoteStore.getState().openNote(node.path, title);
     }
   }, [node]);
@@ -271,8 +273,8 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
       try {
         const newPath = await moveEntry(sourcePath, node.path);
         // 如果拖动的是当前打开的标签，更新路径
-        const fileName = sourcePath.split('/').pop()?.replace(/\.md$/, '') || '';
-        useNoteStore.getState().updateTabPath(sourcePath, newPath, fileName);
+        const fileName = sourcePath.split('/').pop() ?? '';
+        useNoteStore.getState().updateTabPath(sourcePath, newPath, stripNoteExtension(fileName));
         await refreshTree();
       } catch (err) {
         toast({ title: t('sidebar.moveFailed'), description: String(err), variant: 'error' });
@@ -294,7 +296,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
       try {
         const newPath = await renameEntry(node.path, renameValue);
         // If it was an open tab, update its path
-        const title = renameValue.replace(/\.md$/, '');
+        const title = stripNoteExtension(renameValue);
         useNoteStore.getState().updateTabPath(node.path, newPath, title);
         await refreshTree();
       } catch (err) {
@@ -372,6 +374,8 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
                 expanded ? <FolderOpen size={14} /> : <Folder size={14} />
               ) : node.name.endsWith('.canvas') ? (
                 <Layout size={14} />
+              ) : node.name.endsWith('.typ') || node.name.endsWith('.tex') ? (
+                <FileText size={14} />
               ) : (
                 <File size={14} />
               )}
@@ -412,7 +416,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
                       if (inlineCreate === 'note') {
                         const path = await createNote(node.path, name.trim());
                         await refreshTree();
-                        const title = name.trim().replace(/\.md$/, '');
+                        const title = stripNoteExtension(name.trim());
                         useNoteStore.getState().openNote(path, title);
                       } else {
                         await createFolder(node.path, name.trim());
@@ -484,7 +488,7 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
         }}>
           {t('sidebar.revealInFinder')}
         </ContextMenuItem>
-        {!node.is_dir && node.name.endsWith('.md') && (
+        {!node.is_dir && isNoteFile(node.name) && (
           <ContextMenuItem onClick={async () => {
             try {
               const bookmarked = await isBookmarked(node.path);
@@ -504,8 +508,8 @@ const TreeItem = memo(function TreeItem({ node, depth }: { node: TreeNode; depth
             {t('bookmarks.add')}
           </ContextMenuItem>
         )}
-        {/* AI operations submenu — only for .md files */}
-        {!node.is_dir && node.name.endsWith('.md') && (
+        {/* AI operations submenu — for note files */}
+        {!node.is_dir && isNoteFile(node.name) && (
           <ContextMenuSub>
             <ContextMenuSubTrigger>
               <Sparkles size={14} className="mr-2" />
@@ -747,7 +751,7 @@ function TemplateSubMenu({ parentPath, onCreated }: { parentPath: string; onCrea
     try {
       const path = await createNote(parentPath, name, template.content);
       onCreated();
-      const title = name.replace(/\.md$/, '');
+      const title = stripNoteExtension(name);
       useNoteStore.getState().openNote(path, title);
     } catch (err) {
       toast({ title: t('sidebar.createFailed'), description: String(err), variant: 'error' });

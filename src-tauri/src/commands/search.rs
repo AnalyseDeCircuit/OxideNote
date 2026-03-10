@@ -483,7 +483,7 @@ fn collect_tasks(
         }
         if path.is_dir() {
             collect_tasks(root, &path, tasks)?;
-        } else if path.extension().map_or(false, |ext| ext == "md") {
+        } else if path.extension().and_then(|e| e.to_str()).map_or(false, |ext| super::util::is_supported_extension(ext)) {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 let rel_path = path.strip_prefix(root).unwrap_or(&path);
                 let rel_str = rel_path.to_string_lossy().to_string();

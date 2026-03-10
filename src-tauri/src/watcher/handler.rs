@@ -45,10 +45,10 @@ pub fn start_watcher(
                             .to_string_lossy()
                             .to_string();
 
-                        // Only emit for .md files or directories
-                        let is_md = rel_path.ends_with(".md");
+                        // Only emit for supported note files or directories
+                        let is_note = crate::commands::util::is_supported_note_file(&rel_path);
                         let is_dir = event.path.is_dir();
-                        if !is_md && !is_dir && event.path.exists() {
+                        if !is_note && !is_dir && event.path.exists() {
                             continue;
                         }
 
@@ -60,8 +60,8 @@ pub fn start_watcher(
                             _ => "modify",
                         };
 
-                        // Incremental indexing for .md files
-                        if is_md {
+                        // Incremental indexing for supported note files
+                        if is_note {
                             let db_guard = db.lock();
                             if let Some(conn) = db_guard.as_ref() {
                                 if event.path.exists() {
