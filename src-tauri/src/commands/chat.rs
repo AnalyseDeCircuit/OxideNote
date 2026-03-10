@@ -84,7 +84,7 @@ pub async fn chat_stream(
     // Create abort channel
     let (abort_tx, abort_rx) = tokio::sync::watch::channel(false);
     {
-        let mut senders = state.abort_senders.lock().map_err(|e| ChatError::Internal(e.to_string()))?;
+        let mut senders = state.abort_senders.lock();
         senders.insert(request_id.clone(), abort_tx);
     }
 
@@ -111,7 +111,8 @@ pub async fn chat_stream(
         }
 
         // Clean up abort sender
-        if let Ok(mut senders) = abort_map.lock() {
+        {
+            let mut senders = abort_map.lock();
             senders.remove(&req_id);
         }
     });
@@ -125,7 +126,7 @@ pub async fn chat_abort(
     request_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), ChatError> {
-    let senders = state.abort_senders.lock().map_err(|e| ChatError::Internal(e.to_string()))?;
+    let senders = state.abort_senders.lock();
     if let Some(tx) = senders.get(&request_id) {
         let _ = tx.send(true);
     }

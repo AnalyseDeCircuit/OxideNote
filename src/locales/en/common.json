@@ -747,8 +747,10 @@
     },
     "history": {
       "title": "Agent History",
-      "empty": "No agent runs yet"
+      "empty": "No agent runs yet",
+      "noChanges": "No file changes"
     },
+    "autoApplied": "{{count}} changes auto-applied",
     "doomLoop": "Agent stopped: repeated identical actions detected"
   },
   "inlineAi": {

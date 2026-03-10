@@ -29,6 +29,8 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             frontmatter TEXT
         );
 
+        CREATE INDEX IF NOT EXISTS idx_notes_modified ON notes(modified_at DESC);
+
         CREATE TABLE IF NOT EXISTS tags (
             note_id INTEGER NOT NULL,
             tag TEXT NOT NULL,

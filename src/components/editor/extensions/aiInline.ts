@@ -150,7 +150,7 @@ class ReplacementWidget extends WidgetType {
     // Hint text
     const hint = document.createElement('span');
     hint.className = 'cm-ai-hint';
-    hint.textContent = ' Tab ✓  Esc ✗';
+    hint.textContent = ' Tab Accept  Esc Reject';
     hint.style.opacity = '0.4';
     hint.style.fontSize = '0.75em';
     hint.style.marginLeft = '8px';
@@ -173,7 +173,7 @@ class LoadingWidget extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement('span');
     span.className = 'cm-ai-loading';
-    span.textContent = '  ⟳ AI...';
+    span.textContent = '  AI...';
     span.style.opacity = '0.5';
     span.style.fontStyle = 'italic';
     span.style.animation = 'pulse 1.5s ease-in-out infinite';

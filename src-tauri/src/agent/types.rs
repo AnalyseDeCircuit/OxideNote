@@ -121,6 +121,8 @@ pub struct TaskResult {
     pub task_id: String,
     pub kind: AgentKind,
     pub status: AgentStatus,
+    /// Whether changes were marked for automatic application (no approval needed)
+    pub auto_applied: bool,
     /// Original scope from the task input (preserved for history)
     pub scope: Option<String>,
     pub plan_steps: Vec<PlanStep>,
@@ -141,6 +143,24 @@ pub struct AgentRunSummary {
     pub status: String,
     pub scope: Option<String>,
     pub summary: String,
+    pub token_prompt: u32,
+    pub token_completion: u32,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
+/// Full detail for a single agent run (includes plan + changes JSON)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRunDetail {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub scope: Option<String>,
+    pub summary: String,
+    /// JSON-encoded plan steps
+    pub plan_steps: String,
+    /// JSON-encoded proposed changes
+    pub changes_json: String,
     pub token_prompt: u32,
     pub token_completion: u32,
     pub started_at: String,

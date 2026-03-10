@@ -44,6 +44,24 @@ pub async fn open_vault(
     // 切换 vault 前先停掉旧 watcher，防止旧 watcher 持有新 DB 连接导致跨 vault 幽灵索引
     *state.watcher.lock() = None;
 
+    // Abort any running agent and scheduler from the previous vault to prevent
+    // stale operations after the vault switch
+    {
+        let agent_state = &state.agent_state;
+        // Abort running agent
+        let mut run_state = agent_state.run_state.lock();
+        if let crate::agent::commands::AgentRunState::Running { abort_tx, .. } = &*run_state {
+            let _ = abort_tx.send(true);
+        }
+        *run_state = crate::agent::commands::AgentRunState::Idle;
+        // Clear queued tasks from old vault
+        agent_state.task_queue.lock().clear();
+        // Abort old scheduler
+        if let Some(handle) = agent_state.scheduler_handle.lock().take() {
+            handle.abort();
+        }
+    }
+
     // Initialize index database (write connection)
     // 先打开所有 DB 连接再更新 vault_path，保证状态原子性：
     // 若 DB 打开失败，vault_path 不会被更新为指向无 DB 的路径
@@ -130,7 +148,8 @@ pub async fn open_vault(
     {
         let agent_state = state.agent_state.clone();
         let vault_clone = vault_path.clone();
-        crate::agent::scheduler::start_scheduler(agent_state, vault_clone);
+        let handle = crate::agent::scheduler::start_scheduler(agent_state.clone(), vault_clone);
+        *agent_state.scheduler_handle.lock() = Some(handle);
     }
 
     Ok(path)

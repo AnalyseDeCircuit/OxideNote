@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::{Local, Timelike};
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::time::{interval, Duration};
 
@@ -36,6 +35,9 @@ pub struct DailyReviewConfig {
     /// Template: "summary" | "highlights" | "full"
     #[serde(default = "default_review_template")]
     pub template: String,
+    /// Whether to auto-apply changes without user approval (default: true)
+    #[serde(default = "default_true")]
+    pub auto_apply: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,10 +46,13 @@ pub struct GraphMaintenanceConfig {
     /// Run every N hours
     #[serde(default = "default_interval")]
     pub interval_hours: u32,
+    /// Whether to auto-apply changes without user approval (default: false)
+    #[serde(default)]
+    pub auto_apply: bool,
 }
 
 fn default_review_folder() -> String {
-    "reviews".into()
+    "daily".into()
 }
 
 fn default_review_template() -> String {
@@ -56,6 +61,10 @@ fn default_review_template() -> String {
 
 fn default_interval() -> u32 {
     24
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for SchedulerConfig {
@@ -126,9 +135,13 @@ pub fn start_scheduler(
                         last_daily_review_date = Some(today);
                         let task = AgentTask {
                             kind: AgentKind::DailyReview,
-                            scope: Some(review.output_folder.clone()),
-                            params: serde_json::Value::Null,
-                            auto_apply: true,
+                            // Scope = entire vault so the agent can read all notes
+                            scope: None,
+                            params: serde_json::json!({
+                                "output_folder": review.output_folder,
+                                "template": review.template,
+                            }),
+                            auto_apply: review.auto_apply,
                         };
                         let mut queue = agent_state.task_queue.lock();
                         queue.push_back(task);
@@ -152,7 +165,7 @@ pub fn start_scheduler(
                             kind: AgentKind::GraphMaintainer,
                             scope: None,
                             params: serde_json::Value::Null,
-                            auto_apply: true,
+                            auto_apply: graph.auto_apply,
                         };
                         let mut queue = agent_state.task_queue.lock();
                         queue.push_back(task);

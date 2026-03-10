@@ -1017,6 +1017,26 @@ export async function agentListCustom(): Promise<CustomAgentDef[]> {
   return invoke<CustomAgentDef[]>('agent_list_custom');
 }
 
+/** Full detail of a past agent run (includes plan steps + changes). */
+export interface AgentRunDetail {
+  id: string;
+  kind: string;
+  status: string;
+  scope: string | null;
+  summary: string;
+  plan_steps: string;
+  changes_json: string;
+  token_prompt: number;
+  token_completion: number;
+  started_at: string;
+  completed_at: string | null;
+}
+
+/** Get full detail of a past agent run. */
+export async function agentRunDetail(runId: string): Promise<AgentRunDetail | null> {
+  return invoke<AgentRunDetail | null>('agent_run_detail', { runId });
+}
+
 // ── Agent scheduler ─────────────────────────────────────────
 
 export interface SchedulerConfig {

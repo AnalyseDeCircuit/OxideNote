@@ -142,17 +142,32 @@ pub async fn agent_run(
         .await;
 
         // Update state based on result — drop lock before draining to avoid deadlock
-        let should_drain = {
+        let (should_drain, completion_info) = {
             let mut run_state = agent_state_clone.run_state.lock();
             match result {
                 Ok(task_result) => {
                     let _ = history::save_agent_run(&chat_db, &task_result);
                     if task_result.status == AgentStatus::WaitingApproval {
+                        // Capture info for event before moving into state
+                        let info = (
+                            task_result.task_id.clone(),
+                            task_result.summary.clone(),
+                            task_result.proposed_changes.len(),
+                            false, // auto_applied
+                            Vec::<ProposedChange>::new(),
+                        );
                         *run_state = AgentRunState::WaitingApproval(task_result);
-                        false
+                        (false, Some(info))
                     } else {
+                        let info = (
+                            task_result.task_id.clone(),
+                            task_result.summary.clone(),
+                            task_result.proposed_changes.len(),
+                            task_result.auto_applied,
+                            if task_result.auto_applied { task_result.proposed_changes.clone() } else { vec![] },
+                        );
                         *run_state = AgentRunState::Idle;
-                        true
+                        (true, Some(info))
                     }
                 }
                 Err(e) => {
@@ -161,12 +176,37 @@ pub async fn agent_run(
                         "agent-error",
                         serde_json::json!({ "error": e.to_string() }),
                     );
-                    true
+                    (true, None)
                 }
             }
         }; // run_state guard is dropped here
+
+        // Auto-apply: write proposed changes to disk, then emit completion event
+        if let Some((task_id, summary, changes_count, auto_applied, ref changes)) = completion_info {
+            if auto_applied && !changes.is_empty() {
+                let indices: Vec<usize> = (0..changes.len()).collect();
+                if let Err(e) = write_changes_to_disk(changes, &indices, &vault_path, &db).await {
+                    eprintln!("[agent] Auto-apply failed: {}", e);
+                    let _ = app.emit(
+                        "agent-error",
+                        serde_json::json!({ "error": format!("Auto-apply failed: {}", e) }),
+                    );
+                }
+            }
+            // Emit completion event AFTER auto-apply to ensure correctness
+            let _ = app.emit(
+                "agent-complete",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "summary": summary,
+                    "changes_count": changes_count,
+                    "auto_applied": auto_applied,
+                }),
+            );
+        }
+
         if should_drain {
-            drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app);
+            drain_queued_tasks(&agent_state_clone, &config, &vault_path, &db, &read_db_clone, &chat_db, &app, font_state);
         }
     });
 
@@ -264,6 +304,74 @@ pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatusRespo
     }
 }
 
+// ── Change application helper ───────────────────────────────
+
+/// Write proposed changes to disk and reindex affected files.
+/// Shared by both manual approval (agent_apply_changes) and auto-apply path.
+async fn write_changes_to_disk(
+    changes: &[ProposedChange],
+    indices: &[usize],
+    vault_path: &std::path::Path,
+    db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
+) -> Result<usize, AgentError> {
+    let mut applied = 0;
+    for idx in indices {
+        let change = changes
+            .get(*idx)
+            .ok_or_else(|| AgentError::Internal(format!("Invalid change index: {}", idx)))?;
+
+        let full_path = vault_path.join(&change.path);
+        validate_agent_path(&full_path, vault_path)?;
+
+        match change.action {
+            ChangeAction::Create | ChangeAction::Modify | ChangeAction::Merge => {
+                if let Some(ref content) = change.content {
+                    if let Some(parent) = full_path.parent() {
+                        tokio::fs::create_dir_all(parent)
+                            .await
+                            .map_err(|e| AgentError::Io(e.to_string()))?;
+                    }
+                    tokio::fs::write(&full_path, content)
+                        .await
+                        .map_err(|e| AgentError::Io(e.to_string()))?;
+
+                    let db_guard = db.lock();
+                    if let Some(conn) = db_guard.as_ref() {
+                        let _ = crate::indexing::scanner::index_single_file(
+                            vault_path,
+                            &full_path,
+                            conn,
+                        );
+                    }
+                    applied += 1;
+                }
+            }
+            ChangeAction::AddLink => {
+                if let Some(ref link_content) = change.content {
+                    let existing = tokio::fs::read_to_string(&full_path)
+                        .await
+                        .unwrap_or_default();
+                    let updated = format!("{}\n\n{}", existing.trim_end(), link_content);
+                    tokio::fs::write(&full_path, updated)
+                        .await
+                        .map_err(|e| AgentError::Io(e.to_string()))?;
+
+                    let db_guard = db.lock();
+                    if let Some(conn) = db_guard.as_ref() {
+                        let _ = crate::indexing::scanner::index_single_file(
+                            vault_path,
+                            &full_path,
+                            conn,
+                        );
+                    }
+                    applied += 1;
+                }
+            }
+        }
+    }
+    Ok(applied)
+}
+
 /// Apply selected proposed changes from a completed agent run.
 /// `indices` specifies which changes to apply (0-based).
 #[tauri::command]
@@ -292,62 +400,7 @@ pub async fn agent_apply_changes(
         }
     };
 
-    // Apply each selected change
-    for idx in &indices {
-        let change = task_result
-            .proposed_changes
-            .get(*idx)
-            .ok_or_else(|| AgentError::Internal(format!("Invalid change index: {}", idx)))?;
-
-        let full_path = vault_path.join(&change.path);
-        validate_agent_path(&full_path, &vault_path)?;
-
-        match change.action {
-            ChangeAction::Create | ChangeAction::Modify | ChangeAction::Merge => {
-                if let Some(ref content) = change.content {
-                    if let Some(parent) = full_path.parent() {
-                        tokio::fs::create_dir_all(parent)
-                            .await
-                            .map_err(|e| AgentError::Io(e.to_string()))?;
-                    }
-                    tokio::fs::write(&full_path, content)
-                        .await
-                        .map_err(|e| AgentError::Io(e.to_string()))?;
-
-                    // Reindex the written file
-                    let db_guard = db.lock();
-                    if let Some(conn) = db_guard.as_ref() {
-                        let _ = crate::indexing::scanner::index_single_file(
-                            &vault_path,
-                            &full_path,
-                            conn,
-                        );
-                    }
-                }
-            }
-            ChangeAction::AddLink => {
-                // Read existing content, append link section, write back
-                if let Some(ref link_content) = change.content {
-                    let existing = tokio::fs::read_to_string(&full_path)
-                        .await
-                        .unwrap_or_default();
-                    let updated = format!("{}\n\n{}", existing.trim_end(), link_content);
-                    tokio::fs::write(&full_path, updated)
-                        .await
-                        .map_err(|e| AgentError::Io(e.to_string()))?;
-
-                    let db_guard = db.lock();
-                    if let Some(conn) = db_guard.as_ref() {
-                        let _ = crate::indexing::scanner::index_single_file(
-                            &vault_path,
-                            &full_path,
-                            conn,
-                        );
-                    }
-                }
-            }
-        }
-    }
+    write_changes_to_disk(&task_result.proposed_changes, &indices, &vault_path, &db).await?;
 
     // Transition to Idle
     {
@@ -392,6 +445,17 @@ pub async fn agent_list_custom(
         .ok_or(AgentError::NoVault)?;
     let agents = custom::load_custom_agents(&vault_path);
     Ok(agents.into_iter().map(|(def, _)| def).collect())
+}
+
+/// Get full detail of a past agent run (plan steps + proposed changes).
+#[tauri::command]
+pub async fn agent_run_detail(
+    run_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<AgentRunDetail>, AgentError> {
+    let chat_db = Arc::clone(&state.chat_db);
+    history::get_agent_run_detail(&chat_db, &run_id)
+        .map_err(|e| AgentError::Internal(e.to_string()))
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -461,6 +525,8 @@ fn resolve_agent_settings(
 /// Drain queued tasks after the current one completes.
 /// Pops the next task from the queue and spawns it using the same
 /// run_agent pattern. Each task runs sequentially (fire-and-forget).
+/// `cached_font_state` reuses the OnceCell-cached FontState from AppState
+/// to avoid expensive repeated system font scans.
 fn drain_queued_tasks(
     agent_state: &Arc<AgentState>,
     config: &ChatConfig,
@@ -469,6 +535,7 @@ fn drain_queued_tasks(
     read_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
     chat_db: &Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
     app: &AppHandle,
+    cached_font_state: Option<Arc<FontState>>,
 ) {
     // Pop the next queued task
     let next_task = {
@@ -485,9 +552,9 @@ fn drain_queued_tasks(
     let (allowed_tools, system_prompt_override, max_writes) =
         resolve_agent_settings(&next_task, vault_path);
 
-    // Build font state lazily if this task needs typst_compile
+    // Reuse cached font state if this task needs typst_compile
     let font_state: Option<Arc<FontState>> = if allowed_tools.iter().any(|t| t == "typst_compile") {
-        Some(Arc::new(FontState::new()))
+        cached_font_state.clone()
     } else {
         None
     };
@@ -527,6 +594,7 @@ fn drain_queued_tasks(
     let chat_db_c = Arc::clone(chat_db);
     let app_c = app.clone();
     let task_id_c = task_id.clone();
+    let cached_font_c = cached_font_state.clone();
 
     tokio::spawn(async move {
         let result = runtime::run_agent(
@@ -547,17 +615,31 @@ fn drain_queued_tasks(
         .await;
 
         // Drop lock before calling drain to avoid deadlock
-        let should_drain = {
+        let (should_drain, completion_info) = {
             let mut run_state = agent_state_c.run_state.lock();
             match result {
                 Ok(task_result) => {
                     let _ = history::save_agent_run(&chat_db_c, &task_result);
                     if task_result.status == AgentStatus::WaitingApproval {
+                        let info = (
+                            task_result.task_id.clone(),
+                            task_result.summary.clone(),
+                            task_result.proposed_changes.len(),
+                            false,
+                            Vec::<ProposedChange>::new(),
+                        );
                         *run_state = AgentRunState::WaitingApproval(task_result);
-                        false
+                        (false, Some(info))
                     } else {
+                        let info = (
+                            task_result.task_id.clone(),
+                            task_result.summary.clone(),
+                            task_result.proposed_changes.len(),
+                            task_result.auto_applied,
+                            if task_result.auto_applied { task_result.proposed_changes.clone() } else { vec![] },
+                        );
                         *run_state = AgentRunState::Idle;
-                        true
+                        (true, Some(info))
                     }
                 }
                 Err(e) => {
@@ -566,14 +648,39 @@ fn drain_queued_tasks(
                         "agent-error",
                         serde_json::json!({ "error": e.to_string() }),
                     );
-                    true
+                    (true, None)
                 }
             }
         }; // run_state guard dropped
+
+        // Auto-apply then emit completion event
+        if let Some((task_id, summary, changes_count, auto_applied, ref changes)) = completion_info {
+            if auto_applied && !changes.is_empty() {
+                let indices: Vec<usize> = (0..changes.len()).collect();
+                if let Err(e) = write_changes_to_disk(changes, &indices, &vault_path_c, &db_c).await {
+                    eprintln!("[agent] Auto-apply failed: {}", e);
+                    let _ = app_c.emit(
+                        "agent-error",
+                        serde_json::json!({ "error": format!("Auto-apply failed: {}", e) }),
+                    );
+                }
+            }
+            let _ = app_c.emit(
+                "agent-complete",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "summary": summary,
+                    "changes_count": changes_count,
+                    "auto_applied": auto_applied,
+                }),
+            );
+        }
+
         if should_drain {
             drain_queued_tasks(
                 &agent_state_c, &config_c, &vault_path_c,
                 &db_c, &read_db_c, &chat_db_c, &app_c,
+                cached_font_c,
             );
         }
     });

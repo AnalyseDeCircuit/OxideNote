@@ -1,8 +1,8 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Bot, Play, Square, Check, X, ChevronDown, ChevronRight,
-  FileText, FolderOpen, Globe, Clock, Settings, Pause,
+  FileText, FolderOpen, Globe, Clock, Settings, Pause, Loader2,
 } from 'lucide-react';
 
 import { useAgentStore } from '@/store/agentStore';
@@ -14,6 +14,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { agentRunDetail } from '@/lib/api';
 import type { AgentKind, AgentStatus, AgentTask, PlanStep, ProposedChange } from '@/lib/api';
 
 // ── Status → i18n key mapping ───────────────────────────────
@@ -63,6 +64,7 @@ export function AgentPanel() {
   const progress = useAgentStore((s) => s.progress);
   const proposedChanges = useAgentStore((s) => s.proposedChanges);
   const summary = useAgentStore((s) => s.summary);
+  const autoAppliedCount = useAgentStore((s) => s.autoAppliedCount);
   const history = useAgentStore((s) => s.history);
   const queueCount = useAgentStore((s) => s.queueCount);
   const customAgents = useAgentStore((s) => s.customAgents);
@@ -112,10 +114,19 @@ export function AgentPanel() {
   // Start agent run
   const handleRun = useCallback(() => {
     const config = useChatStore.getState().config;
+    const kind = resolveKind();
     const task: AgentTask = {
-      kind: resolveKind(),
+      kind,
       scope: resolveScope(),
     };
+    // For DailyReview, populate params with output_folder so the prompt
+    // knows where to write the review note
+    if (kind === 'daily_review') {
+      task.params = {
+        output_folder: 'daily',
+        template: 'summary',
+      };
+    }
     runAgent(task, config);
   }, [resolveKind, resolveScope, runAgent]);
 
@@ -242,10 +253,15 @@ export function AgentPanel() {
               />
             )}
 
-            {/* Summary (after completion, no changes) */}
-            {summary && status === 'completed' && proposedChanges.length === 0 && (
-              <div className="rounded-md bg-theme-bg-panel border border-theme-border p-3">
+            {/* Summary (after completion) */}
+            {summary && status === 'completed' && (
+              <div className="rounded-md bg-theme-bg-panel border border-theme-border p-3 space-y-1.5">
                 <p className="text-xs text-foreground">{summary}</p>
+                {autoAppliedCount > 0 && (
+                  <p className="text-[10px] text-green-500">
+                    {t('agent.autoApplied', { count: autoAppliedCount })}
+                  </p>
+                )}
               </div>
             )}
 
@@ -562,6 +578,44 @@ const HISTORY_STATUS_I18N: Record<string, string> = {
 function HistorySection({ history }: { history: { id: string; kind: string; summary: string; started_at: string; status: string }[] }) {
   const { t } = useTranslation();
   const [showHistory, setShowHistory] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detailChanges, setDetailChanges] = useState<ProposedChange[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Ref tracks the currently-requested detail id to guard against race conditions
+  const pendingDetailRef = useRef<string | null>(null);
+
+  const toggleDetail = async (id: string) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      setDetailChanges([]);
+      pendingDetailRef.current = null;
+      return;
+    }
+    setExpandedId(id);
+    setDetailChanges([]);
+    setLoadingDetail(true);
+    pendingDetailRef.current = id;
+    try {
+      const detail = await agentRunDetail(id);
+      // Guard: ignore stale result if user clicked a different item while loading
+      if (pendingDetailRef.current !== id) return;
+      if (detail?.changes_json) {
+        try {
+          const parsed = JSON.parse(detail.changes_json) as ProposedChange[];
+          setDetailChanges(parsed);
+        } catch {
+          // Malformed JSON — show nothing
+        }
+      }
+    } catch {
+      // Silently handle — detail just won't show
+    } finally {
+      if (pendingDetailRef.current === id) {
+        setLoadingDetail(false);
+      }
+    }
+  };
 
   return (
     <div>
@@ -579,20 +633,67 @@ function HistorySection({ history }: { history: { id: string; kind: string; summ
           {history.map((run) => (
             <div
               key={run.id}
-              className="rounded-md border border-theme-border bg-theme-bg-panel px-2 py-1.5 text-xs"
+              className="rounded-md border border-theme-border bg-theme-bg-panel text-xs"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-foreground">
+              {/* Summary row — clickable to expand */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleDetail(run.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDetail(run.id); } }}
+                className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer hover:bg-theme-hover transition-colors"
+              >
+                {expandedId === run.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                <span className="font-medium text-foreground flex-1 truncate">
                   {t(KIND_I18N[run.kind] ?? 'agent.custom')}
                 </span>
-                <span className={`text-[10px] ${run.status === 'completed' ? 'text-green-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[10px] shrink-0 ${run.status === 'completed' ? 'text-green-500' : 'text-muted-foreground'}`}>
                   {t(HISTORY_STATUS_I18N[run.status] ?? 'agent.status')}
                 </span>
               </div>
-              {run.summary && (
-                <p className="text-muted-foreground mt-0.5 line-clamp-2">{run.summary}</p>
+
+              {/* Expanded detail */}
+              {expandedId === run.id && (
+                <div className="px-2 pb-2 border-t border-theme-border space-y-1.5">
+                  {run.summary && (
+                    <p className="text-muted-foreground mt-1.5">{run.summary}</p>
+                  )}
+                  <p className="text-muted-foreground/60">{new Date(run.started_at).toLocaleString()}</p>
+
+                  {/* Changes detail */}
+                  {loadingDetail && (
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>{t('common.loading')}</span>
+                    </div>
+                  )}
+                  {!loadingDetail && detailChanges.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-medium text-foreground">
+                        {t('agent.changes.title')} ({detailChanges.length})
+                      </span>
+                      {detailChanges.map((change, idx) => (
+                        <div key={idx} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span className={
+                            change.action === 'create' ? 'text-green-500' :
+                            change.action === 'modify' ? 'text-yellow-500' :
+                            change.action === 'add_link' ? 'text-purple-500' :
+                            'text-blue-500'
+                          }>
+                            {t(`agent.action.${change.action}`)}
+                          </span>
+                          <span className="truncate">{change.path}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!loadingDetail && detailChanges.length === 0 && (
+                    <p className="text-[10px] text-muted-foreground/60">
+                      {t('agent.history.noChanges')}
+                    </p>
+                  )}
+                </div>
               )}
-              <p className="text-muted-foreground/60 mt-0.5">{new Date(run.started_at).toLocaleString()}</p>
             </div>
           ))}
         </div>

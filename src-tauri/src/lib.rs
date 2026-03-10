@@ -126,6 +126,7 @@ pub fn run() {
             agent::commands::agent_dismiss_changes,
             agent::commands::agent_list_history,
             agent::commands::agent_list_custom,
+            agent::commands::agent_run_detail,
             agent::commands::agent_scheduler_config,
             agent::commands::agent_scheduler_set_config,
             commands::inline_ai::inline_ai_transform,

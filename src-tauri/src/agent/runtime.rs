@@ -145,6 +145,39 @@ pub async fn run_agent(
     db: Arc<Mutex<Option<Connection>>>,
     read_db: Arc<Mutex<Option<Connection>>>,
     app: &AppHandle,
+    abort_rx: tokio::sync::watch::Receiver<bool>,
+    pause_rx: tokio::sync::watch::Receiver<bool>,
+    allowed_tools: Vec<String>,
+    system_prompt_override: Option<String>,
+    max_writes: u8,
+    task_id: String,
+    font_state: Option<Arc<FontState>>,
+) -> Result<TaskResult, AgentError> {
+    // Wrap the entire run in a global timeout (10 minutes)
+    // to prevent indefinite execution from slow LLM responses
+    const AGENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+    match tokio::time::timeout(
+        AGENT_TIMEOUT,
+        run_agent_inner(task, config, vault_path, db, read_db, app, abort_rx, pause_rx,
+                        allowed_tools, system_prompt_override, max_writes, task_id, font_state),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_elapsed) => Err(AgentError::Internal(
+            "Agent timed out after 10 minutes".into(),
+        )),
+    }
+}
+
+/// Inner implementation — called within the global timeout wrapper.
+async fn run_agent_inner(
+    task: AgentTask,
+    config: &ChatConfig,
+    vault_path: &Path,
+    db: Arc<Mutex<Option<Connection>>>,
+    read_db: Arc<Mutex<Option<Connection>>>,
+    app: &AppHandle,
     mut abort_rx: tokio::sync::watch::Receiver<bool>,
     mut pause_rx: tokio::sync::watch::Receiver<bool>,
     allowed_tools: Vec<String>,
@@ -222,6 +255,7 @@ pub async fn run_agent(
             return Ok(build_aborted_result(
                 task_id,
                 task.kind,
+                task.scope.clone(),
                 steps,
                 started_at,
                 total_usage,
@@ -293,18 +327,20 @@ pub async fn run_agent(
         }
 
         // Compact accumulated context if it exceeds budget (8000 chars)
-        // Drop oldest entries to stay within budget
+        // Drop oldest entries to stay within budget, keeping the newest content
         if accumulated_context.len() > 8000 {
-            let excess = accumulated_context.floor_char_boundary(accumulated_context.len() - 6000);
-            if let Some(pos) = accumulated_context[excess..].find("\n[Tool:") {
+            let keep_from = accumulated_context.floor_char_boundary(accumulated_context.len() - 6000);
+            if let Some(pos) = accumulated_context[keep_from..].find("\n[Tool:") {
                 accumulated_context = format!(
                     "(earlier context compacted)\n{}",
-                    &accumulated_context[excess + pos..]
+                    &accumulated_context[keep_from + pos..]
                 );
             } else {
-                // Fallback: simple truncation at a safe char boundary
-                let safe_end = accumulated_context.floor_char_boundary(8000);
-                accumulated_context.truncate(safe_end);
+                // Fallback: keep the last 6000 chars at a safe boundary
+                accumulated_context = format!(
+                    "(earlier context compacted)\n{}",
+                    &accumulated_context[keep_from..]
+                );
             }
         }
 
@@ -323,15 +359,7 @@ pub async fn run_agent(
         .await
         .unwrap_or_else(|_| "Agent completed.".into());
 
-    // Emit completion event
-    let _ = app.emit(
-        "agent-complete",
-        serde_json::json!({
-            "task_id": &task_id,
-            "summary": &summary,
-            "changes_count": proposed_changes.len(),
-        }),
-    );
+    let auto_applied = !proposed_changes.is_empty() && task.auto_apply;
 
     Ok(TaskResult {
         task_id,
@@ -341,6 +369,7 @@ pub async fn run_agent(
         } else {
             AgentStatus::WaitingApproval
         },
+        auto_applied,
         scope: task.scope,
         plan_steps: steps,
         proposed_changes,
@@ -355,36 +384,68 @@ pub async fn run_agent(
 
 /// Build the system prompt for the agent
 fn build_system_prompt(task: &AgentTask, vault_summary: &str, allowed_tools: &[String]) -> String {
+    // Inject current date/time so time-sensitive tasks (e.g. DailyReview) can reason about "today"
+    let now = chrono::Local::now();
+    let datetime_str = now.format("%Y-%m-%d %H:%M (%A)").to_string();
+
     let agent_instruction = match &task.kind {
         AgentKind::DuplicateDetector => {
             "Find semantically similar or duplicate notes and suggest merges. \
              For each duplicate pair, produce a merged version preserving all unique content."
+                .to_string()
         }
         AgentKind::OutlineExtractor => {
             "Generate a structured outline/TOC from the target notes. \
              Extract headings, key points, and create a hierarchical outline with WikiLinks."
+                .to_string()
         }
         AgentKind::IndexGenerator => {
             "Generate a Map of Content (MOC) / index note that organizes vault notes by topic. \
              Cluster notes by tags and titles, then produce a structured index with WikiLinks."
+                .to_string()
         }
         AgentKind::DailyReview => {
-            "Produce a daily summary of vault activity. Gather notes modified today, \
-             new tags, and orphan notes. Generate a review note with highlights and suggestions."
+            // Extract output_folder and template from params
+            let output_folder = task
+                .params
+                .get("output_folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("daily");
+            let template = task
+                .params
+                .get("template")
+                .and_then(|v| v.as_str())
+                .unwrap_or("summary");
+            let date_slug = now.format("%Y-%m-%d").to_string();
+
+            format!(
+                "Produce a daily review of vault activity. \
+                 Use vault_list and vault_search to discover notes modified today ({date_slug}). \
+                 Identify new tags, orphan notes (no inlinks), and noteworthy changes. \
+                 Then use vault_write to create a review note at \
+                 '{output_folder}/{date_slug}.md'. \
+                 Template style: {template}. \
+                 The review note MUST include: a heading with today's date, \
+                 a list of modified/created notes as WikiLinks, \
+                 new tags, and actionable suggestions. \
+                 You MUST call vault_write to save the review — do not just output text."
+            )
         }
         AgentKind::GraphMaintainer => {
             "Analyze the knowledge graph. Find orphan notes (no links), dead links, \
              hub overload (>30 outlinks), and cluster isolation. Suggest link improvements."
+                .to_string()
         }
         AgentKind::TypstReviewer => {
             "Review and validate Typst (.typ) documents in the vault. \
              Use typst_compile to check for compilation errors and warnings. \
              Suggest fixes for any issues found. Check document structure, \
              missing imports, and formatting problems."
+                .to_string()
         }
         AgentKind::Custom(_) => {
             // Custom agents provide their own system prompt via override
-            "Execute the user-defined task as instructed."
+            "Execute the user-defined task as instructed.".to_string()
         }
     };
 
@@ -406,6 +467,7 @@ fn build_system_prompt(task: &AgentTask, vault_summary: &str, allowed_tools: &[S
 
     format!(
         "You are an intelligent note organization agent for a Markdown knowledge vault.\n\n\
+         CURRENT TIME: {datetime_str}\n\n\
          VAULT CONTEXT:\n{vault_summary}\n\n\
          YOUR TASK: {agent_instruction}\n\n\
          AVAILABLE TOOLS:\n\
@@ -415,7 +477,8 @@ fn build_system_prompt(task: &AgentTask, vault_summary: &str, allowed_tools: &[S
          2. Preserve existing frontmatter when modifying notes\n\
          3. Use the vault's existing tag conventions\n\
          4. Output Markdown only\n\
-         5. Do not invent information — only organize existing content"
+         5. Do not invent information — only organize existing content\n\
+         6. You MUST use vault_write to persist any output — text-only responses are not saved"
     )
 }
 
@@ -445,13 +508,17 @@ fn build_step_messages(
     accumulated_context: &str,
     vault_summary: &str,
 ) -> Vec<ChatMessage> {
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
     vec![
         ChatMessage {
             role: "system".into(),
             content: format!(
-                "You are executing step {} of an agent plan.\n\n\
+                "You are executing step {} of an agent plan.\n\
+                 CURRENT TIME: {now}\n\n\
                  VAULT CONTEXT:\n{vault_summary}\n\n\
-                 ACCUMULATED RESULTS:\n{accumulated_context}",
+                 ACCUMULATED RESULTS:\n{accumulated_context}\n\n\
+                 REMINDER: You MUST call vault_write to persist any output. \
+                 Text-only responses are not saved to the vault.",
                 step.index + 1
             ),
             reasoning: None,
@@ -614,6 +681,7 @@ async fn generate_summary(
 fn build_aborted_result(
     task_id: String,
     kind: AgentKind,
+    scope: Option<String>,
     steps: Vec<PlanStep>,
     started_at: chrono::DateTime<Utc>,
     total_usage: TokenUsage,
@@ -622,7 +690,8 @@ fn build_aborted_result(
         task_id,
         kind,
         status: AgentStatus::Aborted,
-        scope: None,
+        auto_applied: false,
+        scope,
         plan_steps: steps,
         proposed_changes: vec![],
         summary: "Agent run was aborted by user.".into(),

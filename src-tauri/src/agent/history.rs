@@ -5,7 +5,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 
-use super::types::{AgentRunSummary, TaskResult};
+use super::types::{AgentRunDetail, AgentRunSummary, TaskResult};
 
 // ── Error type ──────────────────────────────────────────────
 
@@ -116,4 +116,54 @@ pub fn list_agent_runs(
         runs.push(row?);
     }
     Ok(runs)
+}
+
+/// Retrieve full detail of a single agent run, including plan + changes.
+pub fn get_agent_run_detail(
+    chat_db: &Arc<Mutex<Option<Connection>>>,
+    run_id: &str,
+) -> Result<Option<AgentRunDetail>, HistoryError> {
+    let guard = chat_db.lock();
+    let conn = guard.as_ref().ok_or(HistoryError::NoDatabase)?;
+
+    // Guard: table may not exist on a fresh vault
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agent_runs'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if !table_exists {
+        return Ok(None);
+    }
+
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, status, scope, summary, plan_json, changes_json,
+                token_prompt, token_completion, started_at, completed_at
+         FROM agent_runs WHERE id = ?1",
+    )?;
+
+    let result = stmt.query_row(params![run_id], |row| {
+        Ok(AgentRunDetail {
+            id: row.get(0)?,
+            kind: row.get(1)?,
+            status: row.get(2)?,
+            scope: row.get(3)?,
+            summary: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            plan_steps: row.get::<_, String>(5).unwrap_or_else(|_| "[]".into()),
+            changes_json: row.get::<_, String>(6).unwrap_or_else(|_| "[]".into()),
+            token_prompt: row.get::<_, i64>(7).unwrap_or(0) as u32,
+            token_completion: row.get::<_, i64>(8).unwrap_or(0) as u32,
+            started_at: row.get(9)?,
+            completed_at: row.get(10)?,
+        })
+    });
+
+    match result {
+        Ok(detail) => Ok(Some(detail)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }

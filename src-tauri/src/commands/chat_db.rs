@@ -724,6 +724,12 @@ pub async fn add_ai_memory(
     category: String,
     state: State<'_, AppState>,
 ) -> Result<AiMemory, ChatDbError> {
+    // Prevent unbounded memory entries that would bloat every system prompt
+    if content.chars().count() > 1000 {
+        return Err(ChatDbError::Db(
+            "Memory content exceeds 1000 character limit".into(),
+        ));
+    }
     with_chat_db(&state.chat_db, |conn| {
         let now = chrono::Utc::now().timestamp_millis();
         conn.execute(

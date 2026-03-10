@@ -746,8 +746,10 @@
     },
     "history": {
       "title": "智能体历史",
-      "empty": "暂无运行记录"
+      "empty": "暂无运行记录",
+      "noChanges": "无文件变更"
     },
+    "autoApplied": "已自动应用 {{count}} 项变更",
     "doomLoop": "智能体已停止：检测到重复执行相同操作"
   },
   "inlineAi": {

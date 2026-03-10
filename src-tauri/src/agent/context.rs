@@ -178,23 +178,43 @@ async fn build_relevant_notes(
         _ => {
             let guard = read_db.lock();
             if let Some(conn) = guard.as_ref() {
-                // List note paths and titles
+                // List note paths, titles, and modification dates
                 let mut stmt = conn
-                    .prepare("SELECT path, title FROM notes ORDER BY modified_at DESC LIMIT 50")
+                    .prepare(
+                        "SELECT path, title, modified_at FROM notes \
+                         ORDER BY modified_at DESC LIMIT 50",
+                    )
                     .map_err(|e| e.to_string())?;
                 let rows = stmt
                     .query_map([], |row| {
                         Ok((
                             row.get::<_, String>(0)?,
                             row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                            row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                         ))
                     })
                     .map_err(|e| e.to_string())?;
 
-                notes_text.push_str("Recent notes:\n");
+                notes_text.push_str("Recent notes (sorted by modification date):\n");
                 for row in rows {
-                    if let Ok((path, title)) = row {
-                        notes_text.push_str(&format!("  - {} ({})\n", title, path));
+                    if let Ok((path, title, modified)) = row {
+                        // Show date portion for time-aware tasks like DailyReview
+                        if modified.is_empty() {
+                            notes_text.push_str(&format!(
+                                "  - {} ({})\n",
+                                title, path
+                            ));
+                        } else {
+                            let date_display = if modified.len() >= 10 {
+                                &modified[..10]
+                            } else {
+                                &modified
+                            };
+                            notes_text.push_str(&format!(
+                                "  - {} ({}) [modified: {}]\n",
+                                title, path, date_display
+                            ));
+                        }
                     }
                 }
             }

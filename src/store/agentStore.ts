@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { listen } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   agentRun,
   agentAbort,
@@ -39,6 +39,7 @@ interface AgentCompleteEvent {
   task_id: string;
   summary: string;
   changes_count: number;
+  auto_applied: boolean;
 }
 
 interface AgentErrorEvent {
@@ -60,6 +61,7 @@ interface AgentState {
   // Results
   proposedChanges: ProposedChange[];
   summary: string | null;
+  autoAppliedCount: number;
 
   // Queue
   queueCount: number;
@@ -83,7 +85,9 @@ interface AgentState {
 
   // Internal: event listener setup
   _listenersInitialized: boolean;
+  _unlistenFns: UnlistenFn[];
   initListeners: () => void;
+  cleanupListeners: () => void;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -97,10 +101,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   progress: '',
   proposedChanges: [],
   summary: null,
+  autoAppliedCount: 0,
   queueCount: 0,
   history: [],
   customAgents: [],
   _listenersInitialized: false,
+  _unlistenFns: [],
 
   // ── Actions ─────────────────────────────────────────────
 
@@ -181,6 +187,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         status: 'completed',
         isRunning: false,
         progress: 'Changes applied',
+        autoAppliedCount: 0,
       });
     } catch (e) {
       console.warn('Apply changes failed:', e);
@@ -266,8 +273,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (get()._listenersInitialized) return;
     set({ _listenersInitialized: true });
 
+    // Track unlisten functions for cleanup
+    const registerListener = async <T>(
+      event: string,
+      handler: (event: { payload: T }) => void,
+    ) => {
+      const unlisten = await listen<T>(event, handler);
+      set((s) => ({ _unlistenFns: [...s._unlistenFns, unlisten] }));
+    };
+
     // Progress events
-    listen<AgentProgressEvent>('agent-progress', (event) => {
+    registerListener<AgentProgressEvent>('agent-progress', (event) => {
       const payload = event.payload;
       set((s) => {
         const updates: Partial<AgentState> = {};
@@ -301,25 +317,29 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
 
     // Complete event
-    listen<AgentCompleteEvent>('agent-complete', (event) => {
-      const { summary, changes_count } = event.payload;
+    registerListener<AgentCompleteEvent>('agent-complete', (event) => {
+      const { summary, changes_count, auto_applied } = event.payload;
       set({
         isRunning: false,
         pauseRequested: false,
         currentKind: null,
         progress: 'Agent completed',
         summary,
-        status: changes_count > 0 ? 'waiting_approval' : 'completed',
+        autoAppliedCount: auto_applied ? changes_count : 0,
+        // auto_applied changes are already written — show as completed
+        status: (changes_count > 0 && !auto_applied) ? 'waiting_approval' : 'completed',
       });
-      // Refresh status to pick up proposed changes
-      get().fetchStatus();
+      // Refresh status to pick up proposed changes (if waiting approval)
+      if (changes_count > 0 && !auto_applied) {
+        get().fetchStatus();
+      }
 
       // Bridge result to chat so users see it in the conversation
       useChatStore.getState().injectAgentResult(summary, changes_count);
     });
 
     // Error event
-    listen<AgentErrorEvent>('agent-error', (event) => {
+    registerListener<AgentErrorEvent>('agent-error', (event) => {
       set({
         isRunning: false,
         pauseRequested: false,
@@ -328,5 +348,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         progress: `Error: ${event.payload.error}`,
       });
     });
+  },
+
+  cleanupListeners: () => {
+    const fns = get()._unlistenFns;
+    for (const fn of fns) {
+      fn();
+    }
+    set({ _unlistenFns: [], _listenersInitialized: false });
   },
 }));
