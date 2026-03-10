@@ -21,7 +21,8 @@ pub enum ChatProvider {
 
 // ── Message types ───────────────────────────────────────────
 
-/// A single message in the conversation
+/// A single message in the conversation.
+/// Supports standard roles (system, user, assistant) and tool result messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
@@ -30,6 +31,56 @@ pub struct ChatMessage {
     pub reasoning: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ImageAttachment>>,
+    /// For assistant messages: the tool calls the model wants to make
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    /// For tool-result messages: the ID of the tool call this result corresponds to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl ChatMessage {
+    /// Create a simple text message (system, user, or assistant)
+    pub fn text(role: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: role.into(),
+            content: content.into(),
+            reasoning: None,
+            images: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Create an assistant message carrying tool calls from the LLM.
+    /// `reasoning` must be preserved for providers that require it on round-trip
+    /// (e.g. Kimi K2.5 requires reasoning_content in assistant tool call messages).
+    pub fn assistant_with_tools(
+        content: impl Into<String>,
+        calls: Vec<ToolCall>,
+        reasoning: Option<String>,
+    ) -> Self {
+        Self {
+            role: "assistant".into(),
+            content: content.into(),
+            reasoning,
+            images: None,
+            tool_calls: Some(calls),
+            tool_call_id: None,
+        }
+    }
+
+    /// Create a tool-result message to send back to the LLM
+    pub fn tool_result(call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".into(),
+            content: content.into(),
+            reasoning: None,
+            images: None,
+            tool_calls: None,
+            tool_call_id: Some(call_id.into()),
+        }
+    }
 }
 
 /// Base64-encoded image for multimodal input
@@ -103,6 +154,8 @@ impl std::ops::AddAssign for TokenUsage {
 pub struct LlmResponse {
     /// Text content from the LLM
     pub content: String,
+    /// Reasoning/thinking content (e.g. K2.5 reasoning_content, o-series reasoning)
+    pub reasoning: Option<String>,
     /// Token usage for this call
     pub usage: TokenUsage,
     /// Parsed tool calls (native function calling or XML fallback)
@@ -112,8 +165,15 @@ pub struct LlmResponse {
 /// A single tool call extracted from the LLM response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
+    /// Provider-assigned call ID (for round-tripping tool results)
+    #[serde(default = "default_tool_call_id")]
+    pub id: String,
     pub tool: String,
     pub args: serde_json::Value,
+}
+
+fn default_tool_call_id() -> String {
+    format!("call_{}", uuid::Uuid::new_v4().simple())
 }
 
 // ── Stream chunk ────────────────────────────────────────────

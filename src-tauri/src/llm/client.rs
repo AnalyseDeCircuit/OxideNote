@@ -67,13 +67,7 @@ fn build_openai_request(
 
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
-        .map(|m| {
-            let content = build_openai_content(m);
-            serde_json::json!({
-                "role": m.role,
-                "content": content,
-            })
-        })
+        .map(|m| build_openai_message(m))
         .collect();
 
     let mut body = serde_json::json!({
@@ -158,17 +152,16 @@ fn build_claude_request(
         .map(|m| m.content.clone())
         .unwrap_or_default();
 
-    let api_messages: Vec<serde_json::Value> = messages
+    // Build individual messages, then merge consecutive tool results.
+    // Claude requires all tool_result blocks for one assistant turn
+    // to be in a single "user" message — consecutive same-role messages are forbidden.
+    let raw_messages: Vec<serde_json::Value> = messages
         .iter()
         .filter(|m| m.role != "system")
-        .map(|m| {
-            let content = build_claude_content(m);
-            serde_json::json!({
-                "role": m.role,
-                "content": content,
-            })
-        })
+        .map(|m| build_claude_message(m))
         .collect();
+
+    let api_messages = merge_consecutive_claude_messages(raw_messages);
 
     let mut body = serde_json::json!({
         "model": &config.model,
@@ -251,6 +244,183 @@ fn build_ollama_request(
 
     let req = client.post(&url).json(&body);
     Ok(req)
+}
+
+// ── Message builders (tool-aware) ───────────────────────────
+
+/// Build a complete OpenAI API message object, including tool call round-tripping.
+///
+/// - For `assistant` messages with `tool_calls`: include the `tool_calls` array
+/// - For `tool` messages: include `tool_call_id`
+/// - Otherwise: standard text or multimodal content
+fn build_openai_message(msg: &ChatMessage) -> serde_json::Value {
+    // Tool result message: role=tool with tool_call_id
+    if msg.role == "tool" {
+        return serde_json::json!({
+            "role": "tool",
+            "tool_call_id": msg.tool_call_id.as_deref().unwrap_or(""),
+            "content": &msg.content,
+        });
+    }
+
+    // Assistant message with tool calls
+    if msg.role == "assistant" {
+        if let Some(ref calls) = msg.tool_calls {
+            if !calls.is_empty() {
+                let tc_json: Vec<serde_json::Value> = calls
+                    .iter()
+                    .map(|tc| {
+                        serde_json::json!({
+                            "id": &tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": &tc.tool,
+                                "arguments": tc.args.to_string(),
+                            }
+                        })
+                    })
+                    .collect();
+                let mut obj = serde_json::json!({
+                    "role": "assistant",
+                    "tool_calls": tc_json,
+                });
+                // Content can be null when the model only returns tool calls
+                if !msg.content.is_empty() {
+                    obj["content"] = serde_json::json!(&msg.content);
+                } else {
+                    obj["content"] = serde_json::Value::Null;
+                }
+                // Preserve reasoning_content for providers that require it
+                // on round-trip (e.g. Kimi K2.5 thinking mode)
+                if let Some(ref reasoning) = msg.reasoning {
+                    obj["reasoning_content"] = serde_json::json!(reasoning);
+                }
+                return obj;
+            }
+        }
+    }
+
+    // Standard message (system, user, or plain assistant)
+    let content = build_openai_content(msg);
+    serde_json::json!({
+        "role": &msg.role,
+        "content": content,
+    })
+}
+
+/// Build a complete Claude API message object, including tool call round-tripping.
+fn build_claude_message(msg: &ChatMessage) -> serde_json::Value {
+    // Tool result message
+    if msg.role == "tool" {
+        return serde_json::json!({
+            "role": "user",
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": msg.tool_call_id.as_deref().unwrap_or(""),
+                "content": &msg.content,
+            }]
+        });
+    }
+
+    // Assistant message with tool calls
+    if msg.role == "assistant" {
+        if let Some(ref calls) = msg.tool_calls {
+            if !calls.is_empty() {
+                let mut content_blocks: Vec<serde_json::Value> = Vec::new();
+                // Include text if present
+                if !msg.content.is_empty() {
+                    content_blocks.push(serde_json::json!({
+                        "type": "text",
+                        "text": &msg.content,
+                    }));
+                }
+                // Include tool_use blocks
+                for tc in calls {
+                    content_blocks.push(serde_json::json!({
+                        "type": "tool_use",
+                        "id": &tc.id,
+                        "name": &tc.tool,
+                        "input": &tc.args,
+                    }));
+                }
+                return serde_json::json!({
+                    "role": "assistant",
+                    "content": content_blocks,
+                });
+            }
+        }
+    }
+
+    // Standard message
+    let content = build_claude_content(msg);
+    serde_json::json!({
+        "role": &msg.role,
+        "content": content,
+    })
+}
+
+/// Merge consecutive same-role Claude messages to comply with the API constraint
+/// that forbids consecutive messages with the same role. This is critical for
+/// tool result batching: when the LLM returns N tool calls, we produce N
+/// tool_result messages (all converted to "user" role), which must be combined.
+fn merge_consecutive_claude_messages(
+    messages: Vec<serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    let mut merged: Vec<serde_json::Value> = Vec::with_capacity(messages.len());
+
+    for msg in messages {
+        let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
+
+        // Check if we can merge with the previous message (same role)
+        let should_merge = merged
+            .last()
+            .and_then(|prev| prev.get("role"))
+            .and_then(|r| r.as_str())
+            .map_or(false, |prev_role| prev_role == role);
+
+        if should_merge {
+            // Merge content arrays: extend prev.content with current.content
+            let prev = merged.last_mut().expect("checked non-empty above");
+            if let Some(new_content) = msg.get("content") {
+                let prev_content = prev
+                    .get_mut("content")
+                    .expect("message always has content");
+
+                // Both should be arrays for tool_result messages
+                if let (Some(prev_arr), Some(new_arr)) =
+                    (prev_content.as_array_mut(), new_content.as_array())
+                {
+                    prev_arr.extend(new_arr.iter().cloned());
+                } else {
+                    // Fallback: wrap both in an array
+                    let prev_val = prev_content.take();
+                    let items = match (prev_val.as_array(), new_content.as_array()) {
+                        (Some(a), Some(b)) => {
+                            let mut v = a.clone();
+                            v.extend(b.iter().cloned());
+                            v
+                        }
+                        (Some(a), None) => {
+                            let mut v = a.clone();
+                            v.push(new_content.clone());
+                            v
+                        }
+                        (None, Some(b)) => {
+                            let mut v = vec![prev_val];
+                            v.extend(b.iter().cloned());
+                            v
+                        }
+                        (None, None) => vec![prev_val, new_content.clone()],
+                    };
+                    *prev_content = serde_json::json!(items);
+                }
+            }
+        } else {
+            merged.push(msg);
+        }
+    }
+
+    merged
 }
 
 // ── Multimodal content builders ─────────────────────────────
@@ -374,7 +544,7 @@ pub async fn send_with_retry_opts(
 /// Respects abort signal: checks `abort_rx` before and after the HTTP call.
 pub async fn call_llm_complete(
     config: &ChatConfig,
-    messages: Vec<ChatMessage>,
+    messages: &[ChatMessage],
     tools: Option<&[ToolSchema]>,
     abort_rx: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<LlmResponse, LlmError> {
@@ -416,11 +586,22 @@ fn parse_openai_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
         .unwrap_or("")
         .to_string();
 
+    // Extract reasoning/thinking content (K2.5 reasoning_content, o-series reasoning)
+    let reasoning = message
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     // Extract native tool calls
     let mut tool_calls = Vec::new();
     if let Some(tcs) = message.get("tool_calls").and_then(|v| v.as_array()) {
-        for tc in tcs {
+        for (idx, tc) in tcs.iter().enumerate() {
             if let Some(func) = tc.get("function") {
+                let call_id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("call_{}", idx));
                 let name = func
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -431,20 +612,19 @@ fn parse_openai_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
                 let args = serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
-                tool_calls.push(ToolCall { tool: name, args });
+                tool_calls.push(ToolCall { id: call_id, tool: name, args });
             }
         }
     }
 
-    // If no native tool calls, try XML fallback
-    if tool_calls.is_empty() {
-        tool_calls = parse_xml_tool_calls(&content);
-    }
+    // Skip XML fallback for providers with native function calling.
+    // XML content in the response is explanatory text, not actual tool calls.
 
     let usage = parse_openai_usage(json);
 
     Ok(LlmResponse {
         content,
+        reasoning,
         usage,
         tool_calls,
     })
@@ -466,6 +646,11 @@ fn parse_claude_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
                     }
                 }
                 "tool_use" => {
+                    let call_id = block
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("call_{}", tool_calls.len()));
                     let name = block
                         .get("name")
                         .and_then(|v| v.as_str())
@@ -475,17 +660,15 @@ fn parse_claude_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
                         .get("input")
                         .cloned()
                         .unwrap_or(serde_json::json!({}));
-                    tool_calls.push(ToolCall { tool: name, args });
+                    tool_calls.push(ToolCall { id: call_id, tool: name, args });
                 }
                 _ => {}
             }
         }
     }
 
-    // XML fallback if no native tool calls
-    if tool_calls.is_empty() {
-        tool_calls = parse_xml_tool_calls(&content);
-    }
+    // Skip XML fallback for Claude — native tool use is always available.
+    // XML content in Claude responses is explanatory text, not actual tool calls.
 
     // Claude usage format
     let usage = if let Some(u) = json.get("usage") {
@@ -508,6 +691,7 @@ fn parse_claude_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
 
     Ok(LlmResponse {
         content,
+        reasoning: None,
         usage,
         tool_calls,
     })
@@ -541,6 +725,7 @@ fn parse_ollama_complete(json: &serde_json::Value) -> Result<LlmResponse, LlmErr
 
     Ok(LlmResponse {
         content,
+        reasoning: None,
         usage,
         tool_calls,
     })

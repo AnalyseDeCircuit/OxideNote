@@ -93,12 +93,7 @@ pub async fn inline_ai_transform(
 ) -> Result<String, InlineAiError> {
     let (_, mut abort_rx) = watch::channel(false);
 
-    let mut messages = vec![ChatMessage {
-        role: "system".into(),
-        content: transform_system_prompt(&file_ext),
-        reasoning: None,
-        images: None,
-    }];
+    let mut messages = vec![ChatMessage::text("system", transform_system_prompt(&file_ext))];
 
     // Build user message with context
     let user_content = if context.is_empty() {
@@ -116,14 +111,9 @@ pub async fn inline_ai_transform(
         )
     };
 
-    messages.push(ChatMessage {
-        role: "user".into(),
-        content: user_content,
-        reasoning: None,
-        images: None,
-    });
+    messages.push(ChatMessage::text("user", user_content));
 
-    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+    let response = call_llm_complete(&config, &messages, None, &mut abort_rx).await?;
     Ok(response.content)
 }
 
@@ -141,24 +131,14 @@ pub async fn inline_ai_continue(
     let (_, mut abort_rx) = watch::channel(false);
 
     let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: continue_system_prompt(),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: format!(
-                "Note: \"{note_title}\"\n\n\
-                 Continue from here:\n{preceding_text}"
-            ),
-            reasoning: None,
-            images: None,
-        },
+        ChatMessage::text("system", continue_system_prompt()),
+        ChatMessage::text("user", format!(
+            "Note: \"{note_title}\"\n\n\
+             Continue from here:\n{preceding_text}"
+        )),
     ];
 
-    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+    let response = call_llm_complete(&config, &messages, None, &mut abort_rx).await?;
     Ok(response.content)
 }
 
@@ -228,21 +208,11 @@ pub async fn analyze_graph(
     }
 
     let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: graph_analysis_system_prompt(),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: user_content,
-            reasoning: None,
-            images: None,
-        },
+        ChatMessage::text("system", graph_analysis_system_prompt()),
+        ChatMessage::text("user", user_content),
     ];
 
-    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+    let response = call_llm_complete(&config, &messages, None, &mut abort_rx).await?;
     Ok(response.content)
 }
 
@@ -296,21 +266,11 @@ pub async fn suggest_tags(
     );
 
     let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: suggest_tags_system_prompt(),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: user_content,
-            reasoning: None,
-            images: None,
-        },
+        ChatMessage::text("system", suggest_tags_system_prompt()),
+        ChatMessage::text("user", user_content),
     ];
 
-    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+    let response = call_llm_complete(&config, &messages, None, &mut abort_rx).await?;
 
     // Parse the JSON array from LLM response, with fallback extraction
     let raw = response.content.trim();
@@ -379,21 +339,11 @@ pub async fn suggest_links(
     );
 
     let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: suggest_links_system_prompt(),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: user_content,
-            reasoning: None,
-            images: None,
-        },
+        ChatMessage::text("system", suggest_links_system_prompt()),
+        ChatMessage::text("user", user_content),
     ];
 
-    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+    let response = call_llm_complete(&config, &messages, None, &mut abort_rx).await?;
 
     // Parse the JSON array from LLM response
     let raw = response.content.trim();
@@ -447,21 +397,11 @@ pub async fn extract_memories(
     };
 
     let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: extract_memories_system_prompt(),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: format!("Extract memorable facts from this conversation:\n\n{trimmed}"),
-            reasoning: None,
-            images: None,
-        },
+        ChatMessage::text("system", extract_memories_system_prompt()),
+        ChatMessage::text("user", format!("Extract memorable facts from this conversation:\n\n{trimmed}")),
     ];
 
-    let response = call_llm_complete(&config, messages, None, &mut abort_rx).await?;
+    let response = call_llm_complete(&config, &messages, None, &mut abort_rx).await?;
 
     let raw = response.content.trim();
     // Try parsing directly

@@ -1,13 +1,15 @@
-//! Agent runtime — the core plan→execute→verify loop.
+//! Agent runtime — continuous tool-calling loop.
 //!
-//! Each agent run follows:
+//! Each agent run follows a single agentic loop:
 //! 1. Build vault context
-//! 2. Ask LLM to produce a plan
-//! 3. Execute each step (with tool calls)
-//! 4. Generate summary
+//! 2. Send system prompt + user task to LLM with tool schemas
+//! 3. LLM returns text and/or tool_calls
+//! 4. Execute tool calls → append assistant + tool result messages → call LLM again
+//! 5. Repeat until LLM returns no tool_calls (task complete)
+//! 6. Generate summary
 //!
 //! The runtime supports abort via `watch::Receiver<bool>`, doom loop detection,
-//! context compaction, and write buffering.
+//! and write buffering.
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -75,20 +77,6 @@ fn emit_progress(app: &AppHandle, task_id: &str, status: &AgentStatus, message: 
     );
 }
 
-/// Emit step-level progress
-fn emit_step_progress(app: &AppHandle, task_id: &str, step: &PlanStep) {
-    let _ = app.emit(
-        "agent-progress",
-        serde_json::json!({
-            "task_id": task_id,
-            "status": "executing",
-            "step_index": step.index,
-            "step_description": step.description,
-            "step_status": step.status,
-        }),
-    );
-}
-
 // ── Main runtime loop ───────────────────────────────────────
 
 /// Block execution while the pause signal is active.
@@ -132,11 +120,11 @@ async fn wait_if_paused(
 
 /// Core agent execution loop.
 ///
-/// Follows the plan→execute→verify pattern:
+/// Uses a continuous tool-calling loop:
 /// 1. Build context from vault metadata + scope
-/// 2. Ask LLM to produce a numbered plan
-/// 3. Execute each step with tool schemas for function calling
-/// 4. Detect doom loops (repeated identical tool calls)
+/// 2. Send system prompt + user task to LLM with tool schemas
+/// 3. Execute tool calls, append results to conversation
+/// 4. Repeat until LLM responds without tool calls (up to MAX_ITERATIONS)
 /// 5. Generate final summary
 pub async fn run_agent(
     task: AgentTask,
@@ -189,67 +177,46 @@ async fn run_agent_inner(
     let started_at = Utc::now();
     let mut total_usage = TokenUsage::default();
 
-    // Phase 1: Build context
+    // ── Phase 1: Build context ──────────────────────────────
     emit_progress(app, &task_id, &AgentStatus::Planning, "Building context...");
     let context = build_agent_context(&task, vault_path, &read_db)
         .await
         .map_err(|e| AgentError::Internal(e))?;
 
-    // Phase 2: Planning — ask LLM to produce a plan
+    // ── Phase 2: Prepare conversation ───────────────────────
     let system_prompt = system_prompt_override
         .unwrap_or_else(|| build_system_prompt(&task, &context.vault_summary, &allowed_tools));
 
-    let plan_messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: system_prompt,
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: build_plan_request(&task, &context.relevant_notes),
-            reasoning: None,
-            images: None,
-        },
+    let user_content = build_task_message(&task, &context.relevant_notes);
+
+    let mut messages: Vec<ChatMessage> = vec![
+        ChatMessage::text("system", &system_prompt),
+        ChatMessage::text("user", &user_content),
     ];
-
-    let plan_response = call_llm_complete(config, plan_messages, None, &mut abort_rx).await?;
-    total_usage += plan_response.usage;
-
-    let mut steps = parse_plan(&plan_response.content);
-    if steps.is_empty() {
-        // If LLM didn't produce a structured plan, create a single step
-        steps.push(PlanStep {
-            index: 0,
-            description: "Execute task".into(),
-            status: StepStatus::Pending,
-            output: None,
-        });
-    }
-
-    // Cap plan steps to prevent unbounded LLM calls
-    const MAX_PLAN_STEPS: usize = 15;
-    if steps.len() > MAX_PLAN_STEPS {
-        steps.truncate(MAX_PLAN_STEPS);
-    }
-
-    emit_progress(
-        app,
-        &task_id,
-        &AgentStatus::Executing,
-        &format!("Plan: {} steps", steps.len()),
-    );
-
-    // Phase 3: Execute steps
-    let pending_writes: Arc<Mutex<Vec<ProposedChange>>> = Arc::new(Mutex::new(Vec::new()));
-    let mut doom_detector: VecDeque<String> = VecDeque::with_capacity(13);
-    let mut accumulated_context = context.relevant_notes.clone();
 
     // Build tool schemas filtered by allowed tools
     let tool_schemas = build_vault_tool_schemas(&allowed_tools);
+    let pending_writes: Arc<Mutex<Vec<ProposedChange>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut doom_detector: VecDeque<String> = VecDeque::with_capacity(13);
 
-    for step in &mut steps {
+    // Track execution steps for the result
+    let mut steps: Vec<PlanStep> = Vec::new();
+
+    // Maximum iterations to prevent unbounded execution
+    const MAX_ITERATIONS: usize = 30;
+    let mut iteration = 0;
+
+    emit_progress(app, &task_id, &AgentStatus::Executing, "Starting agent...");
+
+    // ── Phase 3: Agentic tool-calling loop ──────────────────
+    loop {
+        // Enforce iteration cap
+        if iteration >= MAX_ITERATIONS {
+            tracing::warn!("Agent hit iteration cap ({MAX_ITERATIONS})");
+            break;
+        }
+        iteration += 1;
+
         // Check abort
         if *abort_rx.borrow() {
             return Ok(build_aborted_result(
@@ -262,41 +229,66 @@ async fn run_agent_inner(
             ));
         }
 
-        // Wait if paused (also checks abort while waiting)
+        // Wait if paused
         wait_if_paused(&mut pause_rx, &mut abort_rx, app, &task_id).await?;
 
-        step.status = StepStatus::InProgress;
-        emit_step_progress(app, &task_id, step);
-
-        // Ask LLM to execute this step
-        let exec_messages = build_step_messages(step, &accumulated_context, &context.vault_summary);
+        // Call LLM with the full conversation + tool schemas
         let response = call_llm_complete(
             config,
-            exec_messages,
+            &messages,
             Some(&tool_schemas),
             &mut abort_rx,
         )
         .await?;
-        total_usage += response.usage;
+        total_usage += response.usage.clone();
 
-        // Extract tool calls
-        let tool_calls = response.tool_calls;
+        let tool_calls = &response.tool_calls;
 
-        // Doom loop detection: track last 12 hashes, check for repetition
-        if !tool_calls.is_empty() {
-            let call_hash = hash_tool_calls(&tool_calls);
-            doom_detector.push_back(call_hash);
-            if doom_detector.len() > 12 {
-                doom_detector.pop_front();
-            }
-            if detect_doom_loop(&doom_detector) {
-                return Err(AgentError::DoomLoop);
-            }
+        // If no tool calls, the LLM considers the task done
+        if tool_calls.is_empty() {
+            // Record the final response as a step
+            steps.push(PlanStep {
+                index: steps.len(),
+                description: "Final response".into(),
+                status: StepStatus::Completed,
+                output: Some(response.content.clone()),
+            });
+
+            // Add the final assistant message (for completeness)
+            messages.push(ChatMessage::text("assistant", &response.content));
+            break;
         }
 
-        // Execute tool calls
-        for tc in &tool_calls {
-            match execute_tool(
+        // Doom loop detection: track recent tool call hashes
+        let call_hash = hash_tool_calls(tool_calls);
+        doom_detector.push_back(call_hash);
+        if doom_detector.len() > 12 {
+            doom_detector.pop_front();
+        }
+        if detect_doom_loop(&doom_detector) {
+            return Err(AgentError::DoomLoop);
+        }
+
+        // Append the assistant message (with tool_calls) to conversation history.
+        // Preserve reasoning for providers that require it on round-trip (e.g. K2.5).
+        messages.push(ChatMessage::assistant_with_tools(
+            &response.content,
+            response.tool_calls.clone(),
+            response.reasoning.clone(),
+        ));
+
+        // Execute each tool call and append results as tool messages
+        for tc in tool_calls {
+            let step_desc = format!("{}({})", tc.tool, summarize_args(&tc.args));
+
+            emit_progress(
+                app,
+                &task_id,
+                &AgentStatus::Executing,
+                &format!("Step {} — {}", steps.len() + 1, step_desc),
+            );
+
+            let result = match execute_tool(
                 tc,
                 vault_path,
                 &read_db,
@@ -309,52 +301,45 @@ async fn run_agent_inner(
             .await
             {
                 Ok(result) => {
-                    // Cap individual tool results to prevent context explosion
-                    let capped = if result.len() > 2000 {
-                        let boundary = result.floor_char_boundary(2000);
+                    // Cap tool results to prevent context explosion
+                    if result.len() > 4000 {
+                        let boundary = result.floor_char_boundary(4000);
                         format!("{}... (truncated)", &result[..boundary])
                     } else {
                         result
-                    };
-                    accumulated_context
-                        .push_str(&format!("\n[Tool: {}] {}\n", tc.tool, capped));
+                    }
                 }
-                Err(e) => {
-                    accumulated_context
-                        .push_str(&format!("\n[Tool: {} ERROR] {}\n", tc.tool, e));
-                }
-            }
+                Err(e) => format!("Error: {}", e),
+            };
+
+            // Append tool result message with the matching call ID
+            messages.push(ChatMessage::tool_result(&tc.id, &result));
+
+            // Record as a step for UI progress
+            steps.push(PlanStep {
+                index: steps.len(),
+                description: step_desc,
+                status: StepStatus::Completed,
+                output: Some(if result.len() > 200 {
+                    let boundary = result.floor_char_boundary(200);
+                    format!("{}...", &result[..boundary])
+                } else {
+                    result
+                }),
+            });
         }
 
-        // Compact accumulated context if it exceeds budget (8000 chars)
-        // Drop oldest entries to stay within budget, keeping the newest content
-        if accumulated_context.len() > 8000 {
-            let keep_from = accumulated_context.floor_char_boundary(accumulated_context.len() - 6000);
-            if let Some(pos) = accumulated_context[keep_from..].find("\n[Tool:") {
-                accumulated_context = format!(
-                    "(earlier context compacted)\n{}",
-                    &accumulated_context[keep_from + pos..]
-                );
-            } else {
-                // Fallback: keep the last 6000 chars at a safe boundary
-                accumulated_context = format!(
-                    "(earlier context compacted)\n{}",
-                    &accumulated_context[keep_from..]
-                );
-            }
-        }
-
-        step.status = StepStatus::Completed;
-        step.output = Some(response.content);
-        emit_step_progress(app, &task_id, step);
+        // Compact conversation if message count is excessive
+        // Keep system prompt + last N messages to stay within context budget
+        compact_messages(&mut messages);
     }
 
-    // Phase 4: Extract proposed changes
+    // ── Phase 4: Extract proposed changes ───────────────────
     let proposed_changes = Arc::try_unwrap(pending_writes)
         .map(|m| m.into_inner())
         .unwrap_or_else(|arc| arc.lock().clone());
 
-    // Phase 5: Generate summary
+    // ── Phase 5: Generate summary ───────────────────────────
     let summary = generate_summary(config, &steps, &proposed_changes, &mut abort_rx)
         .await
         .unwrap_or_else(|_| "Agent completed.".into());
@@ -482,107 +467,107 @@ fn build_system_prompt(task: &AgentTask, vault_summary: &str, allowed_tools: &[S
     )
 }
 
-/// Request the LLM to produce a numbered plan
-fn build_plan_request(task: &AgentTask, relevant_notes: &str) -> String {
+/// Build the user's task message with relevant vault context
+fn build_task_message(task: &AgentTask, relevant_notes: &str) -> String {
     let scope_desc = match task.scope.as_deref() {
-        Some(s) if !s.is_empty() => format!("Scope: {}", s),
+        Some(s) if !s.is_empty() => format!("Target scope: {}", s),
         _ => "Scope: entire vault".to_string(),
     };
 
     format!(
-        "Based on the vault context and the notes below, produce a numbered PLAN \
-         for completing the task. Each step should be a concrete action.\n\n\
-         {scope_desc}\n\n\
-         NOTES:\n{relevant_notes}\n\n\
-         Output format:\n\
-         PLAN:\n\
-         1. [First step description]\n\
-         2. [Second step description]\n\
-         ..."
+        "{scope_desc}\n\n\
+         RELEVANT NOTES:\n{relevant_notes}\n\n\
+         Execute the task described in the system prompt. \
+         Use the available tools as needed. When you are done, \
+         respond with your final summary (no tool calls)."
     )
 }
 
-/// Build messages for executing a single plan step
-fn build_step_messages(
-    step: &PlanStep,
-    accumulated_context: &str,
-    vault_summary: &str,
-) -> Vec<ChatMessage> {
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
-    vec![
-        ChatMessage {
-            role: "system".into(),
-            content: format!(
-                "You are executing step {} of an agent plan.\n\
-                 CURRENT TIME: {now}\n\n\
-                 VAULT CONTEXT:\n{vault_summary}\n\n\
-                 ACCUMULATED RESULTS:\n{accumulated_context}\n\n\
-                 REMINDER: You MUST call vault_write to persist any output. \
-                 Text-only responses are not saved to the vault.",
-                step.index + 1
-            ),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: format!(
-                "Execute this step: {}\n\n\
-                 Use the available tools to complete this step. \
-                 Call tools as needed, then summarize what was accomplished.",
-                step.description
-            ),
-            reasoning: None,
-            images: None,
-        },
-    ]
-}
+/// Compact conversation messages to stay within context budget.
+///
+/// Preserves the system prompt (index 0) and recent messages.
+/// Respects tool-call boundaries: never splits between an assistant
+/// message with tool_calls and its corresponding tool result messages.
+fn compact_messages(messages: &mut Vec<ChatMessage>) {
+    // Character budget for the conversation (rough estimate)
+    const MAX_TOTAL_CHARS: usize = 50_000;
+    const KEEP_RECENT: usize = 12;
 
-// ── Plan parsing ────────────────────────────────────────────
+    let total_chars: usize = messages.iter().map(|m| {
+        let mut size = m.content.len();
+        // Include tool_calls payload in budget
+        if let Some(ref calls) = m.tool_calls {
+            for tc in calls {
+                size += tc.args.to_string().len() + tc.tool.len();
+            }
+        }
+        size
+    }).sum();
 
-/// Parse a numbered plan from LLM output
-fn parse_plan(content: &str) -> Vec<PlanStep> {
-    let mut steps = Vec::new();
+    if total_chars <= MAX_TOTAL_CHARS || messages.len() <= KEEP_RECENT + 1 {
+        return;
+    }
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        // Match lines like "1. Do something" or "1) Do something"
-        if let Some(rest) = try_parse_numbered_line(trimmed) {
-            if !rest.is_empty() {
-                steps.push(PlanStep {
-                    index: steps.len(),
-                    description: rest.to_string(),
-                    status: StepStatus::Pending,
-                    output: None,
-                });
+    // Find a safe cut point: we need to keep at least KEEP_RECENT messages
+    // from the end, but must not split a tool-call sequence.
+    // A "safe" cut point is an index where messages[i] is NOT a tool-result
+    // message (role != "tool"), meaning we're at a conversation boundary.
+    let keep_from = messages.len().saturating_sub(KEEP_RECENT);
+
+    // Walk backwards from keep_from to find a safe boundary
+    let mut safe_cut = keep_from;
+    while safe_cut > 1 && messages[safe_cut].role == "tool" {
+        safe_cut -= 1;
+    }
+    // Also skip past any assistant message with tool_calls at safe_cut
+    if safe_cut > 1 {
+        if let Some(ref calls) = messages[safe_cut].tool_calls {
+            if !calls.is_empty() {
+                safe_cut -= 1;
             }
         }
     }
 
-    steps
+    // Don't compact if we'd only remove the user message
+    if safe_cut <= 1 {
+        return;
+    }
+
+    // Remove messages from index 1..safe_cut (keep system prompt at 0)
+    messages.drain(1..safe_cut);
+    // Insert a compaction notice
+    messages.insert(1, ChatMessage::text(
+        "user",
+        "(Earlier conversation context was compacted to stay within limits.)",
+    ));
 }
 
-/// Try to parse "N. text" or "N) text" from a line
-fn try_parse_numbered_line(line: &str) -> Option<&str> {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-
-    // Skip leading digits
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
-        i += 1;
-    }
-
-    // Must have at least one digit
-    if i == 0 {
-        return None;
-    }
-
-    // Must be followed by '.' or ')' then whitespace
-    if i < bytes.len() && (bytes[i] == b'.' || bytes[i] == b')') {
-        let rest = &line[i + 1..];
-        Some(rest.trim_start())
+/// Summarize tool call args for progress display (truncated)
+fn summarize_args(args: &serde_json::Value) -> String {
+    if let Some(obj) = args.as_object() {
+        let parts: Vec<String> = obj.iter().take(2).map(|(k, v)| {
+            let val_str = match v {
+                serde_json::Value::String(s) => {
+                    if s.len() > 40 {
+                        format!("\"{}...\"", &s[..s.floor_char_boundary(37)])
+                    } else {
+                        format!("\"{}\"", s)
+                    }
+                }
+                other => {
+                    let s = other.to_string();
+                    if s.len() > 40 {
+                        format!("{}...", &s[..s.floor_char_boundary(37)])
+                    } else {
+                        s
+                    }
+                }
+            };
+            format!("{}: {}", k, val_str)
+        }).collect();
+        parts.join(", ")
     } else {
-        None
+        args.to_string()
     }
 }
 
@@ -654,25 +639,15 @@ async fn generate_summary(
         .join("\n");
 
     let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: "You are a concise summarizer. Summarize the agent run in 2-3 sentences.".into(),
-            reasoning: None,
-            images: None,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: format!(
-                "Steps completed:\n{steps_summary}\n\n\
-                 Proposed changes:\n{changes_summary}\n\n\
-                 Provide a brief summary of what was accomplished."
-            ),
-            reasoning: None,
-            images: None,
-        },
+        ChatMessage::text("system", "You are a concise summarizer. Summarize the agent run in 2-3 sentences."),
+        ChatMessage::text("user", format!(
+            "Steps completed:\n{steps_summary}\n\n\
+             Proposed changes:\n{changes_summary}\n\n\
+             Provide a brief summary of what was accomplished."
+        )),
     ];
 
-    let response = call_llm_complete(config, messages, None, abort_rx).await?;
+    let response = call_llm_complete(config, &messages, None, abort_rx).await?;
     Ok(response.content)
 }
 
