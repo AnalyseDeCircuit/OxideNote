@@ -16,6 +16,7 @@ import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { DatabaseView, isDatabaseNote } from '@/components/database/DatabaseView';
 import { CanvasEditor } from '@/components/canvas/CanvasEditor';
 import { TypstPreview } from './TypstPreview';
+import { LaTeXPreview } from './LaTeXPreview';
 import { TagSuggestion } from './TagSuggestion';
 import { SmartLinkSuggestion } from './SmartLinkSuggestion';
 import { useTranslation } from 'react-i18next';
@@ -468,10 +469,15 @@ export function NoteEditor() {
           style={{ height: '100%' }}
         />
 
-        {/* ── 预览区域：数据库视图 / Typst 预览 / Markdown 预览 ── */}
+        {/* ── 预览区域：数据库视图 / Typst 预览 / LaTeX 预览 / Markdown 预览 ── */}
         {activeTabPath && showPreview && (
           isTypst ? (
             <TypstPreview
+              path={activeTabPath}
+              className={showEditor ? 'w-1/2' : 'w-full'}
+            />
+          ) : isLatex ? (
+            <LaTeXPreview
               path={activeTabPath}
               className={showEditor ? 'w-1/2' : 'w-full'}
             />

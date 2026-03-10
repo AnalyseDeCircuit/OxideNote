@@ -19,7 +19,7 @@ import {
   Highlighter,
   FileText,
 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { readBinaryFile, createNote } from '@/lib/api';
 import {
   type PdfAnnotation,
@@ -30,9 +30,9 @@ import {
 } from '@/lib/pdfAnnotations';
 import { toast } from '@/hooks/useToast';
 
-// Configure pdfjs worker via CDN-free approach (inline worker)
+// Configure pdfjs worker via the legacy build so pdf.js polyfills Promise.try
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
+  'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
 

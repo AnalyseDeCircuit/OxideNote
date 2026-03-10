@@ -133,6 +133,18 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
     };
   }, [path, triggerCompile]);
 
+  // Listen for toolbar compile-request events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.path === path) {
+        triggerCompile(path);
+      }
+    };
+    window.addEventListener('compile-request', handler);
+    return () => window.removeEventListener('compile-request', handler);
+  }, [path, triggerCompile]);
+
   const errors = result?.diagnostics.filter(d => d.severity === 'error') ?? [];
   const warnings = result?.diagnostics.filter(d => d.severity === 'warning') ?? [];
 

@@ -179,7 +179,9 @@
     "math": "数学公式",
     "table": "插入表格",
     "print": "打印",
-    "printFailed": "打印失败"
+    "printFailed": "打印失败",
+    "compile": "编译",
+    "compileSuccess": "编译成功 ({{ms}}ms)"
   },
   "graph": {
     "title": "知识图谱",
@@ -850,5 +852,20 @@
     "exportPdf": "导出 PDF",
     "exportSuccess": "PDF 导出成功",
     "exportFailed": "PDF 导出失败"
+  },
+  "latex": {
+    "compiling": "编译中…",
+    "compiled": "编译完成 ({{ms}}ms)",
+    "compileError": "编译失败",
+    "errorCount": "{{count}} 个错误",
+    "warningCount": "{{count}} 个警告",
+    "emptyOutput": "等待编译…",
+    "fixErrors": "请修复代码错误后重新编译",
+    "noCompiler": "未检测到 LaTeX 编译器",
+    "noCompilerHint": "请安装 TeX Live、MiKTeX 或 MacTeX",
+    "selectCompiler": "选择编译器",
+    "recompile": "重新编译",
+    "toggleLog": "编译日志",
+    "loadingPdf": "加载 PDF…"
   }
 }

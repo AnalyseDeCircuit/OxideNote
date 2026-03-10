@@ -13,6 +13,7 @@ import {
 import { EditorState, Compartment } from '@codemirror/state';
 import {
   defaultHighlightStyle,
+  LanguageSupport,
   syntaxHighlighting,
   indentOnInput,
   bracketMatching,
@@ -21,6 +22,7 @@ import {
 } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { typst as typstLanguage } from 'codemirror-lang-typst';
+import { latexLanguage } from 'codemirror-lang-latex';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -53,6 +55,7 @@ const tabSizeCompartment = new Compartment();
 const wordWrapCompartment = new Compartment();
 const themeCompartment = new Compartment();
 const languageCompartment = new Compartment();
+const completionCompartment = new Compartment();
 const markdownExtensionsCompartment = new Compartment();
 const lintCompartment = new Compartment();
 
@@ -61,21 +64,47 @@ function isTypstFile(path: string | null): boolean {
   return path?.toLowerCase().endsWith('.typ') ?? false;
 }
 
+/** Check if a file path refers to a LaTeX source file */
+function isLatexFile(path: string | null): boolean {
+  return path?.toLowerCase().endsWith('.tex') ?? false;
+}
+
 /** Determine the CM6 language extension based on the file path. */
 function languageForPath(path: string | null) {
   if (isTypstFile(path)) {
     return typstLanguage();
   }
+  if (isLatexFile(path)) {
+    // Use the raw LRLanguage instead of the package's helper wrapper.
+    // The helper injects its own autocompletion config, which conflicts with
+    // our editor-level autocompletion override when CodeMirror merges configs.
+    return new LanguageSupport(latexLanguage);
+  }
   return markdown({ base: markdownLanguage });
 }
 
-/** Markdown-specific extensions (wikilinks, block refs, completions) — disabled for Typst */
+function completionConfigForPath(path: string | null) {
+  return autocompletion({
+    override: isTypstFile(path)
+      ? [typstCitationSource]
+      : isLatexFile(path)
+        ? [latexCitationSource]
+        : [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
+  });
+}
+
+/** Detect if path is a typesetting source (Typst or LaTeX) — not Markdown */
+function isTypesetFile(path: string | null): boolean {
+  return isTypstFile(path) || isLatexFile(path);
+}
+
+/** Markdown-specific extensions (wikilinks, block refs, completions) — disabled for Typst/LaTeX */
 function markdownExtensionsForPath(
   path: string | null,
   onNavigate: React.RefObject<((target: string) => void) | undefined>,
   getCurrentPath: () => string,
 ) {
-  if (isTypstFile(path)) return [];
+  if (isTypesetFile(path)) return [];
   return [
     wikilinkExtension((target) => onNavigate.current?.(target)),
     blockRefExtension(getCurrentPath),
@@ -238,13 +267,7 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
         indentOnInput(),
         bracketMatching(),
         closeBrackets(),
-        autocompletion({
-          override: isTypstFile(activeTabPath)
-            ? [typstCitationSource]
-            : activeTabPath?.toLowerCase().endsWith('.tex')
-              ? [latexCitationSource]
-              : [wikilinkCompletionSource, tagCompletionSource, slashCommandSource],
-        }),
+        completionCompartment.of(completionConfigForPath(activeTabPath)),
         EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
         highlightSelectionMatches(),
@@ -258,8 +281,8 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
           markdownExtensionsForPath(activeTabPath, onNavigateRef, () => currentNotePathRef.current)
         ),
 
-        // Lint gutter — shown only for Typst to display compilation diagnostics
-        lintCompartment.of(isTypstFile(activeTabPath) ? lintGutter() : []),
+        // Lint gutter — shown for Typst/LaTeX to display compilation diagnostics
+        lintCompartment.of(isTypesetFile(activeTabPath) ? lintGutter() : []),
 
         // Theme
         themeCompartment.of(makeOxideTheme(isDarkTheme())),
@@ -381,20 +404,25 @@ export function useCodeMirrorEditor(options: UseCodeMirrorOptions) {
   }, [options.wordWrap]);
 
   // Reconfigure language and markdown-specific extensions when switching file types
-  const prevIsTypstRef = useRef(isTypstFile(activeTabPath));
+  const prevFileTypeRef = useRef<'typst' | 'latex' | 'md'>(
+    isTypstFile(activeTabPath) ? 'typst' : isLatexFile(activeTabPath) ? 'latex' : 'md',
+  );
   useEffect(() => {
     if (!viewRef.current) return;
-    const nowTypst = isTypstFile(activeTabPath);
+    const nowType = isTypstFile(activeTabPath) ? 'typst' as const
+      : isLatexFile(activeTabPath) ? 'latex' as const
+      : 'md' as const;
     // Only reconfigure if the language type actually changed
-    if (nowTypst !== prevIsTypstRef.current) {
-      prevIsTypstRef.current = nowTypst;
+    if (nowType !== prevFileTypeRef.current) {
+      prevFileTypeRef.current = nowType;
       viewRef.current.dispatch({
         effects: [
           languageCompartment.reconfigure(languageForPath(activeTabPath)),
+          completionCompartment.reconfigure(completionConfigForPath(activeTabPath)),
           markdownExtensionsCompartment.reconfigure(
             markdownExtensionsForPath(activeTabPath, onNavigateRef, () => currentNotePathRef.current)
           ),
-          lintCompartment.reconfigure(nowTypst ? lintGutter() : []),
+          lintCompartment.reconfigure(isTypesetFile(activeTabPath) ? lintGutter() : []),
         ],
       });
     }

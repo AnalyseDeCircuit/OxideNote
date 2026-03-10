@@ -41,6 +41,7 @@ import {
   PenTool,
   Sparkles,
   Bot,
+  Play,
 } from 'lucide-react';
 import { useNoteStore } from '@/store/noteStore';
 import { useChatStore } from '@/store/chatStore';
@@ -334,6 +335,16 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
     }
   }, [viewRef, t]);
 
+  // ── Compile/build handler for .typ/.tex files ──────────
+  const isCompilable = fileExt === 'typ' || fileExt === 'tex';
+
+  const handleCompile = useCallback(() => {
+    if (!activeTabPath) return;
+    // Dispatch a custom event that preview components (TypstPreview/LaTeXPreview) listen for.
+    // This avoids duplicate compilation — the preview owns the actual compile logic.
+    window.dispatchEvent(new CustomEvent('compile-request', { detail: { path: activeTabPath } }));
+  }, [activeTabPath]);
+
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 border-b border-theme-border bg-surface shrink-0 overflow-x-auto">
       {/* ── 标题层级 ───────────────────────────────────────── */}
@@ -403,6 +414,20 @@ export function EditorToolbar({ viewRef }: EditorToolbarProps) {
       </ToolbarGroup>
 
       <ToolbarDivider />
+
+      {/* ── Compile (Typst/LaTeX only) ─────────────────── */}
+      {isCompilable && (
+        <>
+          <ToolbarGroup>
+            <ToolbarBtn
+              icon={<Play size={14} />}
+              title={t('toolbar.compile')}
+              onClick={handleCompile}
+            />
+          </ToolbarGroup>
+          <ToolbarDivider />
+        </>
+      )}
 
       {/* ── Canvas ─────────────────────────────────────── */}
       <ToolbarGroup>

@@ -179,7 +179,9 @@
     "math": "Math Formula",
     "table": "Insert Table",
     "print": "Print",
-    "printFailed": "Print failed"
+    "printFailed": "Print failed",
+    "compile": "Compile",
+    "compileSuccess": "Compiled ({{ms}}ms)"
   },
   "graph": {
     "title": "Knowledge Graph",
@@ -851,5 +853,20 @@
     "exportPdf": "Export PDF",
     "exportSuccess": "PDF exported successfully",
     "exportFailed": "PDF export failed"
+  },
+  "latex": {
+    "compiling": "Compiling…",
+    "compiled": "Compiled ({{ms}}ms)",
+    "compileError": "Compilation failed",
+    "errorCount": "{{count}} error(s)",
+    "warningCount": "{{count}} warning(s)",
+    "emptyOutput": "Waiting to compile…",
+    "fixErrors": "Fix errors and recompile",
+    "noCompiler": "No LaTeX compiler found",
+    "noCompilerHint": "Install TeX Live, MiKTeX, or MacTeX",
+    "selectCompiler": "Select compiler",
+    "recompile": "Recompile",
+    "toggleLog": "Build log",
+    "loadingPdf": "Loading PDF…"
   }
 }
