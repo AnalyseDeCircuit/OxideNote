@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNoteStore } from '@/store/noteStore';
 import { useUIStore } from '@/store/uiStore';
 import { useAgentStore } from '@/store/agentStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useTranslation } from 'react-i18next';
+import { listen } from '@tauri-apps/api/event';
 import { Breadcrumb } from '@/components/editor/Breadcrumb';
-import { Loader2, CheckCircle2, XCircle, Sparkles, Bot, Play, Clock } from 'lucide-react';
-import { compileTypstToSvg } from '@/lib/api';
+import { Loader2, CheckCircle2, XCircle, Sparkles, Bot, Play, Clock, Database, RefreshCw } from 'lucide-react';
+import { compileTypstToSvg, getVaultStats, repairVault, type VaultStats } from '@/lib/api';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { toast } from '@/hooks/useToast';
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -19,6 +22,45 @@ export function StatusBar() {
   const compileTimeMs = useUIStore((s) => s.compileTimeMs);
   const aiGenerating = useUIStore((s) => s.aiGenerating);
   const agentRunning = useAgentStore((s) => s.isRunning);
+  const vaultPath = useWorkspaceStore((s) => s.vaultPath);
+
+  // Vault stats — loaded once and refreshed on file changes (debounced)
+  const [vaultStats, setVaultStats] = useState<VaultStats | null>(null);
+  const [repairing, setRepairing] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshStats = useCallback(() => {
+    getVaultStats().then(setVaultStats).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!vaultPath) return;
+    refreshStats();
+
+    // Debounced refresh on vault file changes via Tauri event
+    const unlistenPromise = listen('vault:file-changed', () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(refreshStats, 3000);
+    });
+    return () => {
+      unlistenPromise.then((fn) => fn()).catch(() => {});
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [vaultPath, refreshStats]);
+
+  const handleRepairIndex = async () => {
+    setRepairing(true);
+    try {
+      await repairVault();
+      const stats = await getVaultStats();
+      setVaultStats(stats);
+      toast({ title: t('statusBar.indexRepaired') });
+    } catch (err) {
+      toast({ title: t('statusBar.indexRepairFailed'), description: String(err), variant: 'error' });
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   const activeTab = openTabs.find((tab) => tab.path === activeTabPath);
   const isDirty = activeTab?.isDirty ?? false;
@@ -143,6 +185,37 @@ export function StatusBar() {
         </TooltipTrigger>
         <TooltipContent side="top">{t('history.title')}</TooltipContent>
       </Tooltip>
+
+      {/* Vault index stats + repair */}
+      {vaultStats && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleRepairIndex}
+              disabled={repairing}
+              className="flex items-center gap-1 hover:text-foreground transition-colors"
+            >
+              {repairing ? (
+                <Loader2 size={11} className="animate-spin text-theme-accent" />
+              ) : (
+                <Database size={11} />
+              )}
+              <span>
+                {t('statusBar.indexNotes', { count: vaultStats.total_notes })}
+              </span>
+              {vaultStats.orphan_notes > 0 && (
+                <span className="text-yellow-500 flex items-center gap-0.5">
+                  <RefreshCw size={10} />
+                  {t('statusBar.indexOrphans', { count: vaultStats.orphan_notes })}
+                </span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {repairing ? t('statusBar.indexRepairing') : t('statusBar.indexRepairHint')}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       <span>{isDirty ? t('statusBar.unsaved') : t('statusBar.saved')}</span>
     </div>

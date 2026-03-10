@@ -39,7 +39,10 @@
     "sortByModified": "Sort by Modified",
     "newFromTemplate": "New from Template",
     "revealInFinder": "Reveal in Finder",
-    "revealFailed": "Reveal failed"
+    "revealFailed": "Reveal failed",
+    "quickNote": "Quick Note",
+    "aiChat": "AI Chat",
+    "recentNotes": "Recent Notes"
   },
   "editor": {
     "untitled": "Untitled",
@@ -316,7 +319,13 @@
     "compiled": "Compiled",
     "compileError": "Compile Error",
     "aiGenerating": "AI Generating...",
-    "agentRunning": "Agent Running"
+    "agentRunning": "Agent Running",
+    "indexNotes": "{{count}} notes",
+    "indexOrphans": "{{count}} orphans",
+    "indexRepaired": "Index repaired",
+    "indexRepairFailed": "Index repair failed",
+    "indexRepairing": "Repairing index...",
+    "indexRepairHint": "Click to repair index (clean orphans, rebuild FTS)"
   },
   "pdf": {
     "export": "Export PDF",
@@ -660,7 +669,27 @@
     "agentCompleted": "Agent completed with {{count}} changes",
     "agentRunning": "Agent Running",
     "viewChanges": "View Changes",
-    "agentKindHint": "Select agent type"
+    "agentKindHint": "Select agent type",
+    "welcome": {
+      "title": "How can I help you?",
+      "description": "I can help you manage notes, organize ideas, and explore knowledge",
+      "hint": "Type a message or click an action below to start"
+    },
+    "quickAction": {
+      "polish": "Polish Text",
+      "polishDesc": "Optimize expression",
+      "polishPrompt": "Please polish and improve the following note content. Make it clearer, more fluent and professional while preserving the original meaning.",
+      "summarize": "Summarize",
+      "summarizeDesc": "Extract key points",
+      "summarizePrompt": "Please summarize the key points of the following note content into a concise bullet list.",
+      "expand": "Expand Ideas",
+      "expandDesc": "Brainstorm from your notes",
+      "expandPrompt": "Please read the following note and expand on the ideas — suggest new angles, related topics, and connections.",
+      "qa": "Note Q&A",
+      "qaDesc": "Ask questions about notes",
+      "qaPrompt": "Please read the following note carefully and answer any questions I might have, supplementing with relevant knowledge.",
+      "currentNote": "Current note"
+    }
   },
   "profile": {
     "title": "Profile",

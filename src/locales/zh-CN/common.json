@@ -39,7 +39,10 @@
     "sortByModified": "按修改时间排序",
     "newFromTemplate": "从模板创建",
     "revealInFinder": "在 Finder 中显示",
-    "revealFailed": "打开失败"
+    "revealFailed": "打开失败",
+    "quickNote": "今日速记",
+    "aiChat": "AI 对话",
+    "recentNotes": "最近打开"
   },
   "editor": {
     "untitled": "无标题",
@@ -316,7 +319,13 @@
     "compiled": "编译成功",
     "compileError": "编译失败",
     "aiGenerating": "AI 生成中...",
-    "agentRunning": "Agent 运行中"
+    "agentRunning": "Agent 运行中",
+    "indexNotes": "{{count}} 篇笔记",
+    "indexOrphans": "{{count}} 个孤立",
+    "indexRepaired": "索引修复完成",
+    "indexRepairFailed": "索引修复失败",
+    "indexRepairing": "正在修复索引...",
+    "indexRepairHint": "点击修复索引（清理孤立项、重建全文搜索）"
   },
   "pdf": {
     "export": "导出 PDF",
@@ -659,7 +668,27 @@
     "agentCompleted": "Agent 已完成，产生了 {{count}} 项变更",
     "agentRunning": "Agent 运行中",
     "viewChanges": "查看变更",
-    "agentKindHint": "选择 Agent 类型"
+    "agentKindHint": "选择 Agent 类型",
+    "welcome": {
+      "title": "你好，有什么可以帮你的？",
+      "description": "我可以帮你管理笔记、整理想法、探索知识",
+      "hint": "输入消息或点击下方快捷指令开始"
+    },
+    "quickAction": {
+      "polish": "润色文字",
+      "polishDesc": "优化当前笔记的表达",
+      "polishPrompt": "请润色并优化以下笔记内容，使其更加流畅、专业。保持原意不变，仅改善表达。",
+      "summarize": "总结笔记",
+      "summarizeDesc": "提炼核心要点",
+      "summarizePrompt": "请总结以下笔记的核心要点，输出为简洁的要点列表。",
+      "expand": "扩展思路",
+      "expandDesc": "基于笔记拓展新想法",
+      "expandPrompt": "请基于以下笔记内容，从不同角度扩展思路、提出新的想法和关联点。",
+      "qa": "笔记问答",
+      "qaDesc": "针对笔记提问解答",
+      "qaPrompt": "请仔细阅读以下笔记内容，然后回答我可能有的疑问、补充相关知识点。",
+      "currentNote": "当前笔记"
+    }
   },
   "profile": {
     "title": "个人资料",

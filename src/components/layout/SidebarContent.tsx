@@ -12,9 +12,10 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, X } from 'lucide-react';
+import { Search, X, CalendarDays, MessageSquare, ChevronDown, ChevronRight, FileText, Clock } from 'lucide-react';
 import { useUIStore, type SidebarSection } from '@/store/uiStore';
 import { useNoteStore } from '@/store/noteStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
 import { VaultTree } from '@/components/tree/VaultTree';
 import { BookmarkList } from '@/components/tree/BookmarkList';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
@@ -26,7 +27,9 @@ import { HistoryPanel } from '@/components/editor/HistoryPanel';
 import { DashboardPanel } from '@/components/editor/DashboardPanel';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { AgentPanel } from '@/components/agent/AgentPanel';
-import { searchNotes, type SearchResult } from '@/lib/api';
+import { searchNotes, searchByFilename, createNote, createFolder, type SearchResult } from '@/lib/api';
+import { toast } from '@/hooks/useToast';
+import i18n from '@/i18n';
 
 // ── Section header with title ───────────────────────────────
 
@@ -230,6 +233,119 @@ function DashboardSection() {
   );
 }
 
+// ── Quick action bar — high-frequency entry points ──────────
+
+function QuickActions() {
+  const { t } = useTranslation();
+  const vaultPath = useWorkspaceStore((s) => s.vaultPath);
+  const openNote = useNoteStore((s) => s.openNote);
+
+  // Create today's daily note using local timezone
+  const handleDailyNote = async () => {
+    if (!vaultPath) return;
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const fileName = `${dateStr}.md`;
+    const dailyPath = `daily/${fileName}`;
+    try {
+      const results = await searchByFilename(fileName);
+      const existing = results.find((r) => r.path === dailyPath || r.path === fileName);
+      if (existing) {
+        openNote(existing.path, existing.title || dateStr);
+        return;
+      }
+      await createFolder('', 'daily').catch(() => { /* may already exist */ });
+      const path = await createNote('daily', fileName);
+      openNote(path, dateStr);
+    } catch (err) {
+      toast({ title: i18n.t('dailyNote.failed'), description: String(err), variant: 'error' });
+    }
+  };
+
+  // Open AI chat panel
+  const handleOpenChat = () => {
+    useUIStore.getState().setSidebarSection('chat');
+  };
+
+  return (
+    <div className="px-2 py-2 border-b border-theme-border flex gap-1.5">
+      <button
+        className="flex-1 flex items-center gap-1.5 px-2.5 py-2 rounded-md text-xs font-medium
+          text-foreground bg-theme-accent/8 hover:bg-theme-accent/15 border border-theme-accent/20
+          hover:border-theme-accent/40 transition-all"
+        onClick={handleDailyNote}
+      >
+        <CalendarDays size={14} className="text-theme-accent shrink-0" />
+        <span className="truncate">{t('sidebar.quickNote')}</span>
+      </button>
+      <button
+        className="flex-1 flex items-center gap-1.5 px-2.5 py-2 rounded-md text-xs font-medium
+          text-foreground bg-theme-accent/8 hover:bg-theme-accent/15 border border-theme-accent/20
+          hover:border-theme-accent/40 transition-all"
+        onClick={handleOpenChat}
+      >
+        <MessageSquare size={14} className="text-theme-accent shrink-0" />
+        <span className="truncate">{t('sidebar.aiChat')}</span>
+      </button>
+    </div>
+  );
+}
+
+// ── Recently opened notes ───────────────────────────────────
+
+function RecentNotesList() {
+  const { t } = useTranslation();
+  const recentNotes = useNoteStore((s) => s.recentNotes);
+  const openNote = useNoteStore((s) => s.openNote);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Only show if there are recent notes
+  if (recentNotes.length === 0) return null;
+
+  // Show up to 8 recent notes
+  const display = recentNotes.slice(0, 8);
+
+  return (
+    <div className="border-b border-theme-border">
+      <button
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        onClick={() => setCollapsed(!collapsed)}
+      >
+        {collapsed ? (
+          <ChevronRight className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5" />
+        )}
+        <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+        {t('sidebar.recentNotes')}
+        <span className="ml-auto text-muted-foreground">{display.length}</span>
+      </button>
+
+      {!collapsed && (
+        <ul className="pb-1">
+          {display.map((note) => {
+            const displayName = note.title || note.path.split('/').pop()?.replace(/\.(md|typ|tex)$/, '') || note.path;
+            return (
+              <li key={note.path}>
+                <button
+                  className="w-full flex items-center gap-2 px-4 py-1 text-sm text-foreground hover:bg-theme-hover transition-colors"
+                  onClick={() => openNote(note.path, note.title)}
+                >
+                  <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="truncate">{displayName}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── Main SidebarContent component ───────────────────────────
 
 export function SidebarContent() {
@@ -241,8 +357,10 @@ export function SidebarContent() {
       {activeSidebarSection === 'explorer' && (
         <div className="h-full flex flex-col">
           <SectionHeader title={t('sidebar.explorer')} />
-          <div className="flex-1 min-h-0 flex flex-col">
+          <QuickActions />
+          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
             <BookmarkList />
+            <RecentNotesList />
             <VaultTree />
           </div>
         </div>
