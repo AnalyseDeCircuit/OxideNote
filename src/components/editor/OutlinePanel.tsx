@@ -1,16 +1,15 @@
 /**
  * OutlinePanel — Document outline & block reference panel
  *
- * Extracts heading hierarchy from current note's Markdown content
- * to build a navigable TOC (Table of Contents) tree.
+ * Extracts heading hierarchy from the current note to build a
+ * navigable TOC (Table of Contents) tree.
+ *
+ * Supported formats:
+ *   · Markdown — ATX headings (# ~ ######)
+ *   · Typst    — heading markers (= ~ ======)
+ *   · LaTeX    — sectioning commands (\part ~ \paragraph)
  *
  * Also extracts ^blockId markers for drag-and-drop to canvas.
- *
- * Extraction strategy:
- *   · Regex-match ATX heading syntax (# ~ ######)
- *   · Skip # inside fenced code blocks
- *   · Level indentation via paddingLeft
- *   · Block IDs matched via ^block-id pattern at line end
  *
  * Clicking a heading scrolls the editor to that line.
  * Block items are draggable — drop onto canvas to create linked cards.
@@ -24,24 +23,47 @@ import { EditorView } from '@codemirror/view';
 import { getEditorView } from '@/lib/editorViewRef';
 import { Boxes } from 'lucide-react';
 
-// ── 标题条目类型 ────────────────────────────────────────────
+// ── Heading item type ───────────────────────────────────────
 interface HeadingItem {
-  /** 标题层级 1~6 */
+  /** Heading level 1~6 */
   level: number;
-  /** 标题文本 */
+  /** Heading text */
   text: string;
-  /** 在源文档中的行号（0-based） */
+  /** 0-based line number in source document */
   line: number;
 }
 
+// ── File-type detection helpers ─────────────────────────────
+
+type NoteFileType = 'markdown' | 'typst' | 'latex';
+
+function detectFileType(path: string | null): NoteFileType {
+  if (!path) return 'markdown';
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.typ')) return 'typst';
+  if (lower.endsWith('.tex')) return 'latex';
+  return 'markdown';
+}
+
+/** Level indicator character per file type */
+function levelIndicator(fileType: NoteFileType, level: number): string {
+  switch (fileType) {
+    case 'typst':    return '='.repeat(level);
+    case 'latex':    return '§'.repeat(level);
+    case 'markdown': return '#'.repeat(level);
+  }
+}
+
+// ── Markdown heading extractor ─────────────────────────────
+
 /**
- * 从 Markdown 源文本中提取标题列表
+ * Extract headings from Markdown source text.
  *
- * 规则：
- *   · 跳过围栏代码块内的行 (``` / ~~~)
- *   · 匹配 ATX 标题格式：^#{1,6}\s+(.*)$
+ * Rules:
+ *   · Skip fenced code blocks (``` / ~~~)
+ *   · Match ATX heading: ^#{1,6}\s+(.*)$
  */
-function extractHeadings(content: string): HeadingItem[] {
+function extractHeadingsMarkdown(content: string): HeadingItem[] {
   const lines = content.split('\n');
   const headings: HeadingItem[] = [];
   let inCodeBlock = false;
@@ -49,14 +71,12 @@ function extractHeadings(content: string): HeadingItem[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // 检测围栏代码块边界
     if (/^(`{3,}|~{3,})/.test(line)) {
       inCodeBlock = !inCodeBlock;
       continue;
     }
     if (inCodeBlock) continue;
 
-    // 匹配 ATX 标题
     const match = line.match(/^(#{1,6})\s+(.+?)(?:\s+#+)?$/);
     if (match) {
       headings.push({
@@ -68,6 +88,104 @@ function extractHeadings(content: string): HeadingItem[] {
   }
 
   return headings;
+}
+
+// ── Typst heading extractor ────────────────────────────────
+
+/**
+ * Extract headings from Typst source text.
+ *
+ * Typst heading syntax: = Title, == Subtitle, === Sub-sub, etc.
+ * Skips fenced code blocks (```) and commented lines (//).
+ */
+function extractHeadingsTypst(content: string): HeadingItem[] {
+  const lines = content.split('\n');
+  const headings: HeadingItem[] = [];
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Typst raw blocks use ```
+    if (/^(`{3,})/.test(line)) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    // Skip line comments
+    if (/^\s*\/\//.test(line)) continue;
+
+    // Match Typst heading: one or more '=' followed by a space and text
+    const match = line.match(/^(={1,6})\s+(.+)$/);
+    if (match) {
+      // Strip trailing Typst labels like <intro>
+      const text = match[2].replace(/<[a-zA-Z0-9_-]+>\s*$/, '').trim();
+      headings.push({
+        level: match[1].length,
+        text,
+        line: i,
+      });
+    }
+  }
+
+  return headings;
+}
+
+// ── LaTeX heading extractor ────────────────────────────────
+
+/** LaTeX sectioning commands mapped to outline levels.
+ * Brace pattern handles one level of nesting (e.g. \section{A \textbf{B}}) */
+const LATEX_SECTION_PATTERNS: [RegExp, number][] = [
+  [/\\part\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 1],
+  [/\\chapter\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 2],
+  [/\\section\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 3],
+  [/\\subsection\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 4],
+  [/\\subsubsection\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 5],
+  [/\\paragraph\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 6],
+  [/\\subparagraph\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/, 6],
+];
+
+/**
+ * Extract headings from LaTeX source text.
+ *
+ * Matches sectioning commands: \part, \chapter, \section, \subsection,
+ * \subsubsection, \paragraph (with optional *).
+ * Skips lines that are commented out (leading %).
+ */
+function extractHeadingsLatex(content: string): HeadingItem[] {
+  const lines = content.split('\n');
+  const headings: HeadingItem[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip LaTeX comment lines
+    if (/^\s*%/.test(line)) continue;
+
+    for (const [regex, level] of LATEX_SECTION_PATTERNS) {
+      const match = line.match(regex);
+      if (match) {
+        headings.push({
+          level,
+          text: match[1].trim(),
+          line: i,
+        });
+        break; // One heading per line
+      }
+    }
+  }
+
+  return headings;
+}
+
+/** Dispatch heading extraction based on file type */
+function extractHeadingsByType(content: string, fileType: NoteFileType): HeadingItem[] {
+  switch (fileType) {
+    case 'typst':    return extractHeadingsTypst(content);
+    case 'latex':    return extractHeadingsLatex(content);
+    case 'markdown': return extractHeadingsMarkdown(content);
+  }
 }
 
 // ── Block reference item type ──────────────────────────────
@@ -143,8 +261,10 @@ export function OutlinePanel() {
 function OutlinePanelContent() {
   const { t } = useTranslation();
   const activeTabPath = useNoteStore((s) => s.activeTabPath);
-  const headings = useEditorHeadings();
-  const blocks = useEditorBlocks();
+  const fileType = detectFileType(activeTabPath);
+  const headings = useEditorHeadings(fileType);
+  // Block references (^blockId) are a Markdown-specific concept
+  const blocks = fileType === 'markdown' ? useEditorBlocks() : [];
 
   const hasContent = headings.length > 0 || blocks.length > 0;
 
@@ -175,7 +295,7 @@ function OutlinePanelContent() {
                 title={heading.text}
               >
                 <span className="text-theme-accent mr-1.5 text-xs font-mono opacity-50">
-                  {'#'.repeat(heading.level)}
+                  {levelIndicator(fileType, heading.level)}
                 </span>
                 {heading.text}
               </button>
@@ -242,9 +362,12 @@ function BlockDragItem({ block, notePath }: { block: BlockItem; notePath: string
 
 // ── Reactive heading + block extraction from noteStore ──────
 
-function useEditorHeadings(): HeadingItem[] {
+function useEditorHeadings(fileType: NoteFileType): HeadingItem[] {
   const activeContent = useNoteStore((s) => s.activeContent);
-  return useMemo(() => extractHeadings(activeContent), [activeContent]);
+  return useMemo(
+    () => extractHeadingsByType(activeContent, fileType),
+    [activeContent, fileType],
+  );
 }
 
 function useEditorBlocks(): BlockItem[] {
@@ -258,9 +381,11 @@ function useEditorBlocks(): BlockItem[] {
 
 function scrollToLine(line: number, headingText: string) {
   const editorMode = useUIStore.getState().editorMode;
+  const activeTabPath = useNoteStore.getState().activeTabPath;
+  const fileType = detectFileType(activeTabPath);
 
-  // 预览模式下，在预览面板中查找匹配标题并滚动
-  if (editorMode === 'preview') {
+  // For Markdown in preview mode, locate heading in rendered preview DOM
+  if (editorMode === 'preview' && fileType === 'markdown') {
     const preview = document.querySelector('.oxide-markdown-preview');
     if (!preview) return;
     const headings = preview.querySelectorAll('h1, h2, h3, h4, h5, h6');
@@ -273,11 +398,13 @@ function scrollToLine(line: number, headingText: string) {
     return;
   }
 
-  // 编辑/分屏模式：通过 CodeMirror API 精确滚动到行
+  // Edit / split mode (or non-Markdown preview): scroll CodeMirror to line.
+  // Note: for Typst/LaTeX in split mode, only the editor pane scrolls;
+  // the compiled PDF preview cannot be scrolled to a specific heading.
   const view = getEditorView();
   if (!view) return;
 
-  // CodeMirror 行号 1-based，extractHeadings 的 line 是 0-based
+  // CodeMirror uses 1-based line numbers; extractors use 0-based
   const lineNumber = line + 1;
   if (lineNumber < 1 || lineNumber > view.state.doc.lines) return;
 

@@ -4,10 +4,10 @@
 // for compilation via `compileTypstToSvg()`, then renders the resulting
 // SVG pages. Diagnostics (errors/warnings) are shown inline.
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { compileTypstToSvg, compileTypstToPdf, type TypstCompileResult, type TypstDiagnostic } from '@/lib/api';
-import { AlertTriangle, FileWarning, Clock, FileDown } from 'lucide-react';
+import { AlertTriangle, FileWarning, Clock, FileDown, ZoomIn, ZoomOut, Maximize, ChevronDown, ChevronRight } from 'lucide-react';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from '@/hooks/useToast';
 import DOMPurify from 'dompurify';
@@ -23,8 +23,17 @@ interface TypstPreviewProps {
   className?: string;
 }
 
+interface SvgPageSize {
+  width: number;
+  height: number;
+}
+
 /** Debounce interval (ms) before triggering recompilation */
 const COMPILE_DEBOUNCE_MS = 400;
+/** Debounce before committing gesture zoom to React state */
+const ZOOM_COMMIT_DELAY_MS = 200;
+const MIN_SVG_SCALE = 0.25;
+const MAX_SVG_SCALE = 4.0;
 
 /** Sanitize SVG output from the Typst compiler, stripping scripts and event handlers */
 function sanitizeSvg(raw: string): string {
@@ -36,15 +45,95 @@ function sanitizeSvg(raw: string): string {
   });
 }
 
+function extractSvgPageSize(raw: string): SvgPageSize | null {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(raw, 'image/svg+xml');
+  const svg = doc.documentElement;
+
+  if (svg.tagName.toLowerCase() !== 'svg') {
+    return null;
+  }
+
+  const widthAttr = svg.getAttribute('width');
+  const heightAttr = svg.getAttribute('height');
+  const parsedWidth = widthAttr ? parseSvgLength(widthAttr) : null;
+  const parsedHeight = heightAttr ? parseSvgLength(heightAttr) : null;
+
+  if (parsedWidth && parsedHeight) {
+    return { width: parsedWidth, height: parsedHeight };
+  }
+
+  const viewBox = svg.getAttribute('viewBox')?.trim().split(/\s+/).map(Number);
+  if (viewBox && viewBox.length === 4 && Number.isFinite(viewBox[2]) && Number.isFinite(viewBox[3])) {
+    return { width: viewBox[2], height: viewBox[3] };
+  }
+
+  return null;
+}
+
+function parseSvgLength(value: string): number | null {
+  const match = value.trim().match(/^([0-9]*\.?[0-9]+)(px|pt|pc|mm|cm|in)?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  const unit = (match[2] ?? 'px').toLowerCase();
+  switch (unit) {
+    case 'px':
+      return amount;
+    case 'pt':
+      return amount * (96 / 72);
+    case 'pc':
+      return amount * 16;
+    case 'mm':
+      return amount * (96 / 25.4);
+    case 'cm':
+      return amount * (96 / 2.54);
+    case 'in':
+      return amount * 96;
+    default:
+      return null;
+  }
+}
+
+// Module-level cache: avoids recompilation when switching tabs and returning.
+// Key = vault-relative path, value = last successful compile result.
+const typstResultCache = new Map<string, TypstCompileResult>();
+
+function clampSvgScale(scale: number): number {
+  return Math.min(Math.max(scale, MIN_SVG_SCALE), MAX_SVG_SCALE);
+}
+
 export function TypstPreview({ path, className }: TypstPreviewProps) {
   const { t } = useTranslation();
-  const [result, setResult] = useState<TypstCompileResult | null>(null);
+  const [result, setResult] = useState<TypstCompileResult | null>(
+    // Restore cached result for instant display on remount
+    () => typstResultCache.get(path) ?? null,
+  );
   const [compiling, setCompiling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const lastPathRef = useRef(path);
   const pagesContainerRef = useRef<HTMLDivElement>(null);
   const sourceMappingRef = useRef<[number, number][]>([]);
+  // Two-phase zoom: committedScale drives React rendering (SVG page sizes),
+  // liveScaleRef tracks the visual scale during gesture (applied via CSS zoom).
+  const [committedScale, setCommittedScale] = useState(1.0);
+  const liveScaleRef = useRef(1.0);
+  const committedScaleRef = useRef(1.0);
+  committedScaleRef.current = committedScale;
+  const [displayPercent, setDisplayPercent] = useState(100);
+  const gestureCommitTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const [pageSizes, setPageSizes] = useState<Array<SvgPageSize | null>>(
+    () => (typstResultCache.get(path)?.pages ?? []).map(extractSvgPageSize),
+  );
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(true);
 
   // Compile on path change (debounced to avoid rapid fire during saves)
   const triggerCompile = useCallback(async (filePath: string) => {
@@ -55,6 +144,7 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
     try {
       const res = await compileTypstToSvg(filePath);
       setResult(res);
+      typstResultCache.set(filePath, res);
       sourceMappingRef.current = res.source_mapping ?? [];
 
       // Update status bar with result
@@ -103,9 +193,21 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
   useEffect(() => {
     lastPathRef.current = path;
     let disposed = false;
+    const cachedResult = typstResultCache.get(path) ?? null;
 
-    // Initial compile
-    triggerCompile(path);
+    liveScaleRef.current = 1.0;
+    setCommittedScale(1.0);
+    setDisplayPercent(100);
+    if (gestureCommitTimerRef.current) clearTimeout(gestureCommitTimerRef.current);
+    setResult(cachedResult);
+    setPageSizes((cachedResult?.pages ?? []).map(extractSvgPageSize));
+    sourceMappingRef.current = cachedResult?.source_mapping ?? [];
+    setError(null);
+
+    // Initial compile (only if no cached result available)
+    if (!typstResultCache.has(path)) {
+      triggerCompile(path);
+    }
 
     // Listen for file-changed events to recompile after saves
     let unlisten: (() => void) | undefined;
@@ -132,6 +234,19 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
       unlisten?.();
     };
   }, [path, triggerCompile]);
+
+  useEffect(() => {
+    setPageSizes((result?.pages ?? []).map(extractSvgPageSize));
+  }, [result]);
+
+  // After React re-renders with new committed scale, remove CSS gesture zoom
+  useLayoutEffect(() => {
+    const pages = pagesContainerRef.current;
+    if (pages) {
+      pages.style.zoom = '';
+    }
+    liveScaleRef.current = committedScale;
+  }, [committedScale]);
 
   // Listen for toolbar compile-request events
   useEffect(() => {
@@ -219,9 +334,82 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
     return () => clearInterval(interval);
   }, [result]);
 
+  // Zoom controls for SVG pages (button zoom commits immediately)
+  const zoomIn = useCallback(() => {
+    const next = clampSvgScale(liveScaleRef.current + 0.25);
+    liveScaleRef.current = next;
+    setCommittedScale(next);
+    setDisplayPercent(Math.round(next * 100));
+  }, []);
+  const zoomOut = useCallback(() => {
+    const next = clampSvgScale(liveScaleRef.current - 0.25);
+    liveScaleRef.current = next;
+    setCommittedScale(next);
+    setDisplayPercent(Math.round(next * 100));
+  }, []);
+  const fitWidth = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const intrinsicWidth = pageSizes[0]?.width;
+    if (!container || intrinsicWidth == null || intrinsicWidth <= 0) return;
+    const availableWidth = container.clientWidth - 48;
+    const next = clampSvgScale(availableWidth / intrinsicWidth);
+    liveScaleRef.current = next;
+    setCommittedScale(next);
+    setDisplayPercent(Math.round(next * 100));
+  }, [pageSizes]);
+
+  // Pinch-to-zoom with CSS zoom for macOS-native feel.
+  // During gesture: apply CSS zoom for instant visual feedback (no React re-render).
+  // After 200ms idle: commit to React state for correct SVG page sizing.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    const pages = pagesContainerRef.current;
+    if (!el || !pages) return;
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+
+      const oldLive = liveScaleRef.current;
+      // Exponential zoom for natural feel (same gesture distance = same visual ratio)
+      const factor = Math.exp(-e.deltaY * 0.005);
+      const newLive = clampSvgScale(oldLive * factor);
+      if (newLive === oldLive) return;
+
+      // Read scroll/rect BEFORE writing CSS zoom to avoid forced synchronous reflow
+      const rect = el.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+      const scrollLeft = el.scrollLeft;
+      const scrollTop = el.scrollTop;
+
+      liveScaleRef.current = newLive;
+
+      // CSS zoom for instant visual feedback without React re-render
+      pages.style.zoom = String(newLive / committedScaleRef.current);
+
+      // Scroll anchoring: keep point under cursor stable
+      const ratio = newLive / oldLive;
+      el.scrollLeft = (scrollLeft + offsetX) * ratio - offsetX;
+      el.scrollTop = (scrollTop + offsetY) * ratio - offsetY;
+
+      setDisplayPercent(Math.round(newLive * 100));
+
+      // Debounced commit — re-render SVG pages at final scale for crisp output
+      if (gestureCommitTimerRef.current) clearTimeout(gestureCommitTimerRef.current);
+      gestureCommitTimerRef.current = setTimeout(() => {
+        setCommittedScale(newLive);
+      }, ZOOM_COMMIT_DELAY_MS);
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handler);
+      if (gestureCommitTimerRef.current) clearTimeout(gestureCommitTimerRef.current);
+    };
+  }, []);
+
   return (
     <div
-      className={`h-full overflow-auto bg-background ${className ?? ''}`}
+      className={`h-full flex flex-col bg-background ${className ?? ''}`}
     >
       {/* Compilation status bar */}
       <div className="sticky top-0 z-10 px-3 py-1.5 text-xs border-b border-theme-border bg-surface flex items-center gap-3">
@@ -244,10 +432,14 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
           </span>
         )}
         {warnings.length > 0 && (
-          <span className="flex items-center gap-1 text-yellow-500">
+          <button
+            onClick={() => setShowDiagnostics((v) => !v)}
+            className="flex items-center gap-1 text-yellow-500 hover:text-yellow-400 transition-colors"
+          >
             <AlertTriangle size={12} />
             {t('typst.warningCount', { count: warnings.length })}
-          </span>
+            {showDiagnostics ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          </button>
         )}
         {result && !compiling && !error && errors.length === 0 && (
           <span className="text-muted-foreground">
@@ -255,6 +447,23 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
           </span>
         )}
         <div className="flex-1" />
+
+        {/* Zoom controls */}
+        <button onClick={zoomOut} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" title={t('pdf.zoomOut')}>
+          <ZoomOut size={13} />
+        </button>
+        <span className="text-xs text-muted-foreground min-w-[36px] text-center select-none">
+          {displayPercent}%
+        </span>
+        <button onClick={zoomIn} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" title={t('pdf.zoomIn')}>
+          <ZoomIn size={13} />
+        </button>
+        <button onClick={fitWidth} className="p-1 rounded hover:bg-theme-hover text-muted-foreground" title={t('pdf.fitWidth')}>
+          <Maximize size={13} />
+        </button>
+
+        <div className="w-px h-4 bg-theme-border mx-0.5" />
+
         <button
           onClick={handleExportPdf}
           disabled={compiling}
@@ -266,8 +475,8 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
         </button>
       </div>
 
-      {/* Diagnostic details */}
-      {(errors.length > 0 || warnings.length > 0) && (
+      {/* Diagnostic details (collapsible) */}
+      {showDiagnostics && (errors.length > 0 || warnings.length > 0) && (
         <div className="px-3 py-2 text-xs space-y-1 border-b border-theme-border bg-surface/50">
           {[...errors, ...warnings].map((d, i) => (
             <DiagnosticLine key={i} diagnostic={d} />
@@ -275,22 +484,34 @@ export function TypstPreview({ path, className }: TypstPreviewProps) {
         </div>
       )}
 
-      {/* SVG pages */}
-      <div ref={pagesContainerRef} className="p-4 flex flex-col items-center gap-4">
-        {result?.pages.map((svg, i) => (
-          <div
-            key={i}
-            className="w-full max-w-[800px] bg-white shadow-md rounded cursor-pointer"
-            data-page-index={i}
-            onClick={() => handlePageClick(i)}
-            dangerouslySetInnerHTML={{ __html: sanitizeSvg(svg) }}
-          />
-        ))}
-        {result?.pages.length === 0 && !compiling && !error && (
-          <div className="text-muted-foreground text-sm py-8">
-            {t('typst.emptyOutput')}
-          </div>
-        )}
+      {/* SVG pages — scaled via CSS width to avoid layout gaps */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
+        <div ref={pagesContainerRef} className="p-4 flex flex-col items-center gap-4">
+          {result?.pages.map((svg, i) => {
+            const pageSize = pageSizes[i];
+            const pageWidth = pageSize ? pageSize.width * committedScale : undefined;
+            const pageHeight = pageSize ? pageSize.height * committedScale : undefined;
+
+            return (
+              <div
+                key={i}
+                className="typst-preview-page bg-white shadow-md rounded cursor-pointer overflow-hidden"
+                style={{
+                  width: pageWidth ? `${pageWidth}px` : undefined,
+                  height: pageHeight ? `${pageHeight}px` : undefined,
+                }}
+                data-page-index={i}
+                onClick={() => handlePageClick(i)}
+                dangerouslySetInnerHTML={{ __html: sanitizeSvg(svg) }}
+              />
+            );
+          })}
+          {result?.pages.length === 0 && !compiling && !error && (
+            <div className="text-muted-foreground text-sm py-8">
+              {t('typst.emptyOutput')}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+.typst-preview-page > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    OxideNote Theme System
    Extracted from oxideterm-ui and cleaned for a notes app context.
@@ -1093,4 +1099,27 @@ html {
     height: 0 !important;
     margin: 0 !important;
   }
+}
+
+/* ── PDF text layer (for selectable text overlay on canvas) ── */
+.oxide-pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0.25;
+  mix-blend-mode: multiply;
+  line-height: 1;
+}
+
+.oxide-pdf-text-layer span,
+.oxide-pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.oxide-pdf-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.35);
 }
